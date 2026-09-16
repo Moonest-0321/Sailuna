@@ -1592,6 +1592,7 @@ struct CharacterListContainerView: View {
     let onCreated: (Character) -> Void
     @Environment(\.modelContext) private var modelContext
     @Environment(ItemCopyStore.self) private var copyStore
+    @Environment(V5SettingsStore.self) private var settingsStore
     @Query(sort: \Character.sortOrder) private var allCharacters: [Character]
     @State private var deletionErrorMessage: String?
 
@@ -1611,7 +1612,15 @@ struct CharacterListContainerView: View {
             onAdd: addCharacter,
             onDelete: { character in
                 do {
-                    try PersistentModelDeletion.deleteCharacter(character, in: modelContext, copyStore: copyStore)
+                    let outcome = try CrossStoreDeletionCoordinator.deleteCharacter(
+                        character,
+                        in: modelContext,
+                        copyStore: copyStore,
+                        settingsStore: settingsStore
+                    )
+                    if outcome.requiresRepair {
+                        deletionErrorMessage = "角色已刪除，但勢力成員連結將於下次啟動修復。"
+                    }
                 } catch {
                     modelContext.rollback()
                     deletionErrorMessage = "角色刪除失敗，資料未變更。"

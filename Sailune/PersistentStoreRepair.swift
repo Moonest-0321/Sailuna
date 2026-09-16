@@ -511,6 +511,23 @@ enum CrossStoreDeletionCoordinator {
     }
 
     @discardableResult
+    static func deleteCharacter(
+        _ character: Character,
+        in context: ModelContext,
+        copyStore: ItemCopyStore?,
+        settingsStore: V5SettingsStore
+    ) throws -> CrossStoreDeletionOutcome {
+        let characterID = character.id
+        try performPrimary(in: context) {
+            try PersistentModelDeletion.deleteCharacter(character, in: context, copyStore: copyStore)
+        }
+        let error = performDeferredCleanup("角色 \(characterID) 勢力成員資料") {
+            try settingsStore.removeMemberships(characterID: characterID)
+        }
+        return CrossStoreDeletionOutcome(deferredCleanupErrors: error.map { [$0] } ?? [])
+    }
+
+    @discardableResult
     static func deleteNodes(
         _ nodes: [Node],
         in context: ModelContext,

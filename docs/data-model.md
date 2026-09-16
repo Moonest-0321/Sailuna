@@ -7,7 +7,7 @@
 | Store | Schema／主要模型 | 連結方式 |
 |---|---|---|
 | `Sailune-v5.store` | `NovelWriterSchemaV5`：Book、Volume、Section、Character、Ability、Item、Timeline、Node、Event 與舊 Organization 相容型別 | SwiftData relationship；V5 不升級此 store schema |
-| `Sailune-v5-settings.store` | `V5SettingsSchemaV3`：BookSidebarSetting、PowerLevel、PowerUnit、PowerSubordination、Place、WorldTerm | 只以 `bookID`、層級 UUID 與勢力 UUID 連結，不持有其他主資料 |
+| `Sailune-v5-settings.store` | `V5SettingsSchemaV4`：BookSidebarSetting、PowerLevel、PowerUnit、PowerSubordination、Place、WorldTerm | 只以 `bookID`、層級 UUID 與勢力 UUID 連結，不持有其他主資料 |
 | `Sailune-v5-item-copies.store` | ItemCopy、ItemCopyHolding、ItemCopyHistory | `bookID`、`itemID`、`characterID`、`copyID` |
 | `Sailune-v5-item-copy-level-selections.store` | ItemCopyLevelSelection | `copyID`、`levelID` |
 | `Sailune-v5-ability-progress.store` | AbilityProgressRecord／History | `bookID`、`abilityID`、`characterID`、`nodeID` |
@@ -34,7 +34,8 @@ PowerLevel（bookID、由高至低 sortOrder）
    └─ PowerSubordination：lowerPowerID → upperPowerID（只保存直接隸屬）
 
 BookSidebarSetting（bookID）→ 顯示項目、可見性、排序
-Place / WorldTerm（bookID）→ V5 基礎設定資料
+Place（bookID）→ 名稱、其他名稱、類型、簡介、詳細描述、備註、排序
+WorldTerm（bookID）→ 名稱、其他名稱、分類、簡介、詳細說明、使用範例、備註、排序
 ```
 
 ## 故事規劃關聯
@@ -66,6 +67,7 @@ TimelineEventCardMetadata ─ eventID + 可選 outlineItemID
 - 高層管理員、其他名單、勢力關係、政治與宗教在 V5 第一版都是勢力自身的自由文字，不建立角色或其他設定資料的外部連結。
 - 勢力改層或層級重新排序若會使既有連線反向或同級，整項操作失敗並保留原層級、原順序與全部連線。
 - 設定集隱藏只改變導航，不刪除設定資料；預設顯示角色、勢力、物品、能力、標籤，地點與世界條目可選加入。
+- V5.1 階段 A 將地點與世界條目補強為獨立純文字設定頁；地點類型維持自由文字，世界條目分類由 UI 限定為制度、信仰、技術、資源、語言、文化習俗、專有名詞。其他名稱、類型／分類、詳細內容、使用範例與備註不與其他 store 建立關聯。`WorldTerm.termCategory` 維持可空 `String` 以保留 V3→V4 舊分類，未對應值只在作者選擇新分類後替換。
 
 ## 刪除語意
 

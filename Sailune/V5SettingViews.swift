@@ -282,8 +282,11 @@ struct PowerDetailView: View {
     let book: Book
     let onBack: () -> Void
     @Environment(V5SettingsStore.self) private var settingsStore
+    @Query(sort: \Character.sortOrder) private var allCharacters: [Character]
     @State private var showingLevels = false
     @State private var errorMessage: String?
+    @State private var selectedCharacterID: UUID?
+    @State private var memberTitle = ""
 
     private var levels: [PowerLevel] { settingsStore.levels(for: book.id) }
     private var powers: [PowerUnit] { settingsStore.powers(for: book.id) }
@@ -291,13 +294,16 @@ struct PowerDetailView: View {
     private var currentLevel: PowerLevel? { PowerHierarchyStore.level(for: power, levels: levels) }
     private var upper: [PowerUnit] { PowerGraphStore.directUpperPowers(of: power, edges: edges, powers: powers) }
     private var lower: [PowerUnit] { PowerGraphStore.directLowerPowers(of: power, edges: edges, powers: powers) }
+    private var worldTerms: [WorldTerm] { settingsStore.worldTerms(for: book.id).sorted { $0.name < $1.name } }
+    private var members: [PowerMember] { settingsStore.members(for: power, bookID: book.id) }
+    private var characters: [Character] { allCharacters.filter { $0.book?.id == book.id } }
+    private var availableCharacters: [Character] {
+        let memberIDs = Set(members.map(\.characterID))
+        return characters.filter { !memberIDs.contains($0.id) }
+    }
     private var upperCandidates: [PowerUnit] {
         PowerHierarchyStore.upperCandidates(for: power, powers: powers, levels: levels)
             .filter { candidate in !upper.contains(where: { $0.id == candidate.id }) }
-    }
-    private var lowerCandidates: [PowerUnit] {
-        PowerHierarchyStore.lowerCandidates(for: power, powers: powers, levels: levels)
-            .filter { candidate in !lower.contains(where: { $0.id == candidate.id }) }
     }
 
     var body: some View {
@@ -315,6 +321,21 @@ struct PowerDetailView: View {
                 TextEditor(text: $power.powerDescription)
                     .frame(minHeight: 90)
                     .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.25)))
+
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("勢力設定").font(.subheadline.weight(.semibold))
+                    ForEach(PowerWorldTermField.allCases) { field in
+                        worldTermPicker(field)
+                    }
+                    Text("目的").font(.caption).foregroundStyle(.secondary)
+                    TextEditor(text: $power.purpose)
+                        .frame(minHeight: 72)
+                        .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.25)))
+                }
+                .padding(10)
+                .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+
+                memberSection
 
                 powerNotebookField(
                     title: "高層管理員",
@@ -358,27 +379,11 @@ struct PowerDetailView: View {
                     ContentUnavailableView(
                         "請先指定層級",
                         systemImage: "arrow.up.arrow.down",
-                        description: Text("指定具體層級後，才能選擇此勢力的直屬上級或下級。")
+                        description: Text("指定具體層級後，才能選擇此勢力的直屬上級。")
                     )
                 } else {
-                    powerRelationSection(
-                        title: "直屬上層",
-                        detail: "此勢力直接隸屬的較高層級勢力，可跨級選擇。",
-                        values: upper,
-                        candidates: upperCandidates,
-                        addTitle: "新增上層"
-                    ) { candidate in
-                        add(lower: power, upper: candidate)
-                    }
-                    powerRelationSection(
-                        title: "直屬下層",
-                        detail: "直接隸屬於此勢力的較低層級勢力，可跨級選擇。",
-                        values: lower,
-                        candidates: lowerCandidates,
-                        addTitle: "新增下層"
-                    ) { candidate in
-                        add(lower: candidate, upper: power)
-                    }
+                    upperRelationSection
+                    relationQuerySection(title: "直屬下級", detail: "僅顯示直接隸屬於此勢力的勢力。", values: lower)
                 }
             }
             .padding(14)
@@ -398,6 +403,7 @@ struct PowerDetailView: View {
         .onChange(of: power.relationshipNotes) { power.updatedAt = Date() }
         .onChange(of: power.politics) { power.updatedAt = Date() }
         .onChange(of: power.religion) { power.updatedAt = Date() }
+        .onChange(of: power.purpose) { power.updatedAt = Date() }
     }
 
     private var errorBinding: Binding<Bool> {
@@ -420,43 +426,117 @@ struct PowerDetailView: View {
         .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
     }
 
-    @ViewBuilder
-    private func powerRelationSection(
-        title: String,
-        detail: String,
-        values: [PowerUnit],
-        candidates: [PowerUnit],
-        addTitle: String,
-        add: @escaping (PowerUnit) -> Void
-    ) -> some View {
+    private var upperRelationSection: some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(title).font(.subheadline.weight(.semibold))
-            Text(detail).font(.caption).foregroundStyle(.secondary)
-            if values.isEmpty { Text("尚未設定").font(.caption).foregroundStyle(.tertiary) }
-            ForEach(values) { value in
+            Text("直屬上級").font(.subheadline.weight(.semibold))
+            Text("此列表供查詢；移除入口位於各筆上級旁。").font(.caption).foregroundStyle(.secondary)
+            if upper.isEmpty { Text("尚未設定").font(.caption).foregroundStyle(.tertiary) }
+            ForEach(upper) { value in
                 HStack {
-                    Text(value.name.isEmpty ? "未命名勢力" : value.name)
+                    powerCandidateLabel(value)
                     Spacer()
-                    Button(role: .destructive) { remove(value) } label: { Image(systemName: "minus.circle") }
+                    Button(role: .destructive) { settingsStore.removeSubordination(lower: power, upper: value, bookID: book.id) } label: { Image(systemName: "minus.circle") }
                         .buttonStyle(.plain)
                 }
             }
             Menu {
-                if candidates.isEmpty {
+                if upperCandidates.isEmpty {
                     Text("沒有符合層級的候選勢力")
                 } else {
-                    ForEach(candidates) { candidate in
-                        Button(candidate.name.isEmpty ? "未命名勢力" : candidate.name) { add(candidate) }
+                    ForEach(upperCandidates) { candidate in
+                        Button { add(lower: power, upper: candidate) } label: { powerCandidateLabel(candidate) }
                     }
                 }
             } label: {
-                Label(addTitle, systemImage: "plus")
+                Label("選擇直屬上級", systemImage: "arrow.up.circle")
             }
             .buttonStyle(.borderless)
-            .disabled(candidates.isEmpty)
+            .disabled(upperCandidates.isEmpty)
         }
         .padding(10)
         .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func relationQuerySection(title: String, detail: String, values: [PowerUnit]) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(title).font(.subheadline.weight(.semibold))
+            Text(detail).font(.caption).foregroundStyle(.secondary)
+            if values.isEmpty { Text("尚未設定").font(.caption).foregroundStyle(.tertiary) }
+            ForEach(values) { powerCandidateLabel($0) }
+        }
+        .padding(10)
+        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func powerCandidateLabel(_ candidate: PowerUnit) -> some View {
+        let levelName = PowerHierarchyStore.level(for: candidate, levels: levels)?.name ?? "未指定層級"
+        return HStack {
+            Text(candidate.name.isEmpty ? "未命名勢力" : candidate.name)
+            Text(levelName).font(.caption).foregroundStyle(.secondary)
+        }
+    }
+
+    private func worldTermPicker(_ field: PowerWorldTermField) -> some View {
+        let selectedID = settingsStore.worldTermID(for: field, on: power)
+        let selectedName = worldTerms.first(where: { $0.id == selectedID })?.name
+        return HStack {
+            Text(field.title).frame(width: 48, alignment: .leading)
+            Menu(selectedName?.isEmpty == false ? selectedName! : "選擇世界條目") {
+                Button("不連結") { setWorldTerm(nil, field: field) }
+                Divider()
+                ForEach(worldTerms) { term in
+                    Button(term.name.isEmpty ? "未命名條目" : term.name) { setWorldTerm(term, field: field) }
+                }
+            }
+            .disabled(worldTerms.isEmpty && selectedID == nil)
+        }
+    }
+
+    private var memberSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("成員").font(.subheadline.weight(.semibold))
+            ForEach(members) { member in
+                HStack {
+                    Text(characters.first(where: { $0.id == member.characterID })?.realName ?? "已刪除角色")
+                    TextField("職稱", text: Binding(
+                        get: { member.title },
+                        set: { member.title = $0; member.updatedAt = Date(); settingsStore.save() }
+                    ))
+                    Button(role: .destructive) { settingsStore.removeMember(member, bookID: book.id) } label: { Image(systemName: "minus.circle") }
+                        .buttonStyle(.plain)
+                }
+            }
+            HStack {
+                Menu(characterName(selectedCharacterID) ?? "選擇角色") {
+                    ForEach(availableCharacters) { character in
+                        Button(character.realName.isEmpty ? "未命名角色" : character.realName) { selectedCharacterID = character.id }
+                    }
+                }
+                TextField("職稱（手寫）", text: $memberTitle)
+                Button("加入") { addMember() }.disabled(selectedCharacterID == nil)
+            }
+        }
+        .padding(10)
+        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+    }
+
+    private func characterName(_ id: UUID?) -> String? {
+        guard let id else { return nil }
+        return characters.first(where: { $0.id == id }).map { $0.realName.isEmpty ? "未命名角色" : $0.realName }
+    }
+
+    private func setWorldTerm(_ term: WorldTerm?, field: PowerWorldTermField) {
+        do { try settingsStore.setWorldTerm(term, for: field, on: power, bookID: book.id) }
+        catch { errorMessage = error.localizedDescription }
+    }
+
+    private func addMember() {
+        guard let character = characters.first(where: { $0.id == selectedCharacterID }) else { return }
+        do {
+            try settingsStore.addMember(characterID: character.id, characterBookID: book.id, title: memberTitle, to: power, bookID: book.id)
+            selectedCharacterID = nil
+            memberTitle = ""
+        } catch { errorMessage = error.localizedDescription }
     }
 
     private func changeLevel(to level: PowerLevel) {
@@ -475,10 +555,6 @@ struct PowerDetailView: View {
         }
     }
 
-    private func remove(_ other: PowerUnit) {
-        settingsStore.removeRelations(between: power, and: other, bookID: book.id)
-    }
-
     private func deletePower() {
         settingsStore.deletePower(power, bookID: book.id)
         onBack()
@@ -488,37 +564,281 @@ struct PowerDetailView: View {
 struct PlaceListView: View {
     let book: Book
     @Environment(V5SettingsStore.self) private var settingsStore
+    @State private var searchText = ""
+    @State private var editingPlace: Place?
+
     private var places: [Place] { settingsStore.places(for: book.id).sorted { $0.sortOrder < $1.sortOrder } }
+    private var filteredPlaces: [Place] {
+        V5SettingsSearch.places(places, matching: searchText)
+    }
+
     var body: some View {
         List {
-            ForEach(places) { place in
-                @Bindable var place = place
-                VStack(alignment: .leading) {
-                    TextField("地點名稱", text: $place.name).textFieldStyle(.roundedBorder)
-                    TextField("簡介", text: $place.placeDescription).textFieldStyle(.roundedBorder)
+            ForEach(filteredPlaces) { place in
+                Button { editingPlace = place } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(place.name.isEmpty ? "未命名地點" : place.name)
+                                .font(.headline)
+                            if let placeType = place.placeType, !placeType.isEmpty {
+                                Text(placeType)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Text(place.placeDescription.isEmpty ? "尚無簡介" : place.placeDescription)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
                 }
+                .buttonStyle(.plain)
             }
-            .onDelete { offsets in offsets.map { places[$0] }.forEach(settingsStore.context.delete); settingsStore.save() }
+            .onDelete { offsets in
+                offsets.map { filteredPlaces[$0] }.forEach { settingsStore.deletePlace($0, bookID: book.id) }
+            }
         }
-        .toolbar { Button("新增地點", systemImage: "plus") { settingsStore.context.insert(Place(bookID: book.id, name: "新地點")); settingsStore.save() } }
+        .overlay {
+            if places.isEmpty {
+                ContentUnavailableView("尚無地點", systemImage: "mappin.and.ellipse", description: Text("使用右上角新增第一個地點。"))
+            } else if filteredPlaces.isEmpty {
+                ContentUnavailableView("找不到地點", systemImage: "magnifyingglass", description: Text("請嘗試其他搜尋關鍵字。"))
+            }
+        }
+        .searchable(text: $searchText, prompt: "搜尋地點、別名、類型或簡介")
+        .toolbar {
+            Button("新增地點", systemImage: "plus") {
+                editingPlace = settingsStore.createPlace(bookID: book.id)
+            }
+        }
+        .sheet(item: $editingPlace) { place in
+            PlaceDetailView(place: place, book: book)
+        }
     }
 }
 
 struct WorldTermListView: View {
     let book: Book
     @Environment(V5SettingsStore.self) private var settingsStore
+    @State private var searchText = ""
+    @State private var categoryFilter: String?
+    @State private var editingTerm: WorldTerm?
+
     private var terms: [WorldTerm] { settingsStore.worldTerms(for: book.id).sorted { $0.sortOrder < $1.sortOrder } }
+    private var filteredTerms: [WorldTerm] {
+        let categoryFilteredTerms = categoryFilter.map { category in
+            terms.filter { $0.termCategory == category }
+        } ?? terms
+        return V5SettingsSearch.worldTerms(categoryFilteredTerms, matching: searchText)
+    }
+
     var body: some View {
         List {
-            ForEach(terms) { term in
-                @Bindable var term = term
-                VStack(alignment: .leading) {
-                    TextField("條目名稱", text: $term.name).textFieldStyle(.roundedBorder)
-                    TextField("簡介", text: $term.termDescription).textFieldStyle(.roundedBorder)
+            ForEach(filteredTerms) { term in
+                Button { editingTerm = term } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(term.name.isEmpty ? "未命名條目" : term.name)
+                                .font(.headline)
+                            if let termCategory = term.termCategory, !termCategory.isEmpty {
+                                Text(termCategory)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        Text(term.termDescription.isEmpty ? "尚無簡介" : term.termDescription)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(2)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            .onDelete { offsets in
+                offsets.map { filteredTerms[$0] }.forEach { settingsStore.deleteWorldTerm($0, bookID: book.id) }
+            }
+        }
+        .safeAreaInset(edge: .top, spacing: 0) {
+            Picker("分類篩選", selection: $categoryFilter) {
+                Text("全部分類").tag(String?.none)
+                ForEach(WorldTermCategory.allCases) { category in
+                    Text(category.rawValue).tag(String?.some(category.rawValue))
                 }
             }
-            .onDelete { offsets in offsets.map { terms[$0] }.forEach(settingsStore.context.delete); settingsStore.save() }
+            .pickerStyle(.menu)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(.bar)
         }
-        .toolbar { Button("新增世界條目", systemImage: "plus") { settingsStore.context.insert(WorldTerm(bookID: book.id, name: "新條目")); settingsStore.save() } }
+        .overlay {
+            if terms.isEmpty {
+                ContentUnavailableView("尚無世界條目", systemImage: "book.closed", description: Text("使用右上角新增第一個世界條目。"))
+            } else if filteredTerms.isEmpty {
+                ContentUnavailableView("找不到世界條目", systemImage: "magnifyingglass", description: Text("請嘗試其他搜尋關鍵字或分類。"))
+            }
+        }
+        .searchable(text: $searchText, prompt: "搜尋條目、別名、分類或簡介")
+        .toolbar {
+            Button("新增世界條目", systemImage: "plus") {
+                editingTerm = settingsStore.createWorldTerm(bookID: book.id)
+            }
+        }
+        .sheet(item: $editingTerm) { term in
+            WorldTermDetailView(term: term, book: book)
+        }
+    }
+}
+
+struct PlaceDetailView: View {
+    @Bindable var place: Place
+    let book: Book
+    @Environment(\.dismiss) private var dismiss
+    @Environment(V5SettingsStore.self) private var settingsStore
+    @State private var showingDeleteConfirmation = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("編輯地點").font(.headline)
+                Spacer()
+                Button("刪除", role: .destructive) { showingDeleteConfirmation = true }
+                Button("完成") {
+                    settingsStore.save()
+                    dismiss()
+                }
+            }
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    TextField("地點名稱", text: $place.name)
+                        .textFieldStyle(.roundedBorder)
+                    TextField("其他名稱（舊名、俗稱或不同語言名稱）", text: textBinding(\.alternateNames))
+                        .textFieldStyle(.roundedBorder)
+                    TextField("地點類型（例如城市、建築、自然地景）", text: textBinding(\.placeType))
+                        .textFieldStyle(.roundedBorder)
+                    settingTextArea(title: "簡介", detail: "列表與快速查找使用的短摘要。", text: $place.placeDescription)
+                    settingTextArea(title: "詳細描述", detail: "可記錄外觀、氣候、文化、資源、危險與氛圍。", text: textBinding(\.detailedDescription), minHeight: 130)
+                    settingTextArea(title: "備註", detail: "作者寫作時需要記得的內部資訊。", text: textBinding(\.notes))
+                }
+            }
+        }
+        .padding(16)
+        .frame(minWidth: 480, minHeight: 560)
+        .onDisappear { settingsStore.save() }
+        .confirmationDialog("確定要刪除這個地點嗎？", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
+            Button("刪除地點", role: .destructive) {
+                settingsStore.deletePlace(place, bookID: book.id)
+                dismiss()
+            }
+            Button("取消", role: .cancel) {}
+        }
+    }
+
+    @ViewBuilder
+    private func settingTextArea(title: String, detail: String, text: Binding<String>, minHeight: CGFloat = 90) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.subheadline.weight(.semibold))
+            Text(detail).font(.caption).foregroundStyle(.secondary)
+            TextEditor(text: text)
+                .frame(minHeight: minHeight)
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.25)))
+        }
+    }
+
+    private func textBinding(_ keyPath: ReferenceWritableKeyPath<Place, String?>) -> Binding<String> {
+        Binding(
+            get: { place[keyPath: keyPath] ?? "" },
+            set: { place[keyPath: keyPath] = $0 }
+        )
+    }
+}
+
+struct WorldTermDetailView: View {
+    @Bindable var term: WorldTerm
+    let book: Book
+    @Environment(\.dismiss) private var dismiss
+    @Environment(V5SettingsStore.self) private var settingsStore
+    @State private var showingDeleteConfirmation = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("編輯世界條目").font(.headline)
+                Spacer()
+                Button("刪除", role: .destructive) { showingDeleteConfirmation = true }
+                Button("完成") {
+                    settingsStore.save()
+                    dismiss()
+                }
+            }
+
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    TextField("條目名稱", text: $term.name)
+                        .textFieldStyle(.roundedBorder)
+                    TextField("其他名稱（別稱、舊稱、縮寫或翻譯）", text: textBinding(\.alternateNames))
+                        .textFieldStyle(.roundedBorder)
+                    Picker("分類", selection: categoryBinding) {
+                        Text("未分類").tag(String?.none)
+                        ForEach(WorldTermCategory.allCases) { category in
+                            Text(category.rawValue).tag(String?.some(category.rawValue))
+                        }
+                        if let legacyCategory = term.termCategory,
+                           !legacyCategory.isEmpty,
+                           WorldTermCategory(rawValue: legacyCategory) == nil {
+                            Text("既有分類：\(legacyCategory)")
+                                .tag(String?.some(legacyCategory))
+                        }
+                    }
+                    if let legacyCategory = term.termCategory,
+                       !legacyCategory.isEmpty,
+                       WorldTermCategory(rawValue: legacyCategory) == nil {
+                        Text("這是舊版自由文字分類；選擇上方分類後即可改用有限分類。")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    settingTextArea(title: "簡介", detail: "列表與快速查找使用的短定義。", text: $term.termDescription)
+                    settingTextArea(title: "詳細說明", detail: "可記錄條目的完整世界觀內容。", text: textBinding(\.detailedDescription), minHeight: 130)
+                    settingTextArea(title: "使用範例", detail: "可記錄對話、敘述或世界中的實際用法。", text: textBinding(\.usageExamples))
+                    settingTextArea(title: "備註", detail: "作者內部提醒或尚未定案的內容。", text: textBinding(\.notes))
+                }
+            }
+        }
+        .padding(16)
+        .frame(minWidth: 480, minHeight: 620)
+        .onDisappear { settingsStore.save() }
+        .confirmationDialog("確定要刪除這個世界條目嗎？", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
+            Button("刪除世界條目", role: .destructive) {
+                settingsStore.deleteWorldTerm(term, bookID: book.id)
+                dismiss()
+            }
+            Button("取消", role: .cancel) {}
+        }
+    }
+
+    @ViewBuilder
+    private func settingTextArea(title: String, detail: String, text: Binding<String>, minHeight: CGFloat = 90) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title).font(.subheadline.weight(.semibold))
+            Text(detail).font(.caption).foregroundStyle(.secondary)
+            TextEditor(text: text)
+                .frame(minHeight: minHeight)
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.25)))
+        }
+    }
+
+    private func textBinding(_ keyPath: ReferenceWritableKeyPath<WorldTerm, String?>) -> Binding<String> {
+        Binding(
+            get: { term[keyPath: keyPath] ?? "" },
+            set: { term[keyPath: keyPath] = $0 }
+        )
+    }
+
+    private var categoryBinding: Binding<String?> {
+        Binding(
+            get: { term.termCategory },
+            set: { term.termCategory = $0 }
+        )
     }
 }

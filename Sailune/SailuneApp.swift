@@ -126,7 +126,7 @@ struct SailuneApp: App {
         }
         let settingsStore: V5SettingsStore
         do {
-            let schema = Schema(versionedSchema: V5SettingsSchemaV3.self)
+            let schema = Schema(versionedSchema: V5SettingsSchemaV5.self)
             let settingsContainer = try ModelContainer(
                 for: schema,
                 migrationPlan: V5SettingsMigrationPlan.self,
@@ -212,6 +212,13 @@ struct SailuneApp: App {
             in: container.mainContext,
             planningStore: planningStore
         )
+        do {
+            let validBookIDs = Set(try container.mainContext.fetch(FetchDescriptor<Book>()).map(\.id))
+            let validCharacterIDs = Set(try container.mainContext.fetch(FetchDescriptor<Character>()).map(\.id))
+            try settingsStore.reconcile(validBookIDs: validBookIDs, validCharacterIDs: validCharacterIDs)
+        } catch {
+            throw StartupStageError(stage: "V5 勢力跨資料庫連結修復失敗", underlying: error)
+        }
         return (container, settingsStore, copyStore, abilityStore, planningStore)
     }
 
