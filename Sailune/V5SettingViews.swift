@@ -780,10 +780,14 @@ struct WorldTermDetailView: View {
     @State private var showingDeleteConfirmation = false
     @State private var saveErrorMessage: String?
     @State private var showingGovernmentPresets = false
+    @State private var showingBeliefPresets = false
+    @State private var showingTechnologyPresets = false
     @FocusState private var isNameFocused: Bool
 
     var body: some View {
         let appliedPreset = GovernmentPreset.matching(term)
+        let appliedBeliefPreset = BeliefPreset.matching(term)
+        let appliedTechnologyPreset = TechnologyPreset.matching(term)
         let guidance = WorldTermContentGuidance.forCategory(term.termCategory)
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -801,6 +805,10 @@ struct WorldTermDetailView: View {
 
             if let appliedPreset {
                 GovernmentPresetDetailView(preset: appliedPreset)
+            } else if let appliedBeliefPreset {
+                BeliefPresetDetailView(preset: appliedBeliefPreset)
+            } else if let appliedTechnologyPreset {
+                TechnologyPresetDetailView(preset: appliedTechnologyPreset)
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
@@ -824,6 +832,18 @@ struct WorldTermDetailView: View {
                     if term.termCategory == WorldTermCategory.institution.rawValue {
                         Button("選擇並套用政體", systemImage: "building.columns") {
                             showingGovernmentPresets = true
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    if term.termCategory == WorldTermCategory.belief.rawValue {
+                        Button("選擇並套用信仰", systemImage: "hands.sparkles") {
+                            showingBeliefPresets = true
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    if term.termCategory == WorldTermCategory.technology.rawValue {
+                        Button("選擇並套用技術階段", systemImage: "gearshape.2") {
+                            showingTechnologyPresets = true
                         }
                         .buttonStyle(.borderedProminent)
                     }
@@ -866,6 +886,24 @@ struct WorldTermDetailView: View {
         }
         .popover(isPresented: $showingGovernmentPresets, arrowEdge: .trailing) {
             GovernmentPresetCatalogView(allowsSelection: true) { preset in
+                guard let preset else { return }
+                preset.apply(to: term)
+                if !settingsStore.saveAndReport() {
+                    saveErrorMessage = settingsStore.persistenceErrorMessage ?? "請稍後再試。"
+                }
+            }
+        }
+        .popover(isPresented: $showingBeliefPresets, arrowEdge: .trailing) {
+            BeliefPresetCatalogView(allowsSelection: true) { preset in
+                guard let preset else { return }
+                preset.apply(to: term)
+                if !settingsStore.saveAndReport() {
+                    saveErrorMessage = settingsStore.persistenceErrorMessage ?? "請稍後再試。"
+                }
+            }
+        }
+        .popover(isPresented: $showingTechnologyPresets, arrowEdge: .trailing) {
+            TechnologyPresetCatalogView(allowsSelection: true) { preset in
                 guard let preset else { return }
                 preset.apply(to: term)
                 if !settingsStore.saveAndReport() {

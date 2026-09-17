@@ -6,9 +6,9 @@
 
 - `SailuneTests/ItemV3Tests.swift`：39 個 XCTest，涵蓋編輯器橋接、右鍵選單、主 store、世界時間軸、標籤、物品副本、跨 store 刪除與投影。
 - `SailuneTests/V42OutlineTests.swift`：51 個 XCTest，涵蓋故事規劃 schema V1–V7、錨點、Undo／Redo 快照、故事背景、故事線／階段／安置、敘事／時間序投影、事件與來源 metadata 及修復。
-- `SailuneTests/V5SettingsTests.swift`：27 個 XCTest，另涵蓋八套政體固定案例的完整性、穩定 UUID、選擇保存／清除及參照修復保留。
-- 原始碼合計：117 個 XCTest 方法。
-- 最近執行：2026-09-17，V5 settings 專項 27 項及完整 117 項 XCTest 通過，包含八套政體目錄、選擇保存與修復保留；無簽章 Debug 測試建置成功。
+- `SailuneTests/V5SettingsTests.swift`：32 個 XCTest，涵蓋八套政體、九套信仰及十四套技術階段（九套現實、五套虛構）固定案例的完整性、穩定 UUID、選擇保存／清除及勢力參照修復保留；信仰測試另驗證科學的「不適用」段落，技術測試驗證普通技術條目仍可編輯。
+- 原始碼合計：122 個 XCTest 方法。
+- 最近執行：2026-09-17，V5 settings 專項 32 項及完整 122 項 XCTest 通過，包含政體、信仰與現實／虛構技術階段目錄、選擇保存、唯讀辨識、勢力連接與修復保留；無簽章 Debug 測試建置成功。
 - 前次文件化基線：2026-09-14，V5 settings 專項 16 項及完整 106 項均通過；無簽章 Release 建置成功。
 
 ## 每次修改至少驗證

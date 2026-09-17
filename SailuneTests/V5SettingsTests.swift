@@ -4,6 +4,114 @@ import SwiftData
 
 @MainActor
 final class V5SettingsTests: XCTestCase {
+    func testTechnologyPresetCatalogHasFourteenFixedCompleteCases() throws {
+        XCTAssertEqual(
+            TechnologyPreset.realWorld.map(\.title),
+            ["狩獵採集時代", "農業新石器時代", "青銅時代", "鐵器時代", "前工業時代", "工業時代", "電氣化與大量生產時代", "資訊與網路時代", "智慧科技時代"]
+        )
+        XCTAssertEqual(
+            TechnologyPreset.fictional.map(\.title),
+            ["蒸汽朋克", "鋼鐵朋克", "廢土", "太空時代", "修仙"]
+        )
+        XCTAssertEqual(TechnologyPreset.all.count, 14)
+        XCTAssertEqual(Set(TechnologyPreset.all.map(\.id)).count, 14)
+
+        for preset in TechnologyPreset.all {
+            XCTAssertFalse(preset.referenceCase.isEmpty)
+            XCTAssertFalse(preset.referencePeriod.isEmpty)
+            XCTAssertFalse(preset.summary.isEmpty)
+            XCTAssertEqual(preset.sections.count, 12)
+            XCTAssertEqual(Set(preset.sections.map(\.title)).count, 12)
+            XCTAssertTrue(preset.sections.allSatisfy { !$0.content.isEmpty })
+            XCTAssertEqual(TechnologyPreset.preset(id: preset.id), preset)
+        }
+    }
+
+    func testRealWorldTechnologyPresetAppliesAndIsRecognizedAsTechnology() throws {
+        let term = WorldTerm(bookID: UUID(), name: "新條目")
+        TechnologyPreset.intelligentTechnology.apply(to: term)
+
+        XCTAssertEqual(TechnologyPreset.matching(term), .intelligentTechnology)
+        XCTAssertEqual(term.termCategory, WorldTermCategory.technology.rawValue)
+        XCTAssertEqual(term.alternateNames, "21 世紀人工智慧與生物科技社會")
+        XCTAssertTrue(try XCTUnwrap(term.detailedDescription).contains("【世界前提與技術階段】"))
+        XCTAssertTrue(try XCTUnwrap(term.worldImpact).contains("【故事衝突與世界影響】"))
+    }
+
+    func testTechnologyPresetAppliesToWorldTermAndKeepsOrdinaryTechnologyEditable() throws {
+        let container = try makeMainContainer()
+        let store = V5SettingsStore(container: container)
+        let bookID = UUID()
+        let presetTerm = WorldTerm(bookID: bookID, name: "新條目")
+        let ordinaryTerm = WorldTerm(bookID: bookID, name: "自訂技術")
+        ordinaryTerm.termCategory = WorldTermCategory.technology.rawValue
+        ordinaryTerm.termDescription = "作者自己的技術"
+        container.mainContext.insert(presetTerm)
+        container.mainContext.insert(ordinaryTerm)
+        try container.mainContext.save()
+
+        TechnologyPreset.spaceAge.apply(to: presetTerm)
+        try container.mainContext.save()
+        XCTAssertEqual(TechnologyPreset.matching(presetTerm), .spaceAge)
+        XCTAssertNil(GovernmentPreset.matching(presetTerm))
+        XCTAssertNil(BeliefPreset.matching(presetTerm))
+        XCTAssertEqual(presetTerm.termCategory, WorldTermCategory.technology.rawValue)
+        XCTAssertTrue(try XCTUnwrap(presetTerm.detailedDescription).contains("【世界前提與技術階段】"))
+
+        XCTAssertNil(TechnologyPreset.matching(ordinaryTerm))
+        ordinaryTerm.termDescription = "更新後的自訂技術"
+        try store.saveAndReport()
+        XCTAssertEqual(ordinaryTerm.termDescription, "更新後的自訂技術")
+    }
+    func testBeliefPresetCatalogHasNineFixedCompleteCases() throws {
+        XCTAssertEqual(
+            BeliefPreset.all.map(\.title),
+            ["基督教", "猶太教", "伊斯蘭教", "道教", "佛教", "祆教", "科學", "高控制團體", "末世型新興宗教運動"]
+        )
+        XCTAssertEqual(Set(BeliefPreset.all.map(\.id)).count, 9)
+
+        for preset in BeliefPreset.all {
+            XCTAssertFalse(preset.referenceCase.isEmpty)
+            XCTAssertFalse(preset.referencePeriod.isEmpty)
+            XCTAssertFalse(preset.summary.isEmpty)
+            XCTAssertEqual(preset.sections.count, 12)
+            XCTAssertEqual(Set(preset.sections.map(\.title)).count, 12)
+            XCTAssertTrue(preset.sections.allSatisfy { !$0.content.isEmpty })
+            XCTAssertEqual(BeliefPreset.preset(id: preset.id), preset)
+        }
+
+        let science = try XCTUnwrap(BeliefPreset.all.first { $0 == .science })
+        XCTAssertTrue(science.sections.contains { $0.title == "神聖對象或終極實在" && $0.content.contains("不適用") })
+        XCTAssertTrue(science.sections.contains { $0.title == "儀式與實踐" && $0.content.contains("不適用") })
+        XCTAssertTrue(science.sections.contains { $0.title == "節期與空間" && $0.content.contains("不適用") })
+    }
+
+    func testBeliefPresetAppliesToWorldTermAndCanBeLinkedFromPower() throws {
+        let container = try makeMainContainer()
+        let store = V5SettingsStore(container: container)
+        let bookID = UUID()
+        let power = PowerUnit(bookID: bookID, name: "教團")
+        let term = WorldTerm(bookID: bookID, name: "新條目")
+        container.mainContext.insert(power)
+        container.mainContext.insert(term)
+        try container.mainContext.save()
+
+        BeliefPreset.taoism.apply(to: term)
+        try container.mainContext.save()
+        XCTAssertEqual(BeliefPreset.matching(term), .taoism)
+        XCTAssertEqual(GovernmentPreset.matching(term), nil)
+        XCTAssertEqual(term.termCategory, WorldTermCategory.belief.rawValue)
+        XCTAssertTrue(try XCTUnwrap(term.detailedDescription).contains("【起源／核心信念】"))
+
+        try store.setWorldTerm(term, for: .religion, on: power, bookID: bookID)
+        XCTAssertEqual(power.religionWorldTermID, term.id)
+        try store.reconcile(validBookIDs: [bookID], validCharacterIDs: [])
+        XCTAssertEqual(power.religionWorldTermID, term.id)
+
+        store.deleteWorldTerm(term, bookID: bookID)
+        XCTAssertNil(power.religionWorldTermID)
+    }
+
     func testGovernmentPresetCatalogHasEightFixedCompleteCases() throws {
         XCTAssertEqual(
             GovernmentPreset.all.map(\.title),
