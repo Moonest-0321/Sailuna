@@ -782,12 +782,14 @@ struct WorldTermDetailView: View {
     @State private var showingGovernmentPresets = false
     @State private var showingBeliefPresets = false
     @State private var showingTechnologyPresets = false
+    @State private var showingResourcePresets = false
     @FocusState private var isNameFocused: Bool
 
     var body: some View {
         let appliedPreset = GovernmentPreset.matching(term)
         let appliedBeliefPreset = BeliefPreset.matching(term)
         let appliedTechnologyPreset = TechnologyPreset.matching(term)
+        let appliedResourcePreset = ResourcePreset.matching(term)
         let guidance = WorldTermContentGuidance.forCategory(term.termCategory)
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -809,6 +811,8 @@ struct WorldTermDetailView: View {
                 BeliefPresetDetailView(preset: appliedBeliefPreset)
             } else if let appliedTechnologyPreset {
                 TechnologyPresetDetailView(preset: appliedTechnologyPreset)
+            } else if let appliedResourcePreset {
+                ResourcePresetDetailView(preset: appliedResourcePreset)
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
@@ -844,6 +848,12 @@ struct WorldTermDetailView: View {
                     if term.termCategory == WorldTermCategory.technology.rawValue {
                         Button("選擇並套用技術階段", systemImage: "gearshape.2") {
                             showingTechnologyPresets = true
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    if term.termCategory == WorldTermCategory.resource.rawValue {
+                        Button("選擇並套用資源", systemImage: "shippingbox") {
+                            showingResourcePresets = true
                         }
                         .buttonStyle(.borderedProminent)
                     }
@@ -904,6 +914,15 @@ struct WorldTermDetailView: View {
         }
         .popover(isPresented: $showingTechnologyPresets, arrowEdge: .trailing) {
             TechnologyPresetCatalogView(allowsSelection: true) { preset in
+                guard let preset else { return }
+                preset.apply(to: term)
+                if !settingsStore.saveAndReport() {
+                    saveErrorMessage = settingsStore.persistenceErrorMessage ?? "請稍後再試。"
+                }
+            }
+        }
+        .popover(isPresented: $showingResourcePresets, arrowEdge: .trailing) {
+            ResourcePresetCatalogView(allowsSelection: true) { preset in
                 guard let preset else { return }
                 preset.apply(to: term)
                 if !settingsStore.saveAndReport() {

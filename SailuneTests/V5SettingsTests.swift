@@ -63,6 +63,54 @@ final class V5SettingsTests: XCTestCase {
         try store.saveAndReport()
         XCTAssertEqual(ordinaryTerm.termDescription, "更新後的自訂技術")
     }
+
+    func testResourcePresetCatalogHasThirtyNineFixedCompleteCases() throws {
+        XCTAssertEqual(ResourcePreset.all.count, 39)
+        XCTAssertEqual(ResourcePreset.metal.count, 8)
+        XCTAssertEqual(ResourcePreset.nonMetal.count, 8)
+        XCTAssertEqual(ResourcePreset.agriculture.count, 10)
+        XCTAssertEqual(ResourcePreset.population.count, 4)
+        XCTAssertEqual(ResourcePreset.synthetic.count, 9)
+        XCTAssertEqual(Set(ResourcePreset.all.map(\.id)).count, 39)
+
+        for preset in ResourcePreset.all {
+            XCTAssertFalse(preset.title.isEmpty)
+            XCTAssertFalse(preset.referenceCase.isEmpty)
+            XCTAssertFalse(preset.referencePeriod.isEmpty)
+            XCTAssertFalse(preset.summary.isEmpty)
+            XCTAssertEqual(preset.sections.count, 12)
+            XCTAssertEqual(Set(preset.sections.map(\.title)).count, 12)
+            XCTAssertTrue(preset.sections.allSatisfy { !$0.content.isEmpty })
+            XCTAssertEqual(ResourcePreset.preset(id: preset.id), preset)
+        }
+    }
+
+    func testResourcePresetAppliesAndKeepsOrdinaryResourceEditable() throws {
+        let container = try makeMainContainer()
+        let store = V5SettingsStore(container: container)
+        let bookID = UUID()
+        let presetTerm = WorldTerm(bookID: bookID, name: "新資源")
+        let ordinaryTerm = WorldTerm(bookID: bookID, name: "自訂資源")
+        ordinaryTerm.termCategory = WorldTermCategory.resource.rawValue
+        ordinaryTerm.termDescription = "作者自己的資源"
+        container.mainContext.insert(presetTerm)
+        container.mainContext.insert(ordinaryTerm)
+        try container.mainContext.save()
+
+        let copper = try XCTUnwrap(ResourcePreset.metal.first { $0.title == "銅礦" })
+        copper.apply(to: presetTerm)
+        try container.mainContext.save()
+        XCTAssertEqual(ResourcePreset.matching(presetTerm), copper)
+        XCTAssertEqual(presetTerm.termCategory, WorldTermCategory.resource.rawValue)
+        XCTAssertEqual(presetTerm.alternateNames, "現代全球礦業與冶金供應鏈")
+        XCTAssertTrue(try XCTUnwrap(presetTerm.detailedDescription).contains("【資源定義與分類】"))
+
+        XCTAssertNil(ResourcePreset.matching(ordinaryTerm))
+        ordinaryTerm.termDescription = "更新後的自訂資源"
+        try store.saveAndReport()
+        XCTAssertEqual(ordinaryTerm.termDescription, "更新後的自訂資源")
+    }
+
     func testBeliefPresetCatalogHasNineFixedCompleteCases() throws {
         XCTAssertEqual(
             BeliefPreset.all.map(\.title),
