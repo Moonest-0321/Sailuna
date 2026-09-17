@@ -330,6 +330,8 @@ struct PowerDetailView: View {
                     ForEach(PowerWorldTermField.allCases) { field in
                         worldTermPicker(field)
                     }
+                    territoryLinkPlaceholder(title: "核心區域")
+                    territoryLinkPlaceholder(title: "範圍")
                     Text("目的").font(.caption).foregroundStyle(.secondary)
                     TextEditor(text: $power.purpose)
                         .frame(minHeight: 72)
@@ -482,16 +484,29 @@ struct PowerDetailView: View {
     private func worldTermPicker(_ field: PowerWorldTermField) -> some View {
         let selectedID = settingsStore.worldTermID(for: field, on: power)
         let selectedName = worldTerms.first(where: { $0.id == selectedID })?.name
+        let candidates = worldTerms.filter {
+            $0.id == selectedID || $0.termCategory == field.matchingCategory.rawValue
+        }
         return HStack {
             Text(field.title).frame(width: 48, alignment: .leading)
             Menu(selectedName?.isEmpty == false ? selectedName! : "選擇世界條目") {
                 Button("不連結") { setWorldTerm(nil, field: field) }
                 Divider()
-                ForEach(worldTerms) { term in
+                ForEach(candidates) { term in
                     Button(term.name.isEmpty ? "未命名條目" : term.name) { setWorldTerm(term, field: field) }
                 }
             }
-            .disabled(worldTerms.isEmpty && selectedID == nil)
+            .disabled(candidates.isEmpty && selectedID == nil)
+        }
+    }
+
+    private func territoryLinkPlaceholder(title: String) -> some View {
+        HStack {
+            Text(title).frame(width: 48, alignment: .leading)
+            Text("之後連接地點／地圖")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
         }
     }
 
@@ -783,6 +798,7 @@ struct WorldTermDetailView: View {
     @State private var showingBeliefPresets = false
     @State private var showingTechnologyPresets = false
     @State private var showingResourcePresets = false
+    @State private var showingPeoplePresets = false
     @FocusState private var isNameFocused: Bool
 
     var body: some View {
@@ -790,6 +806,7 @@ struct WorldTermDetailView: View {
         let appliedBeliefPreset = BeliefPreset.matching(term)
         let appliedTechnologyPreset = TechnologyPreset.matching(term)
         let appliedResourcePreset = ResourcePreset.matching(term)
+        let appliedPeoplePreset = PeoplePreset.matching(term)
         let guidance = WorldTermContentGuidance.forCategory(term.termCategory)
         VStack(alignment: .leading, spacing: 12) {
             HStack {
@@ -813,6 +830,8 @@ struct WorldTermDetailView: View {
                 TechnologyPresetDetailView(preset: appliedTechnologyPreset)
             } else if let appliedResourcePreset {
                 ResourcePresetDetailView(preset: appliedResourcePreset)
+            } else if let appliedPeoplePreset {
+                PeoplePresetDetailView(preset: appliedPeoplePreset)
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 14) {
@@ -854,6 +873,12 @@ struct WorldTermDetailView: View {
                     if term.termCategory == WorldTermCategory.resource.rawValue {
                         Button("選擇並套用資源", systemImage: "shippingbox") {
                             showingResourcePresets = true
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                    if term.termCategory == WorldTermCategory.people.rawValue {
+                        Button("選擇並套用族群／種族", systemImage: "person.3") {
+                            showingPeoplePresets = true
                         }
                         .buttonStyle(.borderedProminent)
                     }
@@ -923,6 +948,15 @@ struct WorldTermDetailView: View {
         }
         .popover(isPresented: $showingResourcePresets, arrowEdge: .trailing) {
             ResourcePresetCatalogView(allowsSelection: true) { preset in
+                guard let preset else { return }
+                preset.apply(to: term)
+                if !settingsStore.saveAndReport() {
+                    saveErrorMessage = settingsStore.persistenceErrorMessage ?? "請稍後再試。"
+                }
+            }
+        }
+        .popover(isPresented: $showingPeoplePresets, arrowEdge: .trailing) {
+            PeoplePresetCatalogView(allowsSelection: true) { preset in
                 guard let preset else { return }
                 preset.apply(to: term)
                 if !settingsStore.saveAndReport() {

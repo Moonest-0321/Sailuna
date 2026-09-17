@@ -111,6 +111,54 @@ final class V5SettingsTests: XCTestCase {
         XCTAssertEqual(ordinaryTerm.termDescription, "更新後的自訂資源")
     }
 
+    func testPeoplePresetCatalogHasEighteenFixedCompleteCases() throws {
+        XCTAssertEqual(PeoplePreset.realWorld.count, 12)
+        XCTAssertEqual(PeoplePreset.fictional.count, 6)
+        XCTAssertEqual(PeoplePreset.all.count, 18)
+        XCTAssertEqual(Set(PeoplePreset.all.map(\.id)).count, 18)
+
+        for preset in PeoplePreset.all {
+            XCTAssertFalse(preset.title.isEmpty)
+            XCTAssertFalse(preset.referenceCase.isEmpty)
+            XCTAssertFalse(preset.referencePeriod.isEmpty)
+            XCTAssertFalse(preset.summary.isEmpty)
+            XCTAssertEqual(preset.sections.count, 12)
+            XCTAssertEqual(Set(preset.sections.map(\.title)).count, 12)
+            XCTAssertTrue(preset.sections.allSatisfy { !$0.content.isEmpty })
+            XCTAssertEqual(PeoplePreset.preset(id: preset.id), preset)
+        }
+
+        XCTAssertEqual(PeoplePreset.all.filter { $0.group == .realWorld }.count, 12)
+        XCTAssertEqual(PeoplePreset.all.filter { $0.group == .fictional }.count, 6)
+    }
+
+    func testPeoplePresetAppliesAndKeepsOrdinaryPeopleEditable() throws {
+        let container = try makeMainContainer()
+        let store = V5SettingsStore(container: container)
+        let bookID = UUID()
+        let presetTerm = WorldTerm(bookID: bookID, name: "新條目")
+        let ordinaryTerm = WorldTerm(bookID: bookID, name: "自訂族群")
+        ordinaryTerm.termCategory = WorldTermCategory.people.rawValue
+        ordinaryTerm.termDescription = "作者自己的族群設定"
+        container.mainContext.insert(presetTerm)
+        container.mainContext.insert(ordinaryTerm)
+        try container.mainContext.save()
+
+        let han = PeoplePreset.han
+        han.apply(to: presetTerm)
+        try container.mainContext.save()
+        XCTAssertEqual(PeoplePreset.matching(presetTerm), han)
+        XCTAssertEqual(presetTerm.termCategory, WorldTermCategory.people.rawValue)
+        XCTAssertEqual(presetTerm.alternateNames, "東亞漢文化圈的歷史社會")
+        XCTAssertTrue(try XCTUnwrap(presetTerm.detailedDescription).contains("【族群／種族定位與起源】"))
+        XCTAssertTrue(try XCTUnwrap(presetTerm.worldImpact).contains("【與其他族群的關係面向】"))
+
+        XCTAssertNil(PeoplePreset.matching(ordinaryTerm))
+        ordinaryTerm.termDescription = "更新後的自訂族群"
+        try store.saveAndReport()
+        XCTAssertEqual(ordinaryTerm.termDescription, "更新後的自訂族群")
+    }
+
     func testBeliefPresetCatalogHasNineFixedCompleteCases() throws {
         XCTAssertEqual(
             BeliefPreset.all.map(\.title),
@@ -207,12 +255,13 @@ final class V5SettingsTests: XCTestCase {
     func testWorldTermCategoryProvidesFiniteChoices() {
         XCTAssertEqual(
             WorldTermCategory.allCases.map(\.rawValue),
-            ["制度", "信仰", "技術", "資源", "語言", "文化習俗", "專有名詞"]
+            ["制度", "信仰", "技術", "資源", "族群／種族", "文化習俗", "專有名詞"]
         )
     }
 
     func testLegacyWorldTermCategoryIsNotGuessed() {
         XCTAssertNil(WorldTermCategory(rawValue: "曆法"))
+        XCTAssertNil(WorldTermCategory(rawValue: "語言"))
     }
 
     func testWorldTermGuidanceTreatsInstitutionAsAWorldSystem() {
@@ -224,10 +273,18 @@ final class V5SettingsTests: XCTestCase {
         XCTAssertTrue(guidance.worldImpact.contains("政治"))
     }
 
+    func testWorldTermGuidanceTreatsPeopleAsAContextualWorldSystem() {
+        let guidance = WorldTermContentGuidance.forCategory(WorldTermCategory.people.rawValue)
+
+        XCTAssertTrue(guidance.coreDefinition.contains("族群／種族"))
+        XCTAssertTrue(guidance.limitationsAndExceptions.contains("生物本質"))
+    }
+
     func testWorldTermGuidanceFallsBackForLegacyOrUnclassifiedCategory() {
         let unclassified = WorldTermContentGuidance.forCategory(nil)
 
         XCTAssertEqual(WorldTermContentGuidance.forCategory("曆法"), unclassified)
+        XCTAssertEqual(WorldTermContentGuidance.forCategory("語言"), unclassified)
         XCTAssertFalse(unclassified.coreDefinition.isEmpty)
         XCTAssertFalse(unclassified.operationAndExpression.isEmpty)
         XCTAssertFalse(unclassified.limitationsAndExceptions.isEmpty)
@@ -948,6 +1005,7 @@ final class V5SettingsTests: XCTestCase {
         let bookID = UUID()
         let power = PowerUnit(bookID: bookID, name: "王國")
         let term = WorldTerm(bookID: bookID, name: "議會制")
+        term.termCategory = WorldTermCategory.institution.rawValue
         container.mainContext.insert(power)
         container.mainContext.insert(term)
         try container.mainContext.save()
@@ -959,6 +1017,29 @@ final class V5SettingsTests: XCTestCase {
         store.deleteWorldTerm(term, bookID: bookID)
         XCTAssertNil(power.governmentWorldTermID)
         XCTAssertTrue(try container.mainContext.fetch(FetchDescriptor<WorldTerm>()).isEmpty)
+    }
+
+    func testPowerWorldTermLinksRequireMatchingCategories() throws {
+        let container = try makeMainContainer()
+        let store = V5SettingsStore(container: container)
+        let bookID = UUID()
+        let power = PowerUnit(bookID: bookID, name: "王國")
+        let beliefTerm = WorldTerm(bookID: bookID, name: "國教")
+        beliefTerm.termCategory = WorldTermCategory.belief.rawValue
+        let institutionTerm = WorldTerm(bookID: bookID, name: "議會制")
+        institutionTerm.termCategory = WorldTermCategory.institution.rawValue
+        container.mainContext.insert(power)
+        container.mainContext.insert(beliefTerm)
+        container.mainContext.insert(institutionTerm)
+        try container.mainContext.save()
+
+        try store.setWorldTerm(beliefTerm, for: .religion, on: power, bookID: bookID)
+        try store.setWorldTerm(institutionTerm, for: .government, on: power, bookID: bookID)
+        XCTAssertEqual(power.religionWorldTermID, beliefTerm.id)
+        XCTAssertEqual(power.governmentWorldTermID, institutionTerm.id)
+        XCTAssertThrowsError(try store.setWorldTerm(institutionTerm, for: .religion, on: power, bookID: bookID))
+        XCTAssertThrowsError(try store.setWorldTerm(beliefTerm, for: .government, on: power, bookID: bookID))
+        XCTAssertEqual(PowerWorldTermField.allCases.map(\.title), ["宗教", "政體"])
     }
 
     func testPowerMemberIsUniqueWithinPowerAndRemovedWithPower() throws {

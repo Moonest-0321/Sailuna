@@ -53,16 +53,16 @@ enum SidebarSettingKey: String, CaseIterable, Codable, Hashable, Identifiable {
     static var optionalKeys: [SidebarSettingKey] { [.place] }
 }
 
-/// V5.1 limits new world terms to concepts that do not already have a
+/// New world terms use a finite set of concepts that do not already have a
 /// dedicated setting model. The persisted value remains a String so older V4
-/// entries with a free-text category are preserved until the author replaces
-/// them with one of these categories.
+/// entries with a free-text category (including the retired language category)
+/// are preserved until the author replaces them with one of these categories.
 enum WorldTermCategory: String, CaseIterable, Codable, Hashable, Identifiable {
     case institution = "制度"
     case belief = "信仰"
     case technology = "技術"
     case resource = "資源"
-    case language = "語言"
+    case people = "族群／種族"
     case cultureAndCustoms = "文化習俗"
     case properNoun = "專有名詞"
 
@@ -113,12 +113,12 @@ struct WorldTermContentGuidance: Equatable {
                 limitationsAndExceptions: "記錄稀有程度、耗損、替代品、危險與取得限制。",
                 worldImpact: "記錄誰控制或爭奪資源，以及它對地區、勢力與生活的影響。"
             )
-        case .language:
+        case .people:
             return Self(
-                coreDefinition: "說明語言、文字或詞彙的語意、用途與使用群體。",
-                operationAndExpression: "記錄發音、書寫、語境、稱呼或實際使用方式。",
-                limitationsAndExceptions: "記錄方言、歧義、禁語、翻譯落差或群體差異。",
-                worldImpact: "記錄它如何影響身分認同、溝通、權力與文化理解。"
+                coreDefinition: "說明族群／種族的起源、身份與可變範圍；現實群體以歷史與文化形成描述。",
+                operationAndExpression: "記錄成員形成、社會組織、文化實踐、棲地與日常生活。",
+                limitationsAndExceptions: "記錄內部差異、能力限制、地域變體與不適用情況，不作生物本質判定。",
+                worldImpact: "記錄族群如何影響身份、資源、制度、跨群體關係與作者可自行發展的情節面向。"
             )
         case .cultureAndCustoms:
             return Self(
@@ -873,6 +873,7 @@ final class PowerUnit {
     var levelID: UUID?
     var religionWorldTermID: UUID?
     var governmentWorldTermID: UUID?
+    /// Legacy V5.2 WorldTerm slots retained until core／scope use place or map links.
     var powerWorldTermID: UUID?
     var scopeWorldTermID: UUID?
     var purpose: String = ""
@@ -1602,25 +1603,32 @@ enum PowerHierarchyError: LocalizedError {
 }
 
 enum PowerWorldTermField: CaseIterable, Equatable, Identifiable {
-    case religion, government, power, scope
+    case religion, government
     var id: Self { self }
     var title: String {
         switch self {
         case .religion: "宗教"
         case .government: "政體"
-        case .power: "權力"
-        case .scope: "範圍"
+        }
+    }
+
+    var matchingCategory: WorldTermCategory {
+        switch self {
+        case .religion: .belief
+        case .government: .institution
         }
     }
 }
 
 enum PowerDetailError: LocalizedError {
     case invalidBook
+    case invalidWorldTermCategory(expected: WorldTermCategory)
     case duplicateMember
 
     var errorDescription: String? {
         switch self {
         case .invalidBook: "連結的資料必須屬於同一本書。"
+        case .invalidWorldTermCategory(let expected): "此欄位只能連接「\(expected.rawValue)」條目。"
         case .duplicateMember: "這個角色已經是此勢力的成員。"
         }
     }
@@ -1729,18 +1737,17 @@ final class V5SettingsStore {
         switch field {
         case .religion: power.religionWorldTermID
         case .government: power.governmentWorldTermID
-        case .power: power.powerWorldTermID
-        case .scope: power.scopeWorldTermID
         }
     }
 
     func setWorldTerm(_ term: WorldTerm?, for field: PowerWorldTermField, on power: PowerUnit, bookID: UUID) throws {
         guard power.bookID == bookID, term == nil || term?.bookID == bookID else { throw PowerDetailError.invalidBook }
+        if let term, term.termCategory != field.matchingCategory.rawValue {
+            throw PowerDetailError.invalidWorldTermCategory(expected: field.matchingCategory)
+        }
         switch field {
         case .religion: power.religionWorldTermID = term?.id
         case .government: power.governmentWorldTermID = term?.id
-        case .power: power.powerWorldTermID = term?.id
-        case .scope: power.scopeWorldTermID = term?.id
         }
         power.updatedAt = Date()
         try context.save()

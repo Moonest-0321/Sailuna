@@ -62,6 +62,6 @@ V4.4.8 在主 container 與 StoryPlanning store 都成功開啟後，會以現�
 - Settings V3→V4 新增地點的其他名稱、類型、詳細描述與備註，以及世界條目的其他名稱、分類、詳細說明、使用範例與備註；既有 Place／WorldTerm UUID、名稱、簡介與排序保留。新增 persisted 欄位可為空值，編輯器以空字串呈現尚未設定，避免破壞既有 V3 store。
 - Settings V4→V5 新增勢力的世界條目 UUID 連接、目的與 `PowerMember`；既有自由文字不猜測轉換。Settings V5→V6 只為 `BookSidebarSetting` 新增目錄版本，讓既有書籍顯示世界條目一次，並保留作者之後的隱藏選擇；不修改任何 WorldTerm 內容。
 - Settings V6→V7 為 WorldTerm 新增運作與表現、限制／差異／例外及世界影響三個可空欄位；既有 `detailedDescription` 不改名、不拆分，完整成為 UI 的核心定義。檔案型測試確認既有 UUID、書籍、分類、簡介、詳細說明、範例、備註、排序與 sidebar 目錄版本皆保留。
-- 世界條目有限分類不另升級 schema；`termCategory` 仍以可空字串保存。既有 V4 自由文字分類不被猜測或刪除，編輯器以「既有分類」保留，作者選擇制度、信仰、技術、資源、語言、文化習俗或專有名詞後才替換。
+- 世界條目有限分類不另升級 schema；`termCategory` 仍以可空字串保存。既有 V4 自由文字分類（包括退役的「語言」）不被猜測或刪除，編輯器以「既有分類」保留，作者選擇制度、信仰、技術、資源、族群／種族、文化習俗或專有名詞後才替換。族群／種族預設只保存既有 WorldTerm 文字欄位，不新增遷移步驟。
 - V6→V7 只新增空的 `PlanningRecordMetadata` entity。既有時間序若有節次但沒有歸屬，執行期列入「未分類時間序」；作者儲存定位後才建立 metadata。來源刪除後，工作區開啟時會冪等清理孤立 metadata。
 - 新建／綁定採先保存主 Event、再保存 metadata；後者失敗時保留 Event 並允許重試。刪 Event 後若 metadata 清理失敗，孤立記錄不顯示，下一次時間軸載入時冪等清理。
