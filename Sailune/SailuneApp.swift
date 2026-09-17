@@ -126,7 +126,7 @@ struct SailuneApp: App {
         }
         let settingsStore: V5SettingsStore
         do {
-            let schema = Schema(versionedSchema: V5SettingsSchemaV5.self)
+            let schema = Schema(versionedSchema: V5SettingsSchemaV7.self)
             let settingsContainer = try ModelContainer(
                 for: schema,
                 migrationPlan: V5SettingsMigrationPlan.self,

@@ -42,7 +42,7 @@ struct SidebarSettingsManagerView: View {
             HStack {
                 Button("重設預設顯示", action: reset)
                 Spacer()
-                Text("可選項目：地點、世界條目")
+                Text("可選項目：地點")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -68,8 +68,11 @@ struct SidebarSettingsManagerView: View {
     }
 
     private func reset() {
-        for (index, row) in rows.enumerated() {
-            row.sortOrder = index
+        for row in rows {
+            if let key = row.key,
+               let index = SidebarSettingKey.defaultOrder.firstIndex(of: key) {
+                row.sortOrder = index
+            }
             row.isVisible = row.key?.isDefaultVisible ?? false
         }
         settingsStore.save()
@@ -623,6 +626,7 @@ struct WorldTermListView: View {
     @State private var searchText = ""
     @State private var categoryFilter: String?
     @State private var editingTerm: WorldTerm?
+    @State private var newlyCreatedTermID: UUID?
 
     private var terms: [WorldTerm] { settingsStore.worldTerms(for: book.id).sorted { $0.sortOrder < $1.sortOrder } }
     private var filteredTerms: [WorldTerm] {
@@ -635,7 +639,10 @@ struct WorldTermListView: View {
     var body: some View {
         List {
             ForEach(filteredTerms) { term in
-                Button { editingTerm = term } label: {
+                Button {
+                    newlyCreatedTermID = nil
+                    editingTerm = term
+                } label: {
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
                             Text(term.name.isEmpty ? "未命名條目" : term.name)
@@ -659,33 +666,43 @@ struct WorldTermListView: View {
             }
         }
         .safeAreaInset(edge: .top, spacing: 0) {
-            Picker("分類篩選", selection: $categoryFilter) {
-                Text("全部分類").tag(String?.none)
-                ForEach(WorldTermCategory.allCases) { category in
-                    Text(category.rawValue).tag(String?.some(category.rawValue))
+            HStack(spacing: 10) {
+                Picker("分類篩選", selection: $categoryFilter) {
+                    Text("全部分類").tag(String?.none)
+                    ForEach(WorldTermCategory.allCases) { category in
+                        Text(category.rawValue).tag(String?.some(category.rawValue))
+                    }
+                }
+                .pickerStyle(.menu)
+
+                Spacer()
+
+                Button {
+                    let term = settingsStore.createWorldTerm(bookID: book.id)
+                    newlyCreatedTermID = term.id
+                    editingTerm = term
+                } label: {
+                    Label("新增條目", systemImage: "plus")
                 }
             }
-            .pickerStyle(.menu)
-            .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background(.bar)
         }
         .overlay {
             if terms.isEmpty {
-                ContentUnavailableView("尚無世界條目", systemImage: "book.closed", description: Text("使用右上角新增第一個世界條目。"))
+                ContentUnavailableView("尚無世界條目", systemImage: "book.closed", description: Text("使用上方的「新增條目」建立第一筆世界設定。"))
             } else if filteredTerms.isEmpty {
                 ContentUnavailableView("找不到世界條目", systemImage: "magnifyingglass", description: Text("請嘗試其他搜尋關鍵字或分類。"))
             }
         }
         .searchable(text: $searchText, prompt: "搜尋條目、別名、分類或簡介")
-        .toolbar {
-            Button("新增世界條目", systemImage: "plus") {
-                editingTerm = settingsStore.createWorldTerm(bookID: book.id)
-            }
-        }
-        .sheet(item: $editingTerm) { term in
-            WorldTermDetailView(term: term, book: book)
+        .sheet(item: $editingTerm, onDismiss: { newlyCreatedTermID = nil }) { term in
+            WorldTermDetailView(
+                term: term,
+                book: book,
+                shouldFocusName: term.id == newlyCreatedTermID
+            )
         }
     }
 }
@@ -757,26 +774,39 @@ struct PlaceDetailView: View {
 struct WorldTermDetailView: View {
     @Bindable var term: WorldTerm
     let book: Book
+    let shouldFocusName: Bool
     @Environment(\.dismiss) private var dismiss
     @Environment(V5SettingsStore.self) private var settingsStore
     @State private var showingDeleteConfirmation = false
+    @State private var saveErrorMessage: String?
+    @State private var showingGovernmentPresets = false
+    @FocusState private var isNameFocused: Bool
 
     var body: some View {
+        let appliedPreset = GovernmentPreset.matching(term)
+        let guidance = WorldTermContentGuidance.forCategory(term.termCategory)
         VStack(alignment: .leading, spacing: 12) {
             HStack {
                 Text("編輯世界條目").font(.headline)
                 Spacer()
                 Button("刪除", role: .destructive) { showingDeleteConfirmation = true }
                 Button("完成") {
-                    settingsStore.save()
-                    dismiss()
+                    if settingsStore.saveAndReport() {
+                        dismiss()
+                    } else {
+                        saveErrorMessage = settingsStore.persistenceErrorMessage ?? "請稍後再試。"
+                    }
                 }
             }
 
-            ScrollView {
-                VStack(alignment: .leading, spacing: 14) {
+            if let appliedPreset {
+                GovernmentPresetDetailView(preset: appliedPreset)
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 14) {
                     TextField("條目名稱", text: $term.name)
                         .textFieldStyle(.roundedBorder)
+                        .focused($isNameFocused)
                     TextField("其他名稱（別稱、舊稱、縮寫或翻譯）", text: textBinding(\.alternateNames))
                         .textFieldStyle(.roundedBorder)
                     Picker("分類", selection: categoryBinding) {
@@ -791,6 +821,12 @@ struct WorldTermDetailView: View {
                                 .tag(String?.some(legacyCategory))
                         }
                     }
+                    if term.termCategory == WorldTermCategory.institution.rawValue {
+                        Button("選擇並套用政體", systemImage: "building.columns") {
+                            showingGovernmentPresets = true
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
                     if let legacyCategory = term.termCategory,
                        !legacyCategory.isEmpty,
                        WorldTermCategory(rawValue: legacyCategory) == nil {
@@ -799,15 +835,44 @@ struct WorldTermDetailView: View {
                             .foregroundStyle(.secondary)
                     }
                     settingTextArea(title: "簡介", detail: "列表與快速查找使用的短定義。", text: $term.termDescription)
-                    settingTextArea(title: "詳細說明", detail: "可記錄條目的完整世界觀內容。", text: textBinding(\.detailedDescription), minHeight: 130)
+                    settingTextArea(title: "核心定義", detail: guidance.coreDefinition, text: textBinding(\.detailedDescription), minHeight: 130)
+                    settingTextArea(title: "運作與表現", detail: guidance.operationAndExpression, text: textBinding(\.operationAndExpression), minHeight: 110)
+                    settingTextArea(title: "限制、差異與例外", detail: guidance.limitationsAndExceptions, text: textBinding(\.limitationsAndExceptions), minHeight: 110)
+                    settingTextArea(title: "世界影響", detail: guidance.worldImpact, text: textBinding(\.worldImpact), minHeight: 110)
                     settingTextArea(title: "使用範例", detail: "可記錄對話、敘述或世界中的實際用法。", text: textBinding(\.usageExamples))
                     settingTextArea(title: "備註", detail: "作者內部提醒或尚未定案的內容。", text: textBinding(\.notes))
+                    }
                 }
             }
         }
         .padding(16)
         .frame(minWidth: 480, minHeight: 620)
+        .task {
+            if shouldFocusName {
+                isNameFocused = true
+            }
+        }
         .onDisappear { settingsStore.save() }
+        .alert(
+            "無法保存世界條目",
+            isPresented: Binding(
+                get: { saveErrorMessage != nil },
+                set: { if !$0 { saveErrorMessage = nil } }
+            )
+        ) {
+            Button("好") { saveErrorMessage = nil }
+        } message: {
+            Text(saveErrorMessage ?? "請稍後再試。")
+        }
+        .popover(isPresented: $showingGovernmentPresets, arrowEdge: .trailing) {
+            GovernmentPresetCatalogView(allowsSelection: true) { preset in
+                guard let preset else { return }
+                preset.apply(to: term)
+                if !settingsStore.saveAndReport() {
+                    saveErrorMessage = settingsStore.persistenceErrorMessage ?? "請稍後再試。"
+                }
+            }
+        }
         .confirmationDialog("確定要刪除這個世界條目嗎？", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
             Button("刪除世界條目", role: .destructive) {
                 settingsStore.deleteWorldTerm(term, bookID: book.id)

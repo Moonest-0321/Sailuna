@@ -1,6 +1,6 @@
 # 備份、遷移與資料修復
 
-V4.4.81 的 StoryPlanning schema V7 以新增 `PlanningRecordMetadata` 的輕量遷移升級 V6；既有時間序不改寫、不猜測故事線。產品 V5 不遷移既有主 store：主資料維持 `NovelWriterSchemaV5`。設定集配置、自訂勢力層級、勢力、直接隸屬、地點與世界條目保存於獨立 `V5SettingsSchemaV4` store，並由 `V5SettingsMigrationPlan` 依序升級 V1／V2／V3／V4。
+V4.4.81 的 StoryPlanning schema V7 以新增 `PlanningRecordMetadata` 的輕量遷移升級 V6；既有時間序不改寫、不猜測故事線。產品 V5.2.2 不遷移既有主 store：主資料維持 `NovelWriterSchemaV5`。設定集配置、自訂勢力層級、勢力、直接隸屬、成員、地點與世界條目保存於獨立 `V5SettingsSchemaV7` store，並由 `V5SettingsMigrationPlan` 依序升級 V1～V7。
 
 ## 目前啟動順序
 
@@ -8,7 +8,7 @@ V4.4.81 的 StoryPlanning schema V7 以新增 `PlanningRecordMetadata` 的輕量
 2. 以既有 `NovelWriterSchemaV5` 原樣開啟主資料庫，不執行 schema migration。
 3. 將舊資料匯入 V5；若 V5 已有資料，先驗證匯入完整性。
 4. 執行懸空資料修復與 V4／V5 回填，並冪等清除舊 `Organization`、角色—組織關聯、組織身分歷史及其 StoryPlanning metadata；其他主資料不允許刪除。
-5. 開啟獨立的 V5 settings、物品副本、能力進度與故事規劃 store；settings store 依 `V5SettingsMigrationPlan` 升級至 V4，故事規劃 store 依 `StoryPlanningMigrationPlan` lightweight migration 至 V7，再轉換舊結構標籤。
+5. 開啟獨立的 V5 settings、物品副本、能力進度與故事規劃 store；settings store 依 `V5SettingsMigrationPlan` 升級至 V7，故事規劃 store 依 `StoryPlanningMigrationPlan` lightweight migration 至 V7，再轉換舊結構標籤。
 6. 完成各 store 的資料修復後才顯示主畫面。
 
 V4.4.8 在主 container 與 StoryPlanning store 都成功開啟後，會以現存 Book／Event UUID 執行跨 store 一致性修復；進入世界時間軸時再做一次相同的冪等檢查。它不新增 schema 或 migration，也不會因 OutlineItem 來源缺失而刪除 Event metadata。
@@ -60,6 +60,8 @@ V4.4.8 在主 container 與 StoryPlanning store 都成功開啟後，會以現�
 - Settings V1→V2 保留既有勢力 UUID、名稱、簡介、側邊欄配置、地點與世界條目；既有勢力遷移為未指定層級。舊連線沒有層級可供驗證，因此遷移只刪除 `PowerSubordination`，不建立預設層級，也不刪除或改寫其他 store 的資料。
 - Settings V2→V3 新增高層管理員、其他名單、勢力關係、政治與宗教自由文字欄位；既有 V2 勢力與自訂層級完整保留。尚無層級的既有書補上兩個中性預設層級，已有自訂層級者不增補、不改名。
 - Settings V3→V4 新增地點的其他名稱、類型、詳細描述與備註，以及世界條目的其他名稱、分類、詳細說明、使用範例與備註；既有 Place／WorldTerm UUID、名稱、簡介與排序保留。新增 persisted 欄位可為空值，編輯器以空字串呈現尚未設定，避免破壞既有 V3 store。
+- Settings V4→V5 新增勢力的世界條目 UUID 連接、目的與 `PowerMember`；既有自由文字不猜測轉換。Settings V5→V6 只為 `BookSidebarSetting` 新增目錄版本，讓既有書籍顯示世界條目一次，並保留作者之後的隱藏選擇；不修改任何 WorldTerm 內容。
+- Settings V6→V7 為 WorldTerm 新增運作與表現、限制／差異／例外及世界影響三個可空欄位；既有 `detailedDescription` 不改名、不拆分，完整成為 UI 的核心定義。檔案型測試確認既有 UUID、書籍、分類、簡介、詳細說明、範例、備註、排序與 sidebar 目錄版本皆保留。
 - 世界條目有限分類不另升級 schema；`termCategory` 仍以可空字串保存。既有 V4 自由文字分類不被猜測或刪除，編輯器以「既有分類」保留，作者選擇制度、信仰、技術、資源、語言、文化習俗或專有名詞後才替換。
 - V6→V7 只新增空的 `PlanningRecordMetadata` entity。既有時間序若有節次但沒有歸屬，執行期列入「未分類時間序」；作者儲存定位後才建立 metadata。來源刪除後，工作區開啟時會冪等清理孤立 metadata。
 - 新建／綁定採先保存主 Event、再保存 metadata；後者失敗時保留 Event 並允許重試。刪 Event 後若 metadata 清理失敗，孤立記錄不顯示，下一次時間軸載入時冪等清理。

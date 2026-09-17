@@ -41,16 +41,16 @@ enum SidebarSettingKey: String, CaseIterable, Codable, Hashable, Identifiable {
 
     var isDefaultVisible: Bool {
         switch self {
-        case .character, .power, .item, .ability, .storyTag: true
-        case .place, .worldTerm: false
+        case .character, .power, .worldTerm, .item, .ability, .storyTag: true
+        case .place: false
         }
     }
 
     static var defaultOrder: [SidebarSettingKey] {
-        [.character, .power, .item, .ability, .storyTag, .place, .worldTerm]
+        [.character, .power, .worldTerm, .item, .ability, .storyTag, .place]
     }
 
-    static var optionalKeys: [SidebarSettingKey] { [.place, .worldTerm] }
+    static var optionalKeys: [SidebarSettingKey] { [.place] }
 }
 
 /// V5.1 limits new world terms to concepts that do not already have a
@@ -67,6 +67,75 @@ enum WorldTermCategory: String, CaseIterable, Codable, Hashable, Identifiable {
     case properNoun = "專有名詞"
 
     var id: String { rawValue }
+}
+
+struct WorldTermContentGuidance: Equatable {
+    let coreDefinition: String
+    let operationAndExpression: String
+    let limitationsAndExceptions: String
+    let worldImpact: String
+
+    static func forCategory(_ rawValue: String?) -> Self {
+        guard let category = rawValue.flatMap(WorldTermCategory.init(rawValue:)) else {
+            return Self(
+                coreDefinition: "說明這個概念是什麼，以及作者需要一致掌握的定義。",
+                operationAndExpression: "說明它如何成立、被使用，或在世界中被觀察。",
+                limitationsAndExceptions: "記錄適用條件、差異、例外或容易混淆之處。",
+                worldImpact: "記錄它對人物、勢力、地區、生活或故事衝突的影響。"
+            )
+        }
+        switch category {
+        case .institution:
+            return Self(
+                coreDefinition: "說明制度的目的、核心結構，以及它處理的世界問題。",
+                operationAndExpression: "記錄參與者、適用範圍，以及權力、資格或資源如何流動。",
+                limitationsAndExceptions: "記錄地區或群體差異、不適用情況及制度間的衝突。",
+                worldImpact: "記錄制度如何影響政治、生活、人物選擇與故事衝突。"
+            )
+        case .belief:
+            return Self(
+                coreDefinition: "說明核心信念、神話背景或教義；宗教勢力本身仍記在勢力。",
+                operationAndExpression: "記錄儀式、象徵、禁忌，以及信徒如何在日常實踐。",
+                limitationsAndExceptions: "記錄教派差異、詮釋分歧、禁忌例外或信仰衝突。",
+                worldImpact: "記錄信仰對價值觀、群體關係、生活與人物抉擇的影響。"
+            )
+        case .technology:
+            return Self(
+                coreDefinition: "說明技術的用途、原理或力量來源。",
+                operationAndExpression: "記錄使用條件、操作方式、掌握者與普及程度。",
+                limitationsAndExceptions: "記錄代價、風險、失效條件與無法適用的情況。",
+                worldImpact: "記錄技術如何改變生產、戰爭、交通、生活或權力分配。"
+            )
+        case .resource:
+            return Self(
+                coreDefinition: "說明資源的性質、來源與重要用途。",
+                operationAndExpression: "記錄取得、加工、保存、交易或使用方式。",
+                limitationsAndExceptions: "記錄稀有程度、耗損、替代品、危險與取得限制。",
+                worldImpact: "記錄誰控制或爭奪資源，以及它對地區、勢力與生活的影響。"
+            )
+        case .language:
+            return Self(
+                coreDefinition: "說明語言、文字或詞彙的語意、用途與使用群體。",
+                operationAndExpression: "記錄發音、書寫、語境、稱呼或實際使用方式。",
+                limitationsAndExceptions: "記錄方言、歧義、禁語、翻譯落差或群體差異。",
+                worldImpact: "記錄它如何影響身分認同、溝通、權力與文化理解。"
+            )
+        case .cultureAndCustoms:
+            return Self(
+                coreDefinition: "說明習俗的由來、象徵與文化意義。",
+                operationAndExpression: "記錄場合、參與者、流程、物件與實際表現。",
+                limitationsAndExceptions: "記錄地域或群體差異、禁忌、例外與變體。",
+                worldImpact: "記錄習俗如何影響日常、人際關係、身分與故事事件。"
+            )
+        case .properNoun:
+            return Self(
+                coreDefinition: "清楚定義這個世界專用名詞，以及它所指涉的概念。",
+                operationAndExpression: "記錄名詞的來源背景、使用者與常見語境。",
+                limitationsAndExceptions: "記錄近似詞、舊稱、誤用或容易混淆的概念。",
+                worldImpact: "記錄理解這個名詞對世界觀、人物或情節的重要性。"
+            )
+        }
+    }
 }
 
 /// V5 settings live in their own store. Keeping them out of the released main
@@ -959,15 +1028,486 @@ final class WorldTerm {
 }
 }
 
+/// V6 records the per-book sidebar catalog revision so a new default entry can
+/// be revealed once without overriding later author choices. All setting data
+/// models otherwise preserve the V5 layout.
+enum V5SettingsSchemaV6: VersionedSchema {
+    static var versionIdentifier = Schema.Version(6, 0, 0)
+
+    static var models: [any PersistentModel.Type] {
+        [
+            BookSidebarSetting.self,
+            PowerLevel.self,
+            PowerUnit.self,
+            PowerSubordination.self,
+            PowerMember.self,
+            Place.self,
+            WorldTerm.self
+        ]
+    }
+}
+
+extension V5SettingsSchemaV6 {
+@Model
+final class BookSidebarSetting {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID
+    var keyRawValue: String
+    var sortOrder: Int
+    var isVisible: Bool
+    var catalogRevision: Int = 0
+
+    init(
+        id: UUID = UUID(), bookID: UUID, key: SidebarSettingKey, sortOrder: Int,
+        isVisible: Bool, catalogRevision: Int = 0
+    ) {
+        self.id = id
+        self.bookID = bookID
+        self.keyRawValue = key.rawValue
+        self.sortOrder = sortOrder
+        self.isVisible = isVisible
+        self.catalogRevision = catalogRevision
+    }
+
+    var key: SidebarSettingKey? { SidebarSettingKey(rawValue: keyRawValue) }
+}
+
+@Model
+final class PowerLevel {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID
+    var name: String
+    var sortOrder: Int
+    var createdAt: Date
+
+    init(id: UUID = UUID(), bookID: UUID, name: String, sortOrder: Int, createdAt: Date = Date()) {
+        self.id = id
+        self.bookID = bookID
+        self.name = name
+        self.sortOrder = sortOrder
+        self.createdAt = createdAt
+    }
+}
+
+@Model
+final class PowerUnit {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID
+    var name: String
+    var powerDescription: String
+    var seniorManagers: String = ""
+    var otherRoster: String = ""
+    var relationshipNotes: String = ""
+    var politics: String = ""
+    var religion: String = ""
+    var levelID: UUID?
+    var religionWorldTermID: UUID?
+    var governmentWorldTermID: UUID?
+    var powerWorldTermID: UUID?
+    var scopeWorldTermID: UUID?
+    var purpose: String = ""
+    var createdAt: Date
+    var updatedAt: Date
+
+    init(
+        id: UUID = UUID(),
+        bookID: UUID,
+        name: String = "",
+        powerDescription: String = "",
+        seniorManagers: String = "",
+        otherRoster: String = "",
+        relationshipNotes: String = "",
+        politics: String = "",
+        religion: String = "",
+        levelID: UUID? = nil,
+        religionWorldTermID: UUID? = nil,
+        governmentWorldTermID: UUID? = nil,
+        powerWorldTermID: UUID? = nil,
+        scopeWorldTermID: UUID? = nil,
+        purpose: String = ""
+    ) {
+        self.id = id
+        self.bookID = bookID
+        self.name = name
+        self.powerDescription = powerDescription
+        self.seniorManagers = seniorManagers
+        self.otherRoster = otherRoster
+        self.relationshipNotes = relationshipNotes
+        self.politics = politics
+        self.religion = religion
+        self.levelID = levelID
+        self.religionWorldTermID = religionWorldTermID
+        self.governmentWorldTermID = governmentWorldTermID
+        self.powerWorldTermID = powerWorldTermID
+        self.scopeWorldTermID = scopeWorldTermID
+        self.purpose = purpose
+        self.createdAt = Date()
+        self.updatedAt = Date()
+    }
+}
+
+@Model
+final class PowerSubordination {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID
+    var lowerPowerID: UUID
+    var upperPowerID: UUID
+    var createdAt: Date
+
+    init(id: UUID = UUID(), bookID: UUID, lowerPowerID: UUID, upperPowerID: UUID, createdAt: Date = Date()) {
+        self.id = id
+        self.bookID = bookID
+        self.lowerPowerID = lowerPowerID
+        self.upperPowerID = upperPowerID
+        self.createdAt = createdAt
+    }
+}
+
+/// A cross-store link from one power to one main-store character. Uniqueness of
+/// powerID + characterID is enforced by V5SettingsStore.
+@Model
+final class PowerMember {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID
+    var powerID: UUID
+    var characterID: UUID
+    var title: String
+    var sortOrder: Int
+    var createdAt: Date
+    var updatedAt: Date
+
+    init(
+        id: UUID = UUID(),
+        bookID: UUID,
+        powerID: UUID,
+        characterID: UUID,
+        title: String = "",
+        sortOrder: Int = 0,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.bookID = bookID
+        self.powerID = powerID
+        self.characterID = characterID
+        self.title = title
+        self.sortOrder = sortOrder
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
+
+@Model
+final class Place {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID
+    var name: String
+    var alternateNames: String?
+    var placeType: String?
+    var placeDescription: String
+    var detailedDescription: String?
+    var notes: String?
+    var sortOrder: Int
+
+    init(
+        id: UUID = UUID(), bookID: UUID, name: String = "", alternateNames: String? = nil,
+        placeType: String? = nil, placeDescription: String = "", detailedDescription: String? = nil,
+        notes: String? = nil, sortOrder: Int = 0
+    ) {
+        self.id = id
+        self.bookID = bookID
+        self.name = name
+        self.alternateNames = alternateNames
+        self.placeType = placeType
+        self.placeDescription = placeDescription
+        self.detailedDescription = detailedDescription
+        self.notes = notes
+        self.sortOrder = sortOrder
+    }
+}
+
+@Model
+final class WorldTerm {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID
+    var name: String
+    var alternateNames: String?
+    var termCategory: String?
+    var termDescription: String
+    var detailedDescription: String?
+    var usageExamples: String?
+    var notes: String?
+    var sortOrder: Int
+
+    init(
+        id: UUID = UUID(), bookID: UUID, name: String = "", alternateNames: String? = nil,
+        termCategory: String? = nil, termDescription: String = "", detailedDescription: String? = nil,
+        usageExamples: String? = nil, notes: String? = nil, sortOrder: Int = 0
+    ) {
+        self.id = id
+        self.bookID = bookID
+        self.name = name
+        self.alternateNames = alternateNames
+        self.termCategory = termCategory
+        self.termDescription = termDescription
+        self.detailedDescription = detailedDescription
+        self.usageExamples = usageExamples
+        self.notes = notes
+        self.sortOrder = sortOrder
+    }
+}
+}
+
+/// V7 adds structured world-term content while preserving all V6 sidebar and
+/// setting data. Existing detailedDescription values remain the core definition.
+enum V5SettingsSchemaV7: VersionedSchema {
+    static var versionIdentifier = Schema.Version(7, 0, 0)
+
+    static var models: [any PersistentModel.Type] {
+        [
+            BookSidebarSetting.self,
+            PowerLevel.self,
+            PowerUnit.self,
+            PowerSubordination.self,
+            PowerMember.self,
+            Place.self,
+            WorldTerm.self
+        ]
+    }
+}
+
+extension V5SettingsSchemaV7 {
+@Model
+final class BookSidebarSetting {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID
+    var keyRawValue: String
+    var sortOrder: Int
+    var isVisible: Bool
+    var catalogRevision: Int = 0
+
+    init(
+        id: UUID = UUID(), bookID: UUID, key: SidebarSettingKey, sortOrder: Int,
+        isVisible: Bool, catalogRevision: Int = 0
+    ) {
+        self.id = id
+        self.bookID = bookID
+        self.keyRawValue = key.rawValue
+        self.sortOrder = sortOrder
+        self.isVisible = isVisible
+        self.catalogRevision = catalogRevision
+    }
+
+    var key: SidebarSettingKey? { SidebarSettingKey(rawValue: keyRawValue) }
+}
+
+@Model
+final class PowerLevel {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID
+    var name: String
+    var sortOrder: Int
+    var createdAt: Date
+
+    init(id: UUID = UUID(), bookID: UUID, name: String, sortOrder: Int, createdAt: Date = Date()) {
+        self.id = id
+        self.bookID = bookID
+        self.name = name
+        self.sortOrder = sortOrder
+        self.createdAt = createdAt
+    }
+}
+
+@Model
+final class PowerUnit {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID
+    var name: String
+    var powerDescription: String
+    var seniorManagers: String = ""
+    var otherRoster: String = ""
+    var relationshipNotes: String = ""
+    var politics: String = ""
+    var religion: String = ""
+    var levelID: UUID?
+    var religionWorldTermID: UUID?
+    var governmentWorldTermID: UUID?
+    var powerWorldTermID: UUID?
+    var scopeWorldTermID: UUID?
+    var purpose: String = ""
+    var createdAt: Date
+    var updatedAt: Date
+
+    init(
+        id: UUID = UUID(),
+        bookID: UUID,
+        name: String = "",
+        powerDescription: String = "",
+        seniorManagers: String = "",
+        otherRoster: String = "",
+        relationshipNotes: String = "",
+        politics: String = "",
+        religion: String = "",
+        levelID: UUID? = nil,
+        religionWorldTermID: UUID? = nil,
+        governmentWorldTermID: UUID? = nil,
+        powerWorldTermID: UUID? = nil,
+        scopeWorldTermID: UUID? = nil,
+        purpose: String = ""
+    ) {
+        self.id = id
+        self.bookID = bookID
+        self.name = name
+        self.powerDescription = powerDescription
+        self.seniorManagers = seniorManagers
+        self.otherRoster = otherRoster
+        self.relationshipNotes = relationshipNotes
+        self.politics = politics
+        self.religion = religion
+        self.levelID = levelID
+        self.religionWorldTermID = religionWorldTermID
+        self.governmentWorldTermID = governmentWorldTermID
+        self.powerWorldTermID = powerWorldTermID
+        self.scopeWorldTermID = scopeWorldTermID
+        self.purpose = purpose
+        self.createdAt = Date()
+        self.updatedAt = Date()
+    }
+}
+
+@Model
+final class PowerSubordination {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID
+    var lowerPowerID: UUID
+    var upperPowerID: UUID
+    var createdAt: Date
+
+    init(id: UUID = UUID(), bookID: UUID, lowerPowerID: UUID, upperPowerID: UUID, createdAt: Date = Date()) {
+        self.id = id
+        self.bookID = bookID
+        self.lowerPowerID = lowerPowerID
+        self.upperPowerID = upperPowerID
+        self.createdAt = createdAt
+    }
+}
+
+/// A cross-store link from one power to one main-store character. Uniqueness of
+/// powerID + characterID is enforced by V5SettingsStore.
+@Model
+final class PowerMember {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID
+    var powerID: UUID
+    var characterID: UUID
+    var title: String
+    var sortOrder: Int
+    var createdAt: Date
+    var updatedAt: Date
+
+    init(
+        id: UUID = UUID(),
+        bookID: UUID,
+        powerID: UUID,
+        characterID: UUID,
+        title: String = "",
+        sortOrder: Int = 0,
+        createdAt: Date = Date(),
+        updatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.bookID = bookID
+        self.powerID = powerID
+        self.characterID = characterID
+        self.title = title
+        self.sortOrder = sortOrder
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+}
+
+@Model
+final class Place {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID
+    var name: String
+    var alternateNames: String?
+    var placeType: String?
+    var placeDescription: String
+    var detailedDescription: String?
+    var notes: String?
+    var sortOrder: Int
+
+    init(
+        id: UUID = UUID(), bookID: UUID, name: String = "", alternateNames: String? = nil,
+        placeType: String? = nil, placeDescription: String = "", detailedDescription: String? = nil,
+        notes: String? = nil, sortOrder: Int = 0
+    ) {
+        self.id = id
+        self.bookID = bookID
+        self.name = name
+        self.alternateNames = alternateNames
+        self.placeType = placeType
+        self.placeDescription = placeDescription
+        self.detailedDescription = detailedDescription
+        self.notes = notes
+        self.sortOrder = sortOrder
+    }
+}
+
+@Model
+final class WorldTerm {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID
+    var name: String
+    var alternateNames: String?
+    var termCategory: String?
+    var termDescription: String
+    var detailedDescription: String?
+    var operationAndExpression: String?
+    var limitationsAndExceptions: String?
+    var worldImpact: String?
+    var usageExamples: String?
+    var notes: String?
+    var sortOrder: Int
+
+    init(
+        id: UUID = UUID(), bookID: UUID, name: String = "", alternateNames: String? = nil,
+        termCategory: String? = nil, termDescription: String = "", detailedDescription: String? = nil,
+        operationAndExpression: String? = nil, limitationsAndExceptions: String? = nil,
+        worldImpact: String? = nil, usageExamples: String? = nil, notes: String? = nil, sortOrder: Int = 0
+    ) {
+        self.id = id
+        self.bookID = bookID
+        self.name = name
+        self.alternateNames = alternateNames
+        self.termCategory = termCategory
+        self.termDescription = termDescription
+        self.detailedDescription = detailedDescription
+        self.operationAndExpression = operationAndExpression
+        self.limitationsAndExceptions = limitationsAndExceptions
+        self.worldImpact = worldImpact
+        self.usageExamples = usageExamples
+        self.notes = notes
+        self.sortOrder = sortOrder
+    }
+}
+}
+
 /// V1 edges have no level information and therefore cannot be validated under
 /// V2 semantics. V3 then restores the original notebook fields and gives each
 /// already-initialized book two editable generic levels if it has none. V4
 /// expands only the independent place and world-term notes. V5 adds optional
 /// world-term references and structured character membership without guessing
-/// from legacy free text.
+/// from legacy free text. V6 adds only a sidebar catalog revision marker. V7
+/// adds three optional world-term content fields without splitting old text.
 enum V5SettingsMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
-        [V5SettingsSchemaV1.self, V5SettingsSchemaV2.self, V5SettingsSchemaV3.self, V5SettingsSchemaV4.self, V5SettingsSchemaV5.self]
+        [
+            V5SettingsSchemaV1.self, V5SettingsSchemaV2.self, V5SettingsSchemaV3.self,
+            V5SettingsSchemaV4.self, V5SettingsSchemaV5.self, V5SettingsSchemaV6.self,
+            V5SettingsSchemaV7.self
+        ]
     }
 
     static var stages: [MigrationStage] {
@@ -1005,18 +1545,26 @@ enum V5SettingsMigrationPlan: SchemaMigrationPlan {
             .lightweight(
                 fromVersion: V5SettingsSchemaV4.self,
                 toVersion: V5SettingsSchemaV5.self
+            ),
+            .lightweight(
+                fromVersion: V5SettingsSchemaV5.self,
+                toVersion: V5SettingsSchemaV6.self
+            ),
+            .lightweight(
+                fromVersion: V5SettingsSchemaV6.self,
+                toVersion: V5SettingsSchemaV7.self
             )
         ]
     }
 }
 
-typealias BookSidebarSetting = V5SettingsSchemaV5.BookSidebarSetting
-typealias PowerLevel = V5SettingsSchemaV5.PowerLevel
-typealias PowerUnit = V5SettingsSchemaV5.PowerUnit
-typealias PowerSubordination = V5SettingsSchemaV5.PowerSubordination
-typealias PowerMember = V5SettingsSchemaV5.PowerMember
-typealias Place = V5SettingsSchemaV5.Place
-typealias WorldTerm = V5SettingsSchemaV5.WorldTerm
+typealias BookSidebarSetting = V5SettingsSchemaV7.BookSidebarSetting
+typealias PowerLevel = V5SettingsSchemaV7.PowerLevel
+typealias PowerUnit = V5SettingsSchemaV7.PowerUnit
+typealias PowerSubordination = V5SettingsSchemaV7.PowerSubordination
+typealias PowerMember = V5SettingsSchemaV7.PowerMember
+typealias Place = V5SettingsSchemaV7.Place
+typealias WorldTerm = V5SettingsSchemaV7.WorldTerm
 
 enum PowerHierarchyError: LocalizedError {
     case invalidBook
@@ -1053,7 +1601,7 @@ enum PowerHierarchyError: LocalizedError {
     }
 }
 
-enum PowerWorldTermField: CaseIterable, Identifiable {
+enum PowerWorldTermField: CaseIterable, Equatable, Identifiable {
     case religion, government, power, scope
     var id: Self { self }
     var title: String {
@@ -1279,11 +1827,18 @@ final class V5SettingsStore {
     }
 
     func save() {
+        _ = saveAndReport()
+    }
+
+    @discardableResult
+    func saveAndReport() -> Bool {
         do {
             try context.save()
             didSave()
+            return true
         } catch {
             record(error)
+            return false
         }
     }
 
@@ -1429,6 +1984,8 @@ enum V5SettingsSearch {
 
 @MainActor
 enum SidebarSettingCatalog {
+    static let currentRevision = 1
+
     static func rows(for bookID: UUID, in context: ModelContext) throws -> [BookSidebarSetting] {
         let rows = try context.fetch(FetchDescriptor<BookSidebarSetting>())
             .filter { $0.bookID == bookID }
@@ -1441,9 +1998,27 @@ enum SidebarSettingCatalog {
         var rows = try context.fetch(FetchDescriptor<BookSidebarSetting>()).filter { $0.bookID == bookID }
         let existing = Set(rows.compactMap(\.key))
         for (index, key) in SidebarSettingKey.defaultOrder.enumerated() where !existing.contains(key) {
-            let row = BookSidebarSetting(bookID: bookID, key: key, sortOrder: index, isVisible: key.isDefaultVisible)
+            let row = BookSidebarSetting(
+                bookID: bookID,
+                key: key,
+                sortOrder: index,
+                isVisible: key.isDefaultVisible,
+                catalogRevision: currentRevision
+            )
             context.insert(row)
             rows.append(row)
+        }
+        if rows.contains(where: { $0.catalogRevision < currentRevision }) {
+            for row in rows {
+                if let key = row.key,
+                   let index = SidebarSettingKey.defaultOrder.firstIndex(of: key) {
+                    row.sortOrder = index
+                    if key == .worldTerm {
+                        row.isVisible = true
+                    }
+                }
+                row.catalogRevision = currentRevision
+            }
         }
         try context.save()
         return rows.sorted { $0.sortOrder < $1.sortOrder }

@@ -4,6 +4,50 @@ import SwiftData
 
 @MainActor
 final class V5SettingsTests: XCTestCase {
+    func testGovernmentPresetCatalogHasEightFixedCompleteCases() throws {
+        XCTAssertEqual(
+            GovernmentPreset.all.map(\.title),
+            ["民主", "共產", "威權", "法西斯", "帝制", "聯邦制", "共和制", "殖民統治"]
+        )
+        XCTAssertEqual(Set(GovernmentPreset.all.map(\.id)).count, 8)
+
+        for preset in GovernmentPreset.all {
+            XCTAssertFalse(preset.referenceCase.isEmpty)
+            XCTAssertFalse(preset.referencePeriod.isEmpty)
+            XCTAssertFalse(preset.summary.isEmpty)
+            XCTAssertEqual(preset.sections.count, 16)
+            XCTAssertEqual(Set(preset.sections.map(\.title)).count, 16)
+            XCTAssertTrue(preset.sections.allSatisfy { !$0.content.isEmpty })
+            XCTAssertFalse(preset.sections.contains { $0.content.contains("請選擇") })
+            XCTAssertEqual(GovernmentPreset.preset(id: preset.id), preset)
+        }
+    }
+
+    func testGovernmentPresetAppliesToWorldTermAndCanBeLinkedFromPower() throws {
+        let container = try makeMainContainer()
+        let store = V5SettingsStore(container: container)
+        let bookID = UUID()
+        let power = PowerUnit(bookID: bookID, name: "聯邦")
+        let term = WorldTerm(bookID: bookID, name: "新條目")
+        container.mainContext.insert(power)
+        container.mainContext.insert(term)
+        try container.mainContext.save()
+
+        GovernmentPreset.federalism.apply(to: term)
+        try container.mainContext.save()
+        XCTAssertEqual(GovernmentPreset.matching(term), .federalism)
+        XCTAssertEqual(term.termCategory, WorldTermCategory.institution.rawValue)
+        XCTAssertTrue(try XCTUnwrap(term.detailedDescription).contains("【主權歸屬與統治正當性】"))
+
+        try store.setWorldTerm(term, for: .government, on: power, bookID: bookID)
+        XCTAssertEqual(power.governmentWorldTermID, term.id)
+        try store.reconcile(validBookIDs: [bookID], validCharacterIDs: [])
+        XCTAssertEqual(power.governmentWorldTermID, term.id)
+
+        try store.setWorldTerm(nil, for: .government, on: power, bookID: bookID)
+        XCTAssertNil(power.governmentWorldTermID)
+    }
+
     func testWorldTermCategoryProvidesFiniteChoices() {
         XCTAssertEqual(
             WorldTermCategory.allCases.map(\.rawValue),
@@ -15,7 +59,26 @@ final class V5SettingsTests: XCTestCase {
         XCTAssertNil(WorldTermCategory(rawValue: "曆法"))
     }
 
-    func testSidebarDefaultsIncludeFiveVisibleAndTwoOptionalRows() throws {
+    func testWorldTermGuidanceTreatsInstitutionAsAWorldSystem() {
+        let guidance = WorldTermContentGuidance.forCategory(WorldTermCategory.institution.rawValue)
+
+        XCTAssertTrue(guidance.coreDefinition.contains("制度"))
+        XCTAssertTrue(guidance.operationAndExpression.contains("權力"))
+        XCTAssertTrue(guidance.limitationsAndExceptions.contains("地區"))
+        XCTAssertTrue(guidance.worldImpact.contains("政治"))
+    }
+
+    func testWorldTermGuidanceFallsBackForLegacyOrUnclassifiedCategory() {
+        let unclassified = WorldTermContentGuidance.forCategory(nil)
+
+        XCTAssertEqual(WorldTermContentGuidance.forCategory("曆法"), unclassified)
+        XCTAssertFalse(unclassified.coreDefinition.isEmpty)
+        XCTAssertFalse(unclassified.operationAndExpression.isEmpty)
+        XCTAssertFalse(unclassified.limitationsAndExceptions.isEmpty)
+        XCTAssertFalse(unclassified.worldImpact.isEmpty)
+    }
+
+    func testSidebarDefaultsShowWorldTermBetweenPowerAndItem() throws {
         let container = try makeMainContainer()
         let context = container.mainContext
         let store = V5SettingsStore(container: container)
@@ -24,8 +87,12 @@ final class V5SettingsTests: XCTestCase {
         let rows = store.ensureDefaults(for: bookID)
 
         XCTAssertEqual(rows.count, SidebarSettingKey.defaultOrder.count)
-        XCTAssertEqual(Set(SidebarSettingCatalog.visibleKeys(rows: rows)), Set([.character, .power, .item, .ability, .storyTag]))
-        XCTAssertEqual(Set(rows.filter { $0.key?.isDefaultVisible == false }.compactMap(\.key)), Set([.place, .worldTerm]))
+        XCTAssertEqual(
+            SidebarSettingCatalog.visibleKeys(rows: rows),
+            [.character, .power, .worldTerm, .item, .ability, .storyTag]
+        )
+        XCTAssertEqual(rows.filter { !$0.isVisible }.compactMap(\.key), [.place])
+        XCTAssertTrue(rows.allSatisfy { $0.catalogRevision == SidebarSettingCatalog.currentRevision })
 
         rows.first(where: { $0.key == .character })?.isVisible = false
         try context.save()
@@ -33,6 +100,128 @@ final class V5SettingsTests: XCTestCase {
         XCTAssertFalse(SidebarSettingCatalog.visibleKeys(rows: reloaded).contains(.character))
         XCTAssertEqual(try context.fetch(FetchDescriptor<BookSidebarSetting>()).count, rows.count)
         XCTAssertEqual(try context.fetch(FetchDescriptor<PowerLevel>()).sorted { $0.sortOrder < $1.sortOrder }.map(\.name), ["層級 1", "層級 2"])
+    }
+
+    func testV5SidebarConfigurationRevealsWorldTermOnlyOnce() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Sailune-settings-v6-sidebar-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("settings.store")
+        let bookID = UUID()
+        let termID = UUID()
+
+        do {
+            let schema = Schema(versionedSchema: V5SettingsSchemaV5.self)
+            let container = try ModelContainer(
+                for: schema,
+                configurations: [ModelConfiguration(schema: schema, url: storeURL)]
+            )
+            for (index, key) in [
+                SidebarSettingKey.character, .power, .item, .ability, .storyTag, .place, .worldTerm
+            ].enumerated() {
+                container.mainContext.insert(
+                    V5SettingsSchemaV5.BookSidebarSetting(
+                        bookID: bookID,
+                        key: key,
+                        sortOrder: index,
+                        isVisible: ![.place, .worldTerm].contains(key)
+                    )
+                )
+            }
+            container.mainContext.insert(V5SettingsSchemaV5.WorldTerm(id: termID, bookID: bookID, name: "月曆"))
+            try container.mainContext.save()
+        }
+
+        let schema = Schema(versionedSchema: V5SettingsSchemaV7.self)
+        let migrated = try ModelContainer(
+            for: schema,
+            migrationPlan: V5SettingsMigrationPlan.self,
+            configurations: [ModelConfiguration(schema: schema, url: storeURL)]
+        )
+        let store = V5SettingsStore(container: migrated)
+        var rows = store.ensureDefaults(for: bookID)
+
+        XCTAssertEqual(
+            rows.sorted { $0.sortOrder < $1.sortOrder }.compactMap(\.key),
+            SidebarSettingKey.defaultOrder
+        )
+        XCTAssertTrue(try XCTUnwrap(rows.first { $0.key == .worldTerm }).isVisible)
+        XCTAssertTrue(rows.allSatisfy { $0.catalogRevision == SidebarSettingCatalog.currentRevision })
+        XCTAssertEqual(try migrated.mainContext.fetch(FetchDescriptor<WorldTerm>()).map(\.id), [termID])
+
+        let worldTermRow = try XCTUnwrap(rows.first { $0.key == .worldTerm })
+        worldTermRow.isVisible = false
+        try migrated.mainContext.save()
+        rows = store.ensureDefaults(for: bookID)
+
+        XCTAssertFalse(try XCTUnwrap(rows.first { $0.key == .worldTerm }).isVisible)
+        XCTAssertEqual(try migrated.mainContext.fetch(FetchDescriptor<WorldTerm>()).map(\.id), [termID])
+    }
+
+    func testV6WorldTermMigratesToV7WithoutRewritingExistingContent() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Sailune-settings-v7-world-term-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("settings.store")
+        let bookID = UUID()
+        let termID = UUID()
+
+        do {
+            let schema = Schema(versionedSchema: V5SettingsSchemaV6.self)
+            let container = try ModelContainer(
+                for: schema,
+                configurations: [ModelConfiguration(schema: schema, url: storeURL)]
+            )
+            container.mainContext.insert(
+                V5SettingsSchemaV6.BookSidebarSetting(
+                    bookID: bookID,
+                    key: .worldTerm,
+                    sortOrder: 2,
+                    isVisible: true,
+                    catalogRevision: 1
+                )
+            )
+            container.mainContext.insert(
+                V5SettingsSchemaV6.WorldTerm(
+                    id: termID,
+                    bookID: bookID,
+                    name: "月曆",
+                    alternateNames: "月之曆法",
+                    termCategory: WorldTermCategory.institution.rawValue,
+                    termDescription: "一年十三月",
+                    detailedDescription: "由議會統一頒布的紀年制度",
+                    usageExamples: "新月月初",
+                    notes: "待確認閏月",
+                    sortOrder: 4
+                )
+            )
+            try container.mainContext.save()
+        }
+
+        let schema = Schema(versionedSchema: V5SettingsSchemaV7.self)
+        let migrated = try ModelContainer(
+            for: schema,
+            migrationPlan: V5SettingsMigrationPlan.self,
+            configurations: [ModelConfiguration(schema: schema, url: storeURL)]
+        )
+        let term = try XCTUnwrap(migrated.mainContext.fetch(FetchDescriptor<WorldTerm>()).first)
+        let row = try XCTUnwrap(migrated.mainContext.fetch(FetchDescriptor<BookSidebarSetting>()).first)
+
+        XCTAssertEqual(row.catalogRevision, 1)
+        XCTAssertEqual(term.id, termID)
+        XCTAssertEqual(term.name, "月曆")
+        XCTAssertEqual(term.alternateNames, "月之曆法")
+        XCTAssertEqual(term.termCategory, WorldTermCategory.institution.rawValue)
+        XCTAssertEqual(term.termDescription, "一年十三月")
+        XCTAssertEqual(term.detailedDescription, "由議會統一頒布的紀年制度")
+        XCTAssertEqual(term.usageExamples, "新月月初")
+        XCTAssertEqual(term.notes, "待確認閏月")
+        XCTAssertEqual(term.sortOrder, 4)
+        XCTAssertNil(term.operationAndExpression)
+        XCTAssertNil(term.limitationsAndExceptions)
+        XCTAssertNil(term.worldImpact)
     }
 
     func testPowerGraphStoresCrossLevelEdgesAndRejectsWrongDirection() throws {
@@ -274,7 +463,7 @@ final class V5SettingsTests: XCTestCase {
             try context.save()
         }
 
-        let schema = Schema(versionedSchema: V5SettingsSchemaV5.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV7.self)
         let migrated = try ModelContainer(
             for: schema,
             migrationPlan: V5SettingsMigrationPlan.self,
@@ -312,7 +501,7 @@ final class V5SettingsTests: XCTestCase {
             try context.save()
         }
 
-        let schema = Schema(versionedSchema: V5SettingsSchemaV5.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV7.self)
         let migrated = try ModelContainer(
             for: schema,
             migrationPlan: V5SettingsMigrationPlan.self,
@@ -363,7 +552,7 @@ final class V5SettingsTests: XCTestCase {
             try context.save()
         }
 
-        let schema = Schema(versionedSchema: V5SettingsSchemaV5.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV7.self)
         let migrated = try ModelContainer(
             for: schema,
             migrationPlan: V5SettingsMigrationPlan.self,
@@ -418,6 +607,10 @@ final class V5SettingsTests: XCTestCase {
             term.alternateNames = "月之曆法"
             term.termCategory = WorldTermCategory.institution.rawValue
             term.termDescription = "一年十三月"
+            term.detailedDescription = "王國共同採用的紀年制度"
+            term.operationAndExpression = "由曆官觀測月相並公布月份"
+            term.limitationsAndExceptions = "邊境保留地方曆法"
+            term.worldImpact = "影響稅期、祭典與航運"
             try context.save()
 
             placeID = place.id
@@ -437,6 +630,10 @@ final class V5SettingsTests: XCTestCase {
         XCTAssertEqual(term.alternateNames, "月之曆法")
         XCTAssertEqual(term.termCategory, WorldTermCategory.institution.rawValue)
         XCTAssertEqual(term.termDescription, "一年十三月")
+        XCTAssertEqual(term.detailedDescription, "王國共同採用的紀年制度")
+        XCTAssertEqual(term.operationAndExpression, "由曆官觀測月相並公布月份")
+        XCTAssertEqual(term.limitationsAndExceptions, "邊境保留地方曆法")
+        XCTAssertEqual(term.worldImpact, "影響稅期、祭典與航運")
         XCTAssertEqual(V5SettingsSearch.places(reopenedStore.places(for: bookID), matching: "港口").map(\.id), [placeID])
         XCTAssertEqual(V5SettingsSearch.places([place], matching: "霧之港").map(\.id), [placeID])
         XCTAssertEqual(V5SettingsSearch.worldTerms([term], matching: "制度").map(\.id), [termID])
@@ -545,7 +742,7 @@ final class V5SettingsTests: XCTestCase {
 
         do {
             let mainSchema = Schema(versionedSchema: NovelWriterSchemaV5.self)
-            let settingsSchema = Schema(versionedSchema: V5SettingsSchemaV5.self)
+            let settingsSchema = Schema(versionedSchema: V5SettingsSchemaV7.self)
             let mainContainer = try ModelContainer(
                 for: mainSchema,
                 configurations: [ModelConfiguration(schema: mainSchema, url: mainURL)]
@@ -645,7 +842,7 @@ final class V5SettingsTests: XCTestCase {
     }
 
     private func makeMainContainer(at url: URL? = nil) throws -> ModelContainer {
-        let schema = Schema(versionedSchema: V5SettingsSchemaV5.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV7.self)
         let configuration = if let url {
             ModelConfiguration(schema: schema, url: url)
         } else {
