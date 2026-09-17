@@ -1277,6 +1277,123 @@ enum V5SettingsSchemaV7: VersionedSchema {
     }
 }
 
+/// V8 adds power identification aliases and explicit links to resources,
+/// technology, items, abilities, and author-defined strategic advantages.
+enum V5SettingsSchemaV8: VersionedSchema {
+    static var versionIdentifier = Schema.Version(8, 0, 0)
+
+    static var models: [any PersistentModel.Type] {
+        [
+            BookSidebarSetting.self,
+            PowerLevel.self,
+            PowerUnit.self,
+            PowerSubordination.self,
+            PowerMember.self,
+            PowerAssetLink.self,
+            PowerAdvantage.self,
+            Place.self,
+            WorldTerm.self
+        ]
+    }
+}
+
+/// V9 adds power lifecycle, succession, and time-positioned multi-role membership.
+/// V8 remains immutable because released development builds may already have
+/// created an on-disk V8 store.
+enum V5SettingsSchemaV9: VersionedSchema {
+    static var versionIdentifier = Schema.Version(9, 0, 0)
+
+    static var models: [any PersistentModel.Type] {
+        [
+            BookSidebarSetting.self,
+            PowerLevel.self,
+            PowerUnit.self,
+            PowerSubordination.self,
+            PowerMember.self,
+            PowerMemberRole.self,
+            PowerLifecycleEvent.self,
+            PowerSuccessionLink.self,
+            PowerAssetLink.self,
+            PowerAdvantage.self,
+            Place.self,
+            WorldTerm.self
+        ]
+    }
+}
+
+/// V10 adds structured non-subordination relationships. Existing V9 model
+/// types are reused unchanged so the V9 snapshot remains byte-for-byte stable.
+enum V5SettingsSchemaV10: VersionedSchema {
+    static var versionIdentifier = Schema.Version(10, 0, 0)
+
+    static var models: [any PersistentModel.Type] {
+        [
+            V5SettingsSchemaV9.BookSidebarSetting.self,
+            V5SettingsSchemaV9.PowerLevel.self,
+            V5SettingsSchemaV9.PowerUnit.self,
+            V5SettingsSchemaV9.PowerSubordination.self,
+            V5SettingsSchemaV9.PowerMember.self,
+            V5SettingsSchemaV9.PowerMemberRole.self,
+            V5SettingsSchemaV9.PowerLifecycleEvent.self,
+            V5SettingsSchemaV9.PowerSuccessionLink.self,
+            V5SettingsSchemaV9.PowerAssetLink.self,
+            V5SettingsSchemaV9.PowerAdvantage.self,
+            PowerRelation.self,
+            V5SettingsSchemaV9.Place.self,
+            V5SettingsSchemaV9.WorldTerm.self
+        ]
+    }
+}
+
+extension V5SettingsSchemaV10 {
+enum PowerRelationKind: String, CaseIterable, Identifiable {
+    case alliance, hostility, rivalry, trade, suzerainty, temporaryCooperation
+
+    var id: Self { self }
+    var title: String {
+        switch self {
+        case .alliance: "同盟"
+        case .hostility: "敵對"
+        case .rivalry: "競爭"
+        case .trade: "貿易"
+        case .suzerainty: "宗主／附庸"
+        case .temporaryCooperation: "臨時合作"
+        }
+    }
+    var isDirected: Bool { self == .suzerainty }
+}
+
+/// UUID-only link between powers in the settings store. For symmetric kinds,
+/// source/target are normalized by UUID; for suzerainty they mean overlord/vassal.
+@Model
+final class PowerRelation {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID
+    var sourcePowerID: UUID
+    var targetPowerID: UUID
+    var kindRawValue: String
+    var detail: String
+    var createdAt: Date
+    var updatedAt: Date
+
+    init(
+        id: UUID = UUID(), bookID: UUID, sourcePowerID: UUID, targetPowerID: UUID,
+        kind: PowerRelationKind, detail: String = "", createdAt: Date = Date(), updatedAt: Date = Date()
+    ) {
+        self.id = id
+        self.bookID = bookID
+        self.sourcePowerID = sourcePowerID
+        self.targetPowerID = targetPowerID
+        self.kindRawValue = kind.rawValue
+        self.detail = detail
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+    }
+
+    var kind: PowerRelationKind? { PowerRelationKind(rawValue: kindRawValue) }
+}
+}
+
 extension V5SettingsSchemaV7 {
 @Model
 final class BookSidebarSetting {
@@ -1495,19 +1612,227 @@ final class WorldTerm {
 }
 }
 
+extension V5SettingsSchemaV8 {
+@Model final class BookSidebarSetting {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID; var keyRawValue: String; var sortOrder: Int; var isVisible: Bool; var catalogRevision: Int = 0
+    init(id: UUID = UUID(), bookID: UUID, key: SidebarSettingKey, sortOrder: Int, isVisible: Bool, catalogRevision: Int = 0) { self.id = id; self.bookID = bookID; self.keyRawValue = key.rawValue; self.sortOrder = sortOrder; self.isVisible = isVisible; self.catalogRevision = catalogRevision }
+    var key: SidebarSettingKey? { SidebarSettingKey(rawValue: keyRawValue) }
+}
+
+@Model final class PowerLevel {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID; var name: String; var sortOrder: Int; var createdAt: Date
+    init(id: UUID = UUID(), bookID: UUID, name: String, sortOrder: Int, createdAt: Date = Date()) { self.id = id; self.bookID = bookID; self.name = name; self.sortOrder = sortOrder; self.createdAt = createdAt }
+}
+
+@Model final class PowerUnit {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID; var name: String; var powerDescription: String
+    var formerNames: String = ""; var foreignNames: String = ""; var shortName: String = ""
+    var seniorManagers: String = ""; var otherRoster: String = ""; var relationshipNotes: String = ""; var politics: String = ""; var religion: String = ""
+    var levelID: UUID?; var religionWorldTermID: UUID?; var governmentWorldTermID: UUID?; var powerWorldTermID: UUID?; var scopeWorldTermID: UUID?; var purpose: String = ""
+    var createdAt: Date; var updatedAt: Date
+    init(id: UUID = UUID(), bookID: UUID, name: String = "", powerDescription: String = "", formerNames: String = "", foreignNames: String = "", shortName: String = "", seniorManagers: String = "", otherRoster: String = "", relationshipNotes: String = "", politics: String = "", religion: String = "", levelID: UUID? = nil, religionWorldTermID: UUID? = nil, governmentWorldTermID: UUID? = nil, powerWorldTermID: UUID? = nil, scopeWorldTermID: UUID? = nil, purpose: String = "") {
+        self.id = id; self.bookID = bookID; self.name = name; self.powerDescription = powerDescription; self.formerNames = formerNames; self.foreignNames = foreignNames; self.shortName = shortName; self.seniorManagers = seniorManagers; self.otherRoster = otherRoster; self.relationshipNotes = relationshipNotes; self.politics = politics; self.religion = religion; self.levelID = levelID; self.religionWorldTermID = religionWorldTermID; self.governmentWorldTermID = governmentWorldTermID; self.powerWorldTermID = powerWorldTermID; self.scopeWorldTermID = scopeWorldTermID; self.purpose = purpose; self.createdAt = Date(); self.updatedAt = Date()
+    }
+}
+
+@Model final class PowerSubordination {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID; var lowerPowerID: UUID; var upperPowerID: UUID; var createdAt: Date
+    init(id: UUID = UUID(), bookID: UUID, lowerPowerID: UUID, upperPowerID: UUID, createdAt: Date = Date()) { self.id = id; self.bookID = bookID; self.lowerPowerID = lowerPowerID; self.upperPowerID = upperPowerID; self.createdAt = createdAt }
+}
+
+@Model final class PowerMember {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID; var powerID: UUID; var characterID: UUID; var title: String; var sortOrder: Int; var createdAt: Date; var updatedAt: Date
+    init(id: UUID = UUID(), bookID: UUID, powerID: UUID, characterID: UUID, title: String = "", sortOrder: Int = 0, createdAt: Date = Date(), updatedAt: Date = Date()) { self.id = id; self.bookID = bookID; self.powerID = powerID; self.characterID = characterID; self.title = title; self.sortOrder = sortOrder; self.createdAt = createdAt; self.updatedAt = updatedAt }
+}
+
+enum PowerAssetKind: String, CaseIterable, Identifiable {
+    case resource, technology, item, ability
+    var id: Self { self }
+    var title: String { switch self { case .resource: "資源"; case .technology: "技術"; case .item: "物品"; case .ability: "能力" } }
+}
+
+@Model final class PowerAssetLink {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID; var powerID: UUID; var kindRawValue: String; var sourceID: UUID; var sortOrder: Int; var createdAt: Date; var updatedAt: Date
+    init(id: UUID = UUID(), bookID: UUID, powerID: UUID, kind: PowerAssetKind, sourceID: UUID, sortOrder: Int = 0, createdAt: Date = Date(), updatedAt: Date = Date()) { self.id = id; self.bookID = bookID; self.powerID = powerID; self.kindRawValue = kind.rawValue; self.sourceID = sourceID; self.sortOrder = sortOrder; self.createdAt = createdAt; self.updatedAt = updatedAt }
+    var kind: PowerAssetKind? { PowerAssetKind(rawValue: kindRawValue) }
+}
+
+enum PowerAdvantageKind: String, CaseIterable, Identifiable {
+    case military, economic
+    var id: Self { self }
+    var title: String { switch self { case .military: "軍事優勢"; case .economic: "經濟優勢" } }
+}
+
+@Model final class PowerAdvantage {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID; var powerID: UUID; var kindRawValue: String; var name: String; var detail: String; var sortOrder: Int; var createdAt: Date; var updatedAt: Date
+    init(id: UUID = UUID(), bookID: UUID, powerID: UUID, kind: PowerAdvantageKind, name: String = "", detail: String = "", sortOrder: Int = 0, createdAt: Date = Date(), updatedAt: Date = Date()) { self.id = id; self.bookID = bookID; self.powerID = powerID; self.kindRawValue = kind.rawValue; self.name = name; self.detail = detail; self.sortOrder = sortOrder; self.createdAt = createdAt; self.updatedAt = updatedAt }
+    var kind: PowerAdvantageKind? { PowerAdvantageKind(rawValue: kindRawValue) }
+}
+
+@Model final class Place {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID; var name: String; var alternateNames: String?; var placeType: String?; var placeDescription: String; var detailedDescription: String?; var notes: String?; var sortOrder: Int
+    init(id: UUID = UUID(), bookID: UUID, name: String = "", alternateNames: String? = nil, placeType: String? = nil, placeDescription: String = "", detailedDescription: String? = nil, notes: String? = nil, sortOrder: Int = 0) { self.id = id; self.bookID = bookID; self.name = name; self.alternateNames = alternateNames; self.placeType = placeType; self.placeDescription = placeDescription; self.detailedDescription = detailedDescription; self.notes = notes; self.sortOrder = sortOrder }
+}
+
+@Model final class WorldTerm {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID; var name: String; var alternateNames: String?; var termCategory: String?; var termDescription: String; var detailedDescription: String?; var operationAndExpression: String?; var limitationsAndExceptions: String?; var worldImpact: String?; var usageExamples: String?; var notes: String?; var sortOrder: Int
+    init(id: UUID = UUID(), bookID: UUID, name: String = "", alternateNames: String? = nil, termCategory: String? = nil, termDescription: String = "", detailedDescription: String? = nil, operationAndExpression: String? = nil, limitationsAndExceptions: String? = nil, worldImpact: String? = nil, usageExamples: String? = nil, notes: String? = nil, sortOrder: Int = 0) { self.id = id; self.bookID = bookID; self.name = name; self.alternateNames = alternateNames; self.termCategory = termCategory; self.termDescription = termDescription; self.detailedDescription = detailedDescription; self.operationAndExpression = operationAndExpression; self.limitationsAndExceptions = limitationsAndExceptions; self.worldImpact = worldImpact; self.usageExamples = usageExamples; self.notes = notes; self.sortOrder = sortOrder }
+}
+}
+
+extension V5SettingsSchemaV9 {
+@Model
+final class BookSidebarSetting {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID; var keyRawValue: String; var sortOrder: Int; var isVisible: Bool; var catalogRevision: Int = 0
+    init(id: UUID = UUID(), bookID: UUID, key: SidebarSettingKey, sortOrder: Int, isVisible: Bool, catalogRevision: Int = 0) {
+        self.id = id; self.bookID = bookID; self.keyRawValue = key.rawValue; self.sortOrder = sortOrder; self.isVisible = isVisible; self.catalogRevision = catalogRevision
+    }
+    var key: SidebarSettingKey? { SidebarSettingKey(rawValue: keyRawValue) }
+}
+
+@Model
+final class PowerLevel {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID; var name: String; var sortOrder: Int; var createdAt: Date
+    init(id: UUID = UUID(), bookID: UUID, name: String, sortOrder: Int, createdAt: Date = Date()) { self.id = id; self.bookID = bookID; self.name = name; self.sortOrder = sortOrder; self.createdAt = createdAt }
+}
+
+@Model
+final class PowerUnit {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID; var name: String; var powerDescription: String
+    /// These identification fields are author-maintained; none is inferred from the primary name.
+    var formerNames: String = ""; var foreignNames: String = ""; var shortName: String = ""
+    var existenceStatusRawValue: String = PowerExistenceStatus.active.rawValue
+    var seniorManagers: String = ""; var otherRoster: String = ""; var relationshipNotes: String = ""; var politics: String = ""; var religion: String = ""
+    var levelID: UUID?; var religionWorldTermID: UUID?; var governmentWorldTermID: UUID?
+    /// Legacy V5.2 slots remain only for compatibility until territory links exist.
+    var powerWorldTermID: UUID?; var scopeWorldTermID: UUID?; var purpose: String = ""
+    var createdAt: Date; var updatedAt: Date
+    init(id: UUID = UUID(), bookID: UUID, name: String = "", powerDescription: String = "", formerNames: String = "", foreignNames: String = "", shortName: String = "", existenceStatus: PowerExistenceStatus = .active, seniorManagers: String = "", otherRoster: String = "", relationshipNotes: String = "", politics: String = "", religion: String = "", levelID: UUID? = nil, religionWorldTermID: UUID? = nil, governmentWorldTermID: UUID? = nil, powerWorldTermID: UUID? = nil, scopeWorldTermID: UUID? = nil, purpose: String = "") {
+        self.id = id; self.bookID = bookID; self.name = name; self.powerDescription = powerDescription; self.formerNames = formerNames; self.foreignNames = foreignNames; self.shortName = shortName; self.existenceStatusRawValue = existenceStatus.rawValue; self.seniorManagers = seniorManagers; self.otherRoster = otherRoster; self.relationshipNotes = relationshipNotes; self.politics = politics; self.religion = religion; self.levelID = levelID; self.religionWorldTermID = religionWorldTermID; self.governmentWorldTermID = governmentWorldTermID; self.powerWorldTermID = powerWorldTermID; self.scopeWorldTermID = scopeWorldTermID; self.purpose = purpose; self.createdAt = Date(); self.updatedAt = Date()
+    }
+    var existenceStatus: PowerExistenceStatus { get { PowerExistenceStatus(rawValue: existenceStatusRawValue) ?? .active } set { existenceStatusRawValue = newValue.rawValue } }
+}
+
+enum PowerExistenceStatus: String, CaseIterable, Identifiable { case active, dissolved, uncertain; var id: Self { self }; var title: String { switch self { case .active: "仍存在"; case .dissolved: "已解散／滅亡"; case .uncertain: "狀態不明" } } }
+
+@Model
+final class PowerSubordination {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID; var lowerPowerID: UUID; var upperPowerID: UUID; var createdAt: Date
+    init(id: UUID = UUID(), bookID: UUID, lowerPowerID: UUID, upperPowerID: UUID, createdAt: Date = Date()) { self.id = id; self.bookID = bookID; self.lowerPowerID = lowerPowerID; self.upperPowerID = upperPowerID; self.createdAt = createdAt }
+}
+
+@Model
+final class PowerMember {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID; var powerID: UUID; var characterID: UUID; var title: String
+    var statusRawValue: String = PowerMembershipStatus.current.rawValue; var joinedNodeID: UUID?; var leftNodeID: UUID?
+    var sortOrder: Int; var createdAt: Date; var updatedAt: Date
+    init(id: UUID = UUID(), bookID: UUID, powerID: UUID, characterID: UUID, title: String = "", status: PowerMembershipStatus = .current, joinedNodeID: UUID? = nil, leftNodeID: UUID? = nil, sortOrder: Int = 0, createdAt: Date = Date(), updatedAt: Date = Date()) { self.id = id; self.bookID = bookID; self.powerID = powerID; self.characterID = characterID; self.title = title; self.statusRawValue = status.rawValue; self.joinedNodeID = joinedNodeID; self.leftNodeID = leftNodeID; self.sortOrder = sortOrder; self.createdAt = createdAt; self.updatedAt = updatedAt }
+    var status: PowerMembershipStatus { get { PowerMembershipStatus(rawValue: statusRawValue) ?? .current } set { statusRawValue = newValue.rawValue } }
+}
+
+enum PowerMembershipStatus: String, CaseIterable, Identifiable { case current, former; var id: Self { self }; var title: String { self == .current ? "現任" : "前任" } }
+enum PowerRoleStatus: String, CaseIterable, Identifiable { case current, former, acting, succeeded, dismissed; var id: Self { self }; var title: String { switch self { case .current: "現任"; case .former: "前任"; case .acting: "代理"; case .succeeded: "繼任"; case .dismissed: "遭罷免" } } }
+
+@Model final class PowerMemberRole {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID; var powerID: UUID; var memberID: UUID; var title: String; var isLeadership: Bool; var statusRawValue: String; var startNodeID: UUID?; var endNodeID: UUID?; var sortOrder: Int; var createdAt: Date; var updatedAt: Date
+    init(id: UUID = UUID(), bookID: UUID, powerID: UUID, memberID: UUID, title: String = "", isLeadership: Bool = false, status: PowerRoleStatus = .current, startNodeID: UUID? = nil, endNodeID: UUID? = nil, sortOrder: Int = 0) { self.id = id; self.bookID = bookID; self.powerID = powerID; self.memberID = memberID; self.title = title; self.isLeadership = isLeadership; self.statusRawValue = status.rawValue; self.startNodeID = startNodeID; self.endNodeID = endNodeID; self.sortOrder = sortOrder; self.createdAt = Date(); self.updatedAt = Date() }
+    var status: PowerRoleStatus { get { PowerRoleStatus(rawValue: statusRawValue) ?? .current } set { statusRawValue = newValue.rawValue } }
+}
+
+enum PowerLifecycleKind: String, CaseIterable, Identifiable { case established, renamed, split, merged, dissolved; var id: Self { self }; var title: String { switch self { case .established: "建立"; case .renamed: "改名"; case .split: "分裂"; case .merged: "合併"; case .dissolved: "解散／滅亡" } } }
+@Model final class PowerLifecycleEvent {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID; var powerID: UUID; var kindRawValue: String; var title: String; var detail: String; var nodeID: UUID?; var sortOrder: Int; var createdAt: Date; var updatedAt: Date
+    init(id: UUID = UUID(), bookID: UUID, powerID: UUID, kind: PowerLifecycleKind, title: String = "", detail: String = "", nodeID: UUID? = nil, sortOrder: Int = 0) { self.id = id; self.bookID = bookID; self.powerID = powerID; self.kindRawValue = kind.rawValue; self.title = title; self.detail = detail; self.nodeID = nodeID; self.sortOrder = sortOrder; self.createdAt = Date(); self.updatedAt = Date() }
+    var kind: PowerLifecycleKind? { PowerLifecycleKind(rawValue: kindRawValue) }
+}
+
+enum PowerTransitionKind: String, CaseIterable, Identifiable { case renamed, split, merged, succeeded; var id: Self { self }; var title: String { switch self { case .renamed: "改名承接"; case .split: "分裂"; case .merged: "合併"; case .succeeded: "一般後繼" } } }
+@Model final class PowerSuccessionLink {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID; var predecessorPowerID: UUID; var successorPowerID: UUID; var kindRawValue: String; var nodeID: UUID?; var detail: String; var createdAt: Date; var updatedAt: Date
+    init(id: UUID = UUID(), bookID: UUID, predecessorPowerID: UUID, successorPowerID: UUID, kind: PowerTransitionKind, nodeID: UUID? = nil, detail: String = "") { self.id = id; self.bookID = bookID; self.predecessorPowerID = predecessorPowerID; self.successorPowerID = successorPowerID; self.kindRawValue = kind.rawValue; self.nodeID = nodeID; self.detail = detail; self.createdAt = Date(); self.updatedAt = Date() }
+    var kind: PowerTransitionKind? { PowerTransitionKind(rawValue: kindRawValue) }
+}
+
+enum PowerAssetKind: String, CaseIterable, Identifiable {
+    case resource, technology, item, ability
+    var id: Self { self }
+    var title: String { switch self { case .resource: "資源"; case .technology: "技術"; case .item: "物品"; case .ability: "能力" } }
+}
+
+/// A UUID reference to an asset owned or controlled by a power. World-term links
+/// remain in the settings store; item and ability links cross into the main store.
+@Model
+final class PowerAssetLink {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID; var powerID: UUID; var kindRawValue: String; var sourceID: UUID; var sortOrder: Int; var createdAt: Date; var updatedAt: Date
+    init(id: UUID = UUID(), bookID: UUID, powerID: UUID, kind: PowerAssetKind, sourceID: UUID, sortOrder: Int = 0, createdAt: Date = Date(), updatedAt: Date = Date()) { self.id = id; self.bookID = bookID; self.powerID = powerID; self.kindRawValue = kind.rawValue; self.sourceID = sourceID; self.sortOrder = sortOrder; self.createdAt = createdAt; self.updatedAt = updatedAt }
+    var kind: PowerAssetKind? { PowerAssetKind(rawValue: kindRawValue) }
+}
+
+enum PowerAdvantageKind: String, CaseIterable, Identifiable {
+    case military, economic
+    var id: Self { self }
+    var title: String { switch self { case .military: "軍事優勢"; case .economic: "經濟優勢" } }
+}
+
+/// Advantages are named author records because the project has no standalone
+/// military or economic model to link without inventing a duplicate source type.
+@Model
+final class PowerAdvantage {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID; var powerID: UUID; var kindRawValue: String; var name: String; var detail: String; var sortOrder: Int; var createdAt: Date; var updatedAt: Date
+    init(id: UUID = UUID(), bookID: UUID, powerID: UUID, kind: PowerAdvantageKind, name: String = "", detail: String = "", sortOrder: Int = 0, createdAt: Date = Date(), updatedAt: Date = Date()) { self.id = id; self.bookID = bookID; self.powerID = powerID; self.kindRawValue = kind.rawValue; self.name = name; self.detail = detail; self.sortOrder = sortOrder; self.createdAt = createdAt; self.updatedAt = updatedAt }
+    var kind: PowerAdvantageKind? { PowerAdvantageKind(rawValue: kindRawValue) }
+}
+
+@Model
+final class Place {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID; var name: String; var alternateNames: String?; var placeType: String?; var placeDescription: String; var detailedDescription: String?; var notes: String?; var sortOrder: Int
+    init(id: UUID = UUID(), bookID: UUID, name: String = "", alternateNames: String? = nil, placeType: String? = nil, placeDescription: String = "", detailedDescription: String? = nil, notes: String? = nil, sortOrder: Int = 0) { self.id = id; self.bookID = bookID; self.name = name; self.alternateNames = alternateNames; self.placeType = placeType; self.placeDescription = placeDescription; self.detailedDescription = detailedDescription; self.notes = notes; self.sortOrder = sortOrder }
+}
+
+@Model
+final class WorldTerm {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID; var name: String; var alternateNames: String?; var termCategory: String?; var termDescription: String; var detailedDescription: String?; var operationAndExpression: String?; var limitationsAndExceptions: String?; var worldImpact: String?; var usageExamples: String?; var notes: String?; var sortOrder: Int
+    init(id: UUID = UUID(), bookID: UUID, name: String = "", alternateNames: String? = nil, termCategory: String? = nil, termDescription: String = "", detailedDescription: String? = nil, operationAndExpression: String? = nil, limitationsAndExceptions: String? = nil, worldImpact: String? = nil, usageExamples: String? = nil, notes: String? = nil, sortOrder: Int = 0) { self.id = id; self.bookID = bookID; self.name = name; self.alternateNames = alternateNames; self.termCategory = termCategory; self.termDescription = termDescription; self.detailedDescription = detailedDescription; self.operationAndExpression = operationAndExpression; self.limitationsAndExceptions = limitationsAndExceptions; self.worldImpact = worldImpact; self.usageExamples = usageExamples; self.notes = notes; self.sortOrder = sortOrder }
+}
+}
+
 /// V1 edges have no level information and therefore cannot be validated under
 /// V2 semantics. V3 then restores the original notebook fields and gives each
 /// already-initialized book two editable generic levels if it has none. V4
 /// expands only the independent place and world-term notes. V5 adds optional
 /// world-term references and structured character membership without guessing
 /// from legacy free text. V6 adds only a sidebar catalog revision marker. V7
-/// adds three optional world-term content fields without splitting old text.
+/// adds three optional world-term content fields without splitting old text. V8
+/// adds power aliases, asset links, and advantages. V9 adds lifecycle and roles.
+/// V10 adds structured non-subordination power relationships.
 enum V5SettingsMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
         [
             V5SettingsSchemaV1.self, V5SettingsSchemaV2.self, V5SettingsSchemaV3.self,
             V5SettingsSchemaV4.self, V5SettingsSchemaV5.self, V5SettingsSchemaV6.self,
-            V5SettingsSchemaV7.self
+            V5SettingsSchemaV7.self, V5SettingsSchemaV8.self, V5SettingsSchemaV9.self,
+            V5SettingsSchemaV10.self
         ]
     }
 
@@ -1554,18 +1879,54 @@ enum V5SettingsMigrationPlan: SchemaMigrationPlan {
             .lightweight(
                 fromVersion: V5SettingsSchemaV6.self,
                 toVersion: V5SettingsSchemaV7.self
+            ),
+            .lightweight(
+                fromVersion: V5SettingsSchemaV7.self,
+                toVersion: V5SettingsSchemaV8.self
+            ),
+            .custom(
+                fromVersion: V5SettingsSchemaV8.self,
+                toVersion: V5SettingsSchemaV9.self,
+                willMigrate: nil,
+                didMigrate: { context in
+                    let members = try context.fetch(FetchDescriptor<V5SettingsSchemaV9.PowerMember>())
+                    let roles = try context.fetch(FetchDescriptor<V5SettingsSchemaV9.PowerMemberRole>())
+                    let roleMemberIDs = Set(roles.map(\.memberID))
+                    for member in members where !member.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !roleMemberIDs.contains(member.id) {
+                        context.insert(V5SettingsSchemaV9.PowerMemberRole(bookID: member.bookID, powerID: member.powerID, memberID: member.id, title: member.title))
+                    }
+                    try context.save()
+                }
+            ),
+            .lightweight(
+                fromVersion: V5SettingsSchemaV9.self,
+                toVersion: V5SettingsSchemaV10.self
             )
         ]
     }
 }
 
-typealias BookSidebarSetting = V5SettingsSchemaV7.BookSidebarSetting
-typealias PowerLevel = V5SettingsSchemaV7.PowerLevel
-typealias PowerUnit = V5SettingsSchemaV7.PowerUnit
-typealias PowerSubordination = V5SettingsSchemaV7.PowerSubordination
-typealias PowerMember = V5SettingsSchemaV7.PowerMember
-typealias Place = V5SettingsSchemaV7.Place
-typealias WorldTerm = V5SettingsSchemaV7.WorldTerm
+typealias BookSidebarSetting = V5SettingsSchemaV9.BookSidebarSetting
+typealias PowerLevel = V5SettingsSchemaV9.PowerLevel
+typealias PowerUnit = V5SettingsSchemaV9.PowerUnit
+typealias PowerSubordination = V5SettingsSchemaV9.PowerSubordination
+typealias PowerMember = V5SettingsSchemaV9.PowerMember
+typealias PowerMemberRole = V5SettingsSchemaV9.PowerMemberRole
+typealias PowerLifecycleEvent = V5SettingsSchemaV9.PowerLifecycleEvent
+typealias PowerSuccessionLink = V5SettingsSchemaV9.PowerSuccessionLink
+typealias PowerAssetLink = V5SettingsSchemaV9.PowerAssetLink
+typealias PowerAdvantage = V5SettingsSchemaV9.PowerAdvantage
+typealias PowerAssetKind = V5SettingsSchemaV9.PowerAssetKind
+typealias PowerAdvantageKind = V5SettingsSchemaV9.PowerAdvantageKind
+typealias PowerExistenceStatus = V5SettingsSchemaV9.PowerExistenceStatus
+typealias PowerMembershipStatus = V5SettingsSchemaV9.PowerMembershipStatus
+typealias PowerRoleStatus = V5SettingsSchemaV9.PowerRoleStatus
+typealias PowerLifecycleKind = V5SettingsSchemaV9.PowerLifecycleKind
+typealias PowerTransitionKind = V5SettingsSchemaV9.PowerTransitionKind
+typealias PowerRelation = V5SettingsSchemaV10.PowerRelation
+typealias PowerRelationKind = V5SettingsSchemaV10.PowerRelationKind
+typealias Place = V5SettingsSchemaV9.Place
+typealias WorldTerm = V5SettingsSchemaV9.WorldTerm
 
 enum PowerHierarchyError: LocalizedError {
     case invalidBook
@@ -1624,12 +1985,22 @@ enum PowerDetailError: LocalizedError {
     case invalidBook
     case invalidWorldTermCategory(expected: WorldTermCategory)
     case duplicateMember
+    case duplicateAsset
+    case invalidAssetSource(kind: PowerAssetKind)
+    case duplicateRelation
+    case duplicatePowerRelation
+    case selfPowerRelation
 
     var errorDescription: String? {
         switch self {
         case .invalidBook: "連結的資料必須屬於同一本書。"
         case .invalidWorldTermCategory(let expected): "此欄位只能連接「\(expected.rawValue)」條目。"
         case .duplicateMember: "這個角色已經是此勢力的成員。"
+        case .duplicateAsset: "這項資料已連接到此勢力。"
+        case .invalidAssetSource(let kind): "只能連接同一本書的「\(kind.title)」資料。"
+        case .duplicateRelation: "這項承接關係已經存在。"
+        case .duplicatePowerRelation: "這項勢力關係已經存在。"
+        case .selfPowerRelation: "勢力不能與自己建立關係。"
         }
     }
 }
@@ -1697,6 +2068,42 @@ final class V5SettingsStore {
         members(for: bookID).filter { $0.powerID == power.id }
     }
 
+    func assets(for power: PowerUnit, bookID: UUID) -> [PowerAssetLink] {
+        _ = revision
+        return (try? context.fetch(FetchDescriptor<PowerAssetLink>()))?
+            .filter { $0.bookID == bookID && $0.powerID == power.id }
+            .sorted { $0.sortOrder < $1.sortOrder } ?? []
+    }
+
+    func advantages(for power: PowerUnit, bookID: UUID) -> [PowerAdvantage] {
+        _ = revision
+        return (try? context.fetch(FetchDescriptor<PowerAdvantage>()))?
+            .filter { $0.bookID == bookID && $0.powerID == power.id }
+            .sorted { $0.sortOrder < $1.sortOrder } ?? []
+    }
+
+    func lifecycleEvents(for power: PowerUnit, bookID: UUID) -> [PowerLifecycleEvent] {
+        _ = revision
+        return (try? context.fetch(FetchDescriptor<PowerLifecycleEvent>()))?.filter { $0.bookID == bookID && $0.powerID == power.id }.sorted { $0.sortOrder < $1.sortOrder } ?? []
+    }
+
+    func successionLinks(for power: PowerUnit, bookID: UUID) -> [PowerSuccessionLink] {
+        _ = revision
+        return (try? context.fetch(FetchDescriptor<PowerSuccessionLink>()))?.filter { $0.bookID == bookID && ($0.predecessorPowerID == power.id || $0.successorPowerID == power.id) } ?? []
+    }
+
+    func powerRelations(for power: PowerUnit, bookID: UUID) -> [PowerRelation] {
+        _ = revision
+        return ((try? context.fetch(FetchDescriptor<PowerRelation>())) ?? [])
+            .filter { $0.bookID == bookID && ($0.sourcePowerID == power.id || $0.targetPowerID == power.id) }
+            .sorted { $0.createdAt < $1.createdAt }
+    }
+
+    func roles(for member: PowerMember, bookID: UUID) -> [PowerMemberRole] {
+        _ = revision
+        return (try? context.fetch(FetchDescriptor<PowerMemberRole>()))?.filter { $0.bookID == bookID && $0.memberID == member.id }.sorted { $0.sortOrder < $1.sortOrder } ?? []
+    }
+
     @discardableResult
     func createPlace(bookID: UUID) -> Place {
         let nextSortOrder = (places(for: bookID).map(\.sortOrder).max() ?? -1) + 1
@@ -1729,6 +2136,9 @@ final class V5SettingsStore {
             if power.powerWorldTermID == term.id { power.powerWorldTermID = nil }
             if power.scopeWorldTermID == term.id { power.scopeWorldTermID = nil }
         }
+        (try? context.fetch(FetchDescriptor<PowerAssetLink>()))?
+            .filter { $0.bookID == bookID && $0.sourceID == term.id && ($0.kind == .resource || $0.kind == .technology) }
+            .forEach(context.delete)
         context.delete(term)
         save()
     }
@@ -1767,6 +2177,9 @@ final class V5SettingsStore {
             sortOrder: (existing.map(\.sortOrder).max() ?? -1) + 1
         )
         context.insert(member)
+        if !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            context.insert(PowerMemberRole(bookID: bookID, powerID: power.id, memberID: member.id, title: title))
+        }
         try context.save()
         didSave()
         return member
@@ -1782,19 +2195,139 @@ final class V5SettingsStore {
 
     func removeMember(_ member: PowerMember, bookID: UUID) {
         guard member.bookID == bookID else { return }
+        roles(for: member, bookID: bookID).forEach(context.delete)
         context.delete(member)
         save()
     }
 
+    @discardableResult
+    func addRole(to member: PowerMember, title: String = "新職務", bookID: UUID) throws -> PowerMemberRole {
+        guard member.bookID == bookID else { throw PowerDetailError.invalidBook }
+        let existing = roles(for: member, bookID: bookID)
+        let role = PowerMemberRole(bookID: bookID, powerID: member.powerID, memberID: member.id, title: title, sortOrder: (existing.map(\.sortOrder).max() ?? -1) + 1)
+        context.insert(role); try context.save(); didSave(); return role
+    }
+
+    func removeRole(_ role: PowerMemberRole, bookID: UUID) { guard role.bookID == bookID else { return }; context.delete(role); save() }
+
+    @discardableResult
+    func addLifecycleEvent(to power: PowerUnit, kind: PowerLifecycleKind, bookID: UUID) throws -> PowerLifecycleEvent {
+        guard power.bookID == bookID else { throw PowerDetailError.invalidBook }
+        let existing = lifecycleEvents(for: power, bookID: bookID)
+        let event = PowerLifecycleEvent(bookID: bookID, powerID: power.id, kind: kind, title: kind.title, sortOrder: (existing.map(\.sortOrder).max() ?? -1) + 1)
+        context.insert(event); try context.save(); didSave(); return event
+    }
+
+    func removeLifecycleEvent(_ event: PowerLifecycleEvent, bookID: UUID) { guard event.bookID == bookID else { return }; context.delete(event); save() }
+
+    @discardableResult
+    func addSuccession(predecessor: PowerUnit, successor: PowerUnit, kind: PowerTransitionKind, bookID: UUID) throws -> PowerSuccessionLink {
+        guard predecessor.bookID == bookID, successor.bookID == bookID, predecessor.id != successor.id else { throw PowerDetailError.invalidBook }
+        let all = (try? context.fetch(FetchDescriptor<PowerSuccessionLink>())) ?? []
+        guard !all.contains(where: { $0.predecessorPowerID == predecessor.id && $0.successorPowerID == successor.id && $0.kindRawValue == kind.rawValue }) else { throw PowerDetailError.duplicateRelation }
+        let link = PowerSuccessionLink(bookID: bookID, predecessorPowerID: predecessor.id, successorPowerID: successor.id, kind: kind)
+        context.insert(link); try context.save(); didSave(); return link
+    }
+
+    func removeSuccession(_ link: PowerSuccessionLink, bookID: UUID) { guard link.bookID == bookID else { return }; context.delete(link); save() }
+
+    @discardableResult
+    func addPowerRelation(
+        from source: PowerUnit,
+        to target: PowerUnit,
+        kind: PowerRelationKind,
+        detail: String,
+        bookID: UUID
+    ) throws -> PowerRelation {
+        guard source.bookID == bookID, target.bookID == bookID else { throw PowerDetailError.invalidBook }
+        guard source.id != target.id else { throw PowerDetailError.selfPowerRelation }
+        let endpoints = Self.normalizedPowerRelationEndpoints(sourceID: source.id, targetID: target.id, kind: kind)
+        let existing = (try? context.fetch(FetchDescriptor<PowerRelation>())) ?? []
+        guard !existing.contains(where: {
+            $0.bookID == bookID && $0.kindRawValue == kind.rawValue
+                && $0.sourcePowerID == endpoints.source && $0.targetPowerID == endpoints.target
+        }) else { throw PowerDetailError.duplicatePowerRelation }
+        let relation = PowerRelation(
+            bookID: bookID,
+            sourcePowerID: endpoints.source,
+            targetPowerID: endpoints.target,
+            kind: kind,
+            detail: detail
+        )
+        context.insert(relation)
+        try context.save()
+        didSave()
+        return relation
+    }
+
+    func removePowerRelation(_ relation: PowerRelation, bookID: UUID) {
+        guard relation.bookID == bookID else { return }
+        context.delete(relation)
+        save()
+    }
+
+    private static func normalizedPowerRelationEndpoints(
+        sourceID: UUID, targetID: UUID, kind: PowerRelationKind
+    ) -> (source: UUID, target: UUID) {
+        guard !kind.isDirected, targetID.uuidString < sourceID.uuidString else {
+            return (sourceID, targetID)
+        }
+        return (targetID, sourceID)
+    }
+
+    @discardableResult
+    func addAsset(kind: PowerAssetKind, sourceID: UUID, sourceBookID: UUID, to power: PowerUnit, bookID: UUID) throws -> PowerAssetLink {
+        guard power.bookID == bookID, sourceBookID == bookID else { throw PowerDetailError.invalidBook }
+        if kind == .resource || kind == .technology {
+            let expectedCategory = kind == .resource ? WorldTermCategory.resource.rawValue : WorldTermCategory.technology.rawValue
+            guard worldTerms(for: bookID).contains(where: { $0.id == sourceID && $0.termCategory == expectedCategory }) else {
+                throw PowerDetailError.invalidAssetSource(kind: kind)
+            }
+        }
+        let existing = assets(for: power, bookID: bookID)
+        guard !existing.contains(where: { $0.kind == kind && $0.sourceID == sourceID }) else {
+            throw PowerDetailError.duplicateAsset
+        }
+        let asset = PowerAssetLink(bookID: bookID, powerID: power.id, kind: kind, sourceID: sourceID, sortOrder: (existing.map(\.sortOrder).max() ?? -1) + 1)
+        context.insert(asset)
+        try context.save()
+        didSave()
+        return asset
+    }
+
+    func removeAsset(_ asset: PowerAssetLink, bookID: UUID) {
+        guard asset.bookID == bookID else { return }
+        context.delete(asset)
+        save()
+    }
+
+    @discardableResult
+    func addAdvantage(kind: PowerAdvantageKind, name: String, detail: String, to power: PowerUnit, bookID: UUID) throws -> PowerAdvantage {
+        guard power.bookID == bookID else { throw PowerDetailError.invalidBook }
+        let existing = advantages(for: power, bookID: bookID)
+        let advantage = PowerAdvantage(bookID: bookID, powerID: power.id, kind: kind, name: name, detail: detail, sortOrder: (existing.map(\.sortOrder).max() ?? -1) + 1)
+        context.insert(advantage)
+        try context.save()
+        didSave()
+        return advantage
+    }
+
+    func removeAdvantage(_ advantage: PowerAdvantage, bookID: UUID) {
+        guard advantage.bookID == bookID else { return }
+        context.delete(advantage)
+        save()
+    }
+
     func removeMemberships(characterID: UUID) throws {
-        try context.fetch(FetchDescriptor<PowerMember>())
-            .filter { $0.characterID == characterID }
-            .forEach(context.delete)
+        let removed = try context.fetch(FetchDescriptor<PowerMember>()).filter { $0.characterID == characterID }
+        let removedIDs = Set(removed.map(\.id))
+        try context.fetch(FetchDescriptor<PowerMemberRole>()).filter { removedIDs.contains($0.memberID) }.forEach(context.delete)
+        removed.forEach(context.delete)
         try context.save()
         didSave()
     }
 
-    func reconcile(validBookIDs: Set<UUID>, validCharacterIDs: Set<UUID>) throws {
+    func reconcile(validBookIDs: Set<UUID>, validCharacterIDs: Set<UUID>, validItemIDs: Set<UUID> = [], validAbilityIDs: Set<UUID> = [], validNodeIDs: Set<UUID> = []) throws {
         let allPowers = try context.fetch(FetchDescriptor<PowerUnit>())
         let validPowerIDs = Set(allPowers.filter { validBookIDs.contains($0.bookID) }.map(\.id))
         let allTerms = try context.fetch(FetchDescriptor<WorldTerm>())
@@ -1802,6 +2335,42 @@ final class V5SettingsStore {
         try context.fetch(FetchDescriptor<PowerMember>()).filter {
             !validBookIDs.contains($0.bookID) || !validPowerIDs.contains($0.powerID) || !validCharacterIDs.contains($0.characterID)
         }.forEach(context.delete)
+        try context.fetch(FetchDescriptor<PowerAssetLink>()).filter { asset in
+            !validBookIDs.contains(asset.bookID) || !validPowerIDs.contains(asset.powerID)
+                || (asset.kind == .item && !validItemIDs.contains(asset.sourceID))
+                || (asset.kind == .ability && !validAbilityIDs.contains(asset.sourceID))
+                || ((asset.kind == .resource || asset.kind == .technology) && !allTerms.contains(where: { $0.id == asset.sourceID && $0.bookID == asset.bookID }))
+        }.forEach(context.delete)
+        try context.fetch(FetchDescriptor<PowerAdvantage>()).filter {
+            !validBookIDs.contains($0.bookID) || !validPowerIDs.contains($0.powerID)
+        }.forEach(context.delete)
+        let validMemberIDs = Set(try context.fetch(FetchDescriptor<PowerMember>()).map(\.id))
+        try context.fetch(FetchDescriptor<PowerMemberRole>()).filter { !validMemberIDs.contains($0.memberID) || !validPowerIDs.contains($0.powerID) }.forEach(context.delete)
+        try context.fetch(FetchDescriptor<PowerLifecycleEvent>()).filter { !validPowerIDs.contains($0.powerID) }.forEach(context.delete)
+        try context.fetch(FetchDescriptor<PowerSuccessionLink>()).filter { !validPowerIDs.contains($0.predecessorPowerID) || !validPowerIDs.contains($0.successorPowerID) }.forEach(context.delete)
+        var seenPowerRelationKeys = Set<String>()
+        let powersByID = Dictionary(uniqueKeysWithValues: allPowers.map { ($0.id, $0) })
+        for relation in try context.fetch(FetchDescriptor<PowerRelation>()).sorted(by: { $0.createdAt < $1.createdAt }) {
+            guard let kind = relation.kind,
+                  relation.sourcePowerID != relation.targetPowerID,
+                  let source = powersByID[relation.sourcePowerID],
+                  let target = powersByID[relation.targetPowerID],
+                  source.bookID == relation.bookID,
+                  target.bookID == relation.bookID,
+                  validBookIDs.contains(relation.bookID) else {
+                context.delete(relation)
+                continue
+            }
+            let endpoints = Self.normalizedPowerRelationEndpoints(sourceID: relation.sourcePowerID, targetID: relation.targetPowerID, kind: kind)
+            relation.sourcePowerID = endpoints.source
+            relation.targetPowerID = endpoints.target
+            let key = "\(relation.bookID.uuidString)|\(kind.rawValue)|\(endpoints.source.uuidString)|\(endpoints.target.uuidString)"
+            if !seenPowerRelationKeys.insert(key).inserted { context.delete(relation) }
+        }
+        for member in try context.fetch(FetchDescriptor<PowerMember>()) { if let id = member.joinedNodeID, !validNodeIDs.contains(id) { member.joinedNodeID = nil }; if let id = member.leftNodeID, !validNodeIDs.contains(id) { member.leftNodeID = nil } }
+        for role in try context.fetch(FetchDescriptor<PowerMemberRole>()) { if let id = role.startNodeID, !validNodeIDs.contains(id) { role.startNodeID = nil }; if let id = role.endNodeID, !validNodeIDs.contains(id) { role.endNodeID = nil } }
+        for event in try context.fetch(FetchDescriptor<PowerLifecycleEvent>()) { if let id = event.nodeID, !validNodeIDs.contains(id) { event.nodeID = nil } }
+        for link in try context.fetch(FetchDescriptor<PowerSuccessionLink>()) { if let id = link.nodeID, !validNodeIDs.contains(id) { link.nodeID = nil } }
         try context.fetch(FetchDescriptor<PowerSubordination>()).filter {
             !validBookIDs.contains($0.bookID) || !validPowerIDs.contains($0.lowerPowerID) || !validPowerIDs.contains($0.upperPowerID)
         }.forEach(context.delete)
@@ -1930,6 +2499,12 @@ final class V5SettingsStore {
     func deletePower(_ power: PowerUnit, bookID: UUID) {
         do {
             members(for: power, bookID: bookID).forEach(context.delete)
+            try context.fetch(FetchDescriptor<PowerMemberRole>()).filter { $0.powerID == power.id }.forEach(context.delete)
+            lifecycleEvents(for: power, bookID: bookID).forEach(context.delete)
+            successionLinks(for: power, bookID: bookID).forEach(context.delete)
+            powerRelations(for: power, bookID: bookID).forEach(context.delete)
+            assets(for: power, bookID: bookID).forEach(context.delete)
+            advantages(for: power, bookID: bookID).forEach(context.delete)
             try PowerGraphStore.delete(power, edges: edges(for: bookID), context: context)
             didSave()
         } catch {
@@ -1941,6 +2516,12 @@ final class V5SettingsStore {
         try context.fetch(FetchDescriptor<BookSidebarSetting>()).filter { $0.bookID == bookID }.forEach(context.delete)
         try context.fetch(FetchDescriptor<PowerSubordination>()).filter { $0.bookID == bookID }.forEach(context.delete)
         try context.fetch(FetchDescriptor<PowerMember>()).filter { $0.bookID == bookID }.forEach(context.delete)
+        try context.fetch(FetchDescriptor<PowerMemberRole>()).filter { $0.bookID == bookID }.forEach(context.delete)
+        try context.fetch(FetchDescriptor<PowerLifecycleEvent>()).filter { $0.bookID == bookID }.forEach(context.delete)
+        try context.fetch(FetchDescriptor<PowerSuccessionLink>()).filter { $0.bookID == bookID }.forEach(context.delete)
+        try context.fetch(FetchDescriptor<PowerRelation>()).filter { $0.bookID == bookID }.forEach(context.delete)
+        try context.fetch(FetchDescriptor<PowerAssetLink>()).filter { $0.bookID == bookID }.forEach(context.delete)
+        try context.fetch(FetchDescriptor<PowerAdvantage>()).filter { $0.bookID == bookID }.forEach(context.delete)
         try context.fetch(FetchDescriptor<PowerUnit>()).filter { $0.bookID == bookID }.forEach(context.delete)
         try context.fetch(FetchDescriptor<PowerLevel>()).filter { $0.bookID == bookID }.forEach(context.delete)
         try context.fetch(FetchDescriptor<Place>()).filter { $0.bookID == bookID }.forEach(context.delete)

@@ -7,7 +7,7 @@
 | Store | Schema／主要模型 | 連結方式 |
 |---|---|---|
 | `Sailune-v5.store` | `NovelWriterSchemaV5`：Book、Volume、Section、Character、Ability、Item、Timeline、Node、Event 與舊 Organization 相容型別 | SwiftData relationship；V5 不升級此 store schema |
-| `Sailune-v5-settings.store` | `V5SettingsSchemaV7`：BookSidebarSetting、PowerLevel、PowerUnit、PowerSubordination、PowerMember、Place、WorldTerm | 只以 `bookID` 與穩定 UUID 連結其他 store；不建立跨 store SwiftData relationship |
+| `Sailune-v5-settings.store` | `V5SettingsSchemaV10`：BookSidebarSetting、PowerLevel、PowerUnit、PowerSubordination、PowerMember、PowerMemberRole、PowerLifecycleEvent、PowerSuccessionLink、PowerRelation、PowerAssetLink、PowerAdvantage、Place、WorldTerm | 只以 `bookID` 與穩定 UUID 連結其他 store；時間序以 `nodeID` 指向主 store Node；V1～V9 保留為不可變遷移快照 |
 | `Sailune-v5-item-copies.store` | ItemCopy、ItemCopyHolding、ItemCopyHistory | `bookID`、`itemID`、`characterID`、`copyID` |
 | `Sailune-v5-item-copy-level-selections.store` | ItemCopyLevelSelection | `copyID`、`levelID` |
 | `Sailune-v5-ability-progress.store` | AbilityProgressRecord／History | `bookID`、`abilityID`、`characterID`、`nodeID` |
@@ -30,8 +30,13 @@ Book
                  └─ Character 關聯與可選 Section 來源
 
 PowerLevel（bookID、由高至低 sortOrder）
-└─ PowerUnit（bookID、levelID → PowerLevel、簡介、高層管理員、其他名單、勢力關係、政治、宗教、核心／範圍欄位）
+└─ PowerUnit（bookID、levelID → PowerLevel、名稱／舊名／外文名／簡稱、簡介、高層管理員、其他名單、勢力關係、政治、宗教、核心／範圍欄位）
    └─ PowerSubordination：lowerPowerID → upperPowerID（只保存直接隸屬）
+   └─ PowerRelation：sourcePowerID ↔／→ targetPowerID（對稱關係或宗主→附庸；不含時間序）
+   ├─ PowerAssetLink：資源／技術 WorldTerm 或主 store 物品／能力的 UUID 連接
+   ├─ PowerAdvantage：軍事／經濟優勢的作者命名與說明
+   ├─ PowerLifecycleEvent／PowerSuccessionLink：生命週期與前身→後繼（可選 nodeID）
+   └─ PowerMember ─ PowerMemberRole：加入／離開、多重職務、領導與任職狀態（可選 nodeID）
 
 BookSidebarSetting（bookID）→ 顯示項目、可見性、排序、側邊欄目錄版本
 Place（bookID）→ 名稱、其他名稱、類型、簡介、詳細描述、備註、排序

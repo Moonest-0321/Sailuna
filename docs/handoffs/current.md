@@ -1,5 +1,30 @@
 # 當前聊天交接
 
+## V5.6 勢力非隸屬關係（完成）
+
+- settings store 升級至 V10，新增 `PowerRelation`；同盟、敵對、競爭、貿易與臨時合作為對稱關係，宗主／附庸以宗主→附庸保存，不含時間序。
+- UI 沒有採用探索 mockup 的視覺；正式畫面依現有 `PowerDetailView` 的灰底區塊、caption、borderless 按鈕、plain 移除圖示、原生 sheet 與 alert 適配。既有 `relationshipNotes` 原文保留。
+- Store 阻止跨書、自連結與同類型重複；刪除勢力／整書與 reconcile 清理非法關係，不改變直屬隸屬或前身／後繼。
+- V9→V10 檔案型遷移測試確認勢力 UUID 與自由文字保留、新關係初始為空；V5SettingsTests 45 項通過，完整回歸 135 項通過。
+- 唯一下一步：以實際 App 人工驗收勢力詳情的新增關係 sheet、宗主／附庸視角及小視窗排版。
+
+## V5.5 勢力生命週期與成員時間序（完成）
+
+- 勢力詳細頁新增存在狀態、生命週期事件、前身／後繼承接；事件與承接均可沿用共用時間定位選擇器設定世界日期與節次。
+- 成員新增現任／前任、加入／離開定位；每位成員可有多筆職務，每筆可標示領導職位、任職／卸任定位及現任／前任／代理／繼任／遭罷免。
+- settings store 新增 `PowerLifecycleEvent`、`PowerSuccessionLink`、`PowerMemberRole`，正式升級為 V9。V8 snapshot 保持 V5.4 原結構，V8→V9 自訂遷移會把舊單一職稱回填為第一筆職務。
+- 已修正真實 V8 store 載入失敗：根因是 V5.5 曾在同一 V8 版本號下改動 schema。新增檔案型 V8→V9 測試，驗證勢力、舊稱、成員與職稱均保留。
+- 刪除勢力、成員或整書會清理附屬資料；啟動修復會清除已不存在 Node 的 UUID 定位但保留原始內容。
+- 驗證：V5SettingsTests 43 項與完整 macOS XCTest 132 項通過；frontend parse 與 `git diff --check` 通過。
+
+## V5.4 勢力別名與資源／能力識別（實作與驗證中）
+
+- 已新增 V5SettingsSchemaV8：PowerUnit 保存 `formerNames`、`foreignNames`、`shortName`；PowerAssetLink 以 UUID 連接資源、技術、物品或能力；PowerAdvantage 保存軍事／經濟優勢的名稱與說明。
+- 資源／技術必須為同書且正確 WorldTerm 分類；物品／能力候選由 UI 限定同書，啟動修復以主 store 現存 UUID 清掉已刪來源。刪除世界條目、勢力與整書同時清理附屬資料。
+- 詳細頁已加入識別、掌握的資源與能力、軍事與經濟優勢區塊。沒有獨立軍經模型，因此優勢是作者命名記錄，沒有假裝成跨模組連結。
+- 已新增 Store 回歸測試；frontend parse 與 `git diff --check` 通過。改在主機環境使用隔離 DerivedData 後，V5SettingsTests 40 項與完整 macOS XCTest 129 項全數通過。
+- 本工作單自動驗證完成；人工 UI 冒煙可與既有 V5 預設驗收一併進行，範圍是四類連接、別名與兩類優勢的新增／刪除／重開。
+
 ## V5.2 追加修正：勢力條目連接限制（實作完成，待人工 UI 冒煙）
 
 - 使用者校正「權力」為誤植，正確欄位是「核心」；核心是勢力實際控管的核心區域，範圍是輻射區域，未來改連接地點／地圖。

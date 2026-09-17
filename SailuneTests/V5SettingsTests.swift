@@ -346,7 +346,7 @@ final class V5SettingsTests: XCTestCase {
             try container.mainContext.save()
         }
 
-        let schema = Schema(versionedSchema: V5SettingsSchemaV7.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV10.self)
         let migrated = try ModelContainer(
             for: schema,
             migrationPlan: V5SettingsMigrationPlan.self,
@@ -413,7 +413,7 @@ final class V5SettingsTests: XCTestCase {
             try container.mainContext.save()
         }
 
-        let schema = Schema(versionedSchema: V5SettingsSchemaV7.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV10.self)
         let migrated = try ModelContainer(
             for: schema,
             migrationPlan: V5SettingsMigrationPlan.self,
@@ -676,7 +676,7 @@ final class V5SettingsTests: XCTestCase {
             try context.save()
         }
 
-        let schema = Schema(versionedSchema: V5SettingsSchemaV7.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV10.self)
         let migrated = try ModelContainer(
             for: schema,
             migrationPlan: V5SettingsMigrationPlan.self,
@@ -714,7 +714,7 @@ final class V5SettingsTests: XCTestCase {
             try context.save()
         }
 
-        let schema = Schema(versionedSchema: V5SettingsSchemaV7.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV10.self)
         let migrated = try ModelContainer(
             for: schema,
             migrationPlan: V5SettingsMigrationPlan.self,
@@ -765,7 +765,7 @@ final class V5SettingsTests: XCTestCase {
             try context.save()
         }
 
-        let schema = Schema(versionedSchema: V5SettingsSchemaV7.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV10.self)
         let migrated = try ModelContainer(
             for: schema,
             migrationPlan: V5SettingsMigrationPlan.self,
@@ -955,7 +955,7 @@ final class V5SettingsTests: XCTestCase {
 
         do {
             let mainSchema = Schema(versionedSchema: NovelWriterSchemaV5.self)
-            let settingsSchema = Schema(versionedSchema: V5SettingsSchemaV7.self)
+            let settingsSchema = Schema(versionedSchema: V5SettingsSchemaV10.self)
             let mainContainer = try ModelContainer(
                 for: mainSchema,
                 configurations: [ModelConfiguration(schema: mainSchema, url: mainURL)]
@@ -1042,6 +1042,183 @@ final class V5SettingsTests: XCTestCase {
         XCTAssertEqual(PowerWorldTermField.allCases.map(\.title), ["宗教", "政體"])
     }
 
+    func testPowerAliasesAssetsAndAdvantagesPersistAndRemainScoped() throws {
+        let container = try makeMainContainer()
+        let store = V5SettingsStore(container: container)
+        let bookID = UUID()
+        let otherBookID = UUID()
+        let power = PowerUnit(bookID: bookID, name: "北境聯盟")
+        power.formerNames = "北境自治會"
+        power.foreignNames = "Northern League"
+        power.shortName = "北盟"
+        let resource = WorldTerm(bookID: bookID, name: "鐵礦")
+        resource.termCategory = WorldTermCategory.resource.rawValue
+        let technology = WorldTerm(bookID: bookID, name: "蒸汽工坊")
+        technology.termCategory = WorldTermCategory.technology.rawValue
+        let wrongCategory = WorldTerm(bookID: bookID, name: "王權")
+        wrongCategory.termCategory = WorldTermCategory.institution.rawValue
+        container.mainContext.insert(power)
+        [resource, technology, wrongCategory].forEach(container.mainContext.insert)
+        try container.mainContext.save()
+
+        _ = try store.addAsset(kind: .resource, sourceID: resource.id, sourceBookID: bookID, to: power, bookID: bookID)
+        _ = try store.addAsset(kind: .technology, sourceID: technology.id, sourceBookID: bookID, to: power, bookID: bookID)
+        _ = try store.addAsset(kind: .item, sourceID: UUID(), sourceBookID: bookID, to: power, bookID: bookID)
+        _ = try store.addAsset(kind: .ability, sourceID: UUID(), sourceBookID: bookID, to: power, bookID: bookID)
+        XCTAssertThrowsError(try store.addAsset(kind: .resource, sourceID: wrongCategory.id, sourceBookID: bookID, to: power, bookID: bookID))
+        XCTAssertThrowsError(try store.addAsset(kind: .technology, sourceID: technology.id, sourceBookID: otherBookID, to: power, bookID: bookID))
+        XCTAssertThrowsError(try store.addAsset(kind: .resource, sourceID: resource.id, sourceBookID: bookID, to: power, bookID: bookID))
+
+        let military = try store.addAdvantage(kind: .military, name: "山地防線", detail: "熟悉隘口", to: power, bookID: bookID)
+        let economic = try store.addAdvantage(kind: .economic, name: "礦業稅收", detail: "控制冶煉", to: power, bookID: bookID)
+        XCTAssertEqual([power.formerNames, power.foreignNames, power.shortName], ["北境自治會", "Northern League", "北盟"])
+        XCTAssertEqual(store.assets(for: power, bookID: bookID).count, 4)
+        XCTAssertEqual(store.advantages(for: power, bookID: bookID).map(\.kind), [.military, .economic])
+
+        store.removeAdvantage(military, bookID: bookID)
+        store.removeAsset(try XCTUnwrap(store.assets(for: power, bookID: bookID).first { $0.kind == .item }), bookID: bookID)
+        XCTAssertEqual(store.advantages(for: power, bookID: bookID).map(\.id), [economic.id])
+        XCTAssertEqual(store.assets(for: power, bookID: bookID).count, 3)
+    }
+
+    func testDeletingWorldTermAndPowerCleansV54AssetRecords() throws {
+        let container = try makeMainContainer()
+        let store = V5SettingsStore(container: container)
+        let bookID = UUID()
+        let power = PowerUnit(bookID: bookID, name: "工坊")
+        let resource = WorldTerm(bookID: bookID, name: "銅礦")
+        resource.termCategory = WorldTermCategory.resource.rawValue
+        container.mainContext.insert(power)
+        container.mainContext.insert(resource)
+        try container.mainContext.save()
+        _ = try store.addAsset(kind: .resource, sourceID: resource.id, sourceBookID: bookID, to: power, bookID: bookID)
+        _ = try store.addAdvantage(kind: .economic, name: "鑄幣權", detail: "", to: power, bookID: bookID)
+
+        store.deleteWorldTerm(resource, bookID: bookID)
+        XCTAssertTrue(store.assets(for: power, bookID: bookID).isEmpty)
+        store.deletePower(power, bookID: bookID)
+        XCTAssertTrue(try container.mainContext.fetch(FetchDescriptor<PowerAdvantage>()).isEmpty)
+    }
+
+    func testStructuredPowerRelationsNormalizeSymmetricKindsAndPreserveSuzeraintyDirection() throws {
+        let container = try makeMainContainer()
+        let store = V5SettingsStore(container: container)
+        let bookID = UUID(); let otherBookID = UUID()
+        let federation = PowerUnit(bookID: bookID, name: "聯邦")
+        let guild = PowerUnit(bookID: bookID, name: "商會")
+        let duchy = PowerUnit(bookID: bookID, name: "侯國")
+        let outsider = PowerUnit(bookID: otherBookID, name: "外國")
+        [federation, guild, duchy, outsider].forEach(container.mainContext.insert)
+        try container.mainContext.save()
+
+        let alliance = try store.addPowerRelation(from: federation, to: guild, kind: .alliance, detail: "共同防禦", bookID: bookID)
+        XCTAssertEqual(store.powerRelations(for: federation, bookID: bookID).map(\.id), [alliance.id])
+        XCTAssertEqual(store.powerRelations(for: guild, bookID: bookID).map(\.id), [alliance.id])
+        XCTAssertThrowsError(try store.addPowerRelation(from: guild, to: federation, kind: .alliance, detail: "反向重複", bookID: bookID))
+
+        let suzerainty = try store.addPowerRelation(from: federation, to: duchy, kind: .suzerainty, detail: "保留內政", bookID: bookID)
+        XCTAssertEqual(suzerainty.sourcePowerID, federation.id)
+        XCTAssertEqual(suzerainty.targetPowerID, duchy.id)
+        XCTAssertThrowsError(try store.addPowerRelation(from: federation, to: federation, kind: .trade, detail: "", bookID: bookID))
+        XCTAssertThrowsError(try store.addPowerRelation(from: federation, to: outsider, kind: .hostility, detail: "", bookID: bookID))
+
+        store.deletePower(federation, bookID: bookID)
+        XCTAssertTrue(try container.mainContext.fetch(FetchDescriptor<PowerRelation>()).isEmpty)
+        XCTAssertNotNil(try container.mainContext.fetch(FetchDescriptor<PowerUnit>()).first(where: { $0.id == duchy.id }))
+    }
+
+    func testV9StoreMigratesToV10PreservingRelationshipNotes() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("Sailune-settings-v10-relation-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("settings.store")
+        let bookID = UUID(); let powerID = UUID()
+        do {
+            let schema = Schema(versionedSchema: V5SettingsSchemaV9.self)
+            let container = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, url: storeURL)])
+            container.mainContext.insert(V5SettingsSchemaV9.PowerUnit(id: powerID, bookID: bookID, name: "舊勢力", relationshipNotes: "既有外交筆記"))
+            try container.mainContext.save()
+        }
+        let schema = Schema(versionedSchema: V5SettingsSchemaV10.self)
+        let migrated = try ModelContainer(for: schema, migrationPlan: V5SettingsMigrationPlan.self, configurations: [ModelConfiguration(schema: schema, url: storeURL)])
+        let power = try XCTUnwrap(migrated.mainContext.fetch(FetchDescriptor<PowerUnit>()).first)
+        XCTAssertEqual(power.id, powerID)
+        XCTAssertEqual(power.relationshipNotes, "既有外交筆記")
+        XCTAssertTrue(try migrated.mainContext.fetch(FetchDescriptor<PowerRelation>()).isEmpty)
+    }
+
+    func testPowerLifecycleSuccessionAndExistenceStatus() throws {
+        let container = try makeMainContainer()
+        let store = V5SettingsStore(container: container)
+        let bookID = UUID()
+        let predecessor = PowerUnit(bookID: bookID, name: "舊王國")
+        let successor = PowerUnit(bookID: bookID, name: "新王國")
+        container.mainContext.insert(predecessor); container.mainContext.insert(successor)
+        try container.mainContext.save()
+
+        let founded = try store.addLifecycleEvent(to: predecessor, kind: .established, bookID: bookID)
+        founded.nodeID = UUID(); founded.detail = "建國"
+        predecessor.existenceStatus = .dissolved
+        let link = try store.addSuccession(predecessor: predecessor, successor: successor, kind: .renamed, bookID: bookID)
+        link.nodeID = UUID()
+        try container.mainContext.save()
+
+        XCTAssertEqual(predecessor.existenceStatus, .dissolved)
+        XCTAssertEqual(store.lifecycleEvents(for: predecessor, bookID: bookID).map(\.kind), [.established])
+        XCTAssertEqual(store.successionLinks(for: predecessor, bookID: bookID).first?.successorPowerID, successor.id)
+        XCTAssertThrowsError(try store.addSuccession(predecessor: predecessor, successor: successor, kind: .renamed, bookID: bookID))
+        store.deletePower(predecessor, bookID: bookID)
+        XCTAssertTrue(try container.mainContext.fetch(FetchDescriptor<PowerLifecycleEvent>()).isEmpty)
+        XCTAssertTrue(try container.mainContext.fetch(FetchDescriptor<PowerSuccessionLink>()).isEmpty)
+    }
+
+    func testPowerMemberSupportsTimelineMultipleRolesAndLeadershipStates() throws {
+        let container = try makeMainContainer()
+        let store = V5SettingsStore(container: container)
+        let bookID = UUID(); let characterID = UUID(); let joinedNodeID = UUID(); let leftNodeID = UUID()
+        let power = PowerUnit(bookID: bookID, name: "議會")
+        container.mainContext.insert(power); try container.mainContext.save()
+        let member = try store.addMember(characterID: characterID, characterBookID: bookID, title: "議員", to: power, bookID: bookID)
+        member.joinedNodeID = joinedNodeID; member.leftNodeID = leftNodeID; member.status = .former
+        let leader = try store.addRole(to: member, title: "議長", bookID: bookID)
+        leader.isLeadership = true; leader.status = .dismissed; leader.startNodeID = joinedNodeID; leader.endNodeID = leftNodeID
+        try container.mainContext.save()
+
+        XCTAssertEqual(member.status, .former)
+        XCTAssertEqual(store.roles(for: member, bookID: bookID).count, 2)
+        XCTAssertEqual(store.roles(for: member, bookID: bookID).map(\.title), ["議員", "議長"])
+        XCTAssertTrue(leader.isLeadership)
+        XCTAssertEqual(leader.status, .dismissed)
+        XCTAssertEqual(leader.startNodeID, joinedNodeID)
+        XCTAssertEqual(leader.endNodeID, leftNodeID)
+        store.removeMember(member, bookID: bookID)
+        XCTAssertTrue(try container.mainContext.fetch(FetchDescriptor<PowerMemberRole>()).isEmpty)
+    }
+
+    func testV8StoreMigratesToV9AndPreservesMemberTitleAsRole() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("Sailune-settings-v9-member-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("settings.store")
+        let bookID = UUID(); let powerID = UUID(); let memberID = UUID()
+        do {
+            let schema = Schema(versionedSchema: V5SettingsSchemaV8.self)
+            let container = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, url: storeURL)])
+            container.mainContext.insert(V5SettingsSchemaV8.PowerUnit(id: powerID, bookID: bookID, name: "舊勢力", formerNames: "前稱"))
+            container.mainContext.insert(V5SettingsSchemaV8.PowerMember(id: memberID, bookID: bookID, powerID: powerID, characterID: UUID(), title: "舊領袖"))
+            try container.mainContext.save()
+        }
+        let schema = Schema(versionedSchema: V5SettingsSchemaV10.self)
+        let migrated = try ModelContainer(for: schema, migrationPlan: V5SettingsMigrationPlan.self, configurations: [ModelConfiguration(schema: schema, url: storeURL)])
+        let role = try XCTUnwrap(migrated.mainContext.fetch(FetchDescriptor<PowerMemberRole>()).first)
+        let power = try XCTUnwrap(migrated.mainContext.fetch(FetchDescriptor<PowerUnit>()).first)
+        XCTAssertEqual(role.memberID, memberID)
+        XCTAssertEqual(role.title, "舊領袖")
+        XCTAssertEqual(role.status, .current)
+        XCTAssertEqual(power.formerNames, "前稱")
+        XCTAssertEqual(power.existenceStatus, .active)
+    }
+
     func testPowerMemberIsUniqueWithinPowerAndRemovedWithPower() throws {
         let container = try makeMainContainer()
         let store = V5SettingsStore(container: container)
@@ -1079,7 +1256,7 @@ final class V5SettingsTests: XCTestCase {
     }
 
     private func makeMainContainer(at url: URL? = nil) throws -> ModelContainer {
-        let schema = Schema(versionedSchema: V5SettingsSchemaV7.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV10.self)
         let configuration = if let url {
             ModelConfiguration(schema: schema, url: url)
         } else {
