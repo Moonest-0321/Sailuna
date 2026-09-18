@@ -93,7 +93,7 @@ External macro implementation type 'SwiftDataMacros.PersistentModelMacro' could 
 
 ### 目前限制
 
-TXT／EPUB 匯出目前寫死 `/Users/hsuchengyu/Downloads`；這只適用開發者帳號，不是跨環境保證。其他帳號失敗時不要把它誤判為書籍內容損壞。
+TXT／EPUB 匯出已改用原生存檔面板。若匯出失敗，先確認作者選擇的位置具寫入權限與足夠空間；取消面板不會建立檔案，也不代表書籍內容損壞。
 
 ### 排查方式
 

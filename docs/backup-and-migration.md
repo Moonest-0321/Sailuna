@@ -6,14 +6,17 @@ V5.5 新增 V9 snapshot，保存勢力生命週期、承接與成員職務時間
 
 V5.6 新增 V10 snapshot 與 `PowerRelation`；V9→V10 採輕量遷移。既有 `relationshipNotes` 原文保留，新結構化關係初始為空，不從自由文字猜測同盟、敵對或宗主關係。
 
+Book 狀態曾直接加入 `NovelWriterSchemaV5` 而造成既有 `Sailune-v5.store` 無法載入，該持久化變更已撤回。V6.0c 僅保留 `@Transient` 狀態並預設草稿；正式保存連載／完結／草稿前，必須先建立不可變 V5 snapshot、相容的新 schema 與舊 store 遷移測試。
+
 ## 目前啟動順序
 
-1. 尋找舊版 V3 或 V2 store。
-2. 以既有 `NovelWriterSchemaV5` 原樣開啟主資料庫，不執行 schema migration。
-3. 將舊資料匯入 V5；若 V5 已有資料，先驗證匯入完整性。
-4. 執行懸空資料修復與 V4／V5 回填，並冪等清除舊 `Organization`、角色—組織關聯、組織身分歷史及其 StoryPlanning metadata；其他主資料不允許刪除。
-5. 開啟獨立的 V5 settings、物品副本、能力進度與故事規劃 store；settings store 依 `V5SettingsMigrationPlan` 升級至 V8，故事規劃 store 依 `StoryPlanningMigrationPlan` lightweight migration 至 V7，再轉換舊結構標籤。
-6. 完成各 store 的資料修復後才顯示主畫面。
+1. 若有已驗證的待還原備份，先建立當前六 store 與封面的安全備份，再於任何 `ModelContainer` 開啟前整組置換；中途失敗立即 rollback。
+2. 尋找舊版 V3 或 V2 store。
+3. 以既有 `NovelWriterSchemaV5` 原樣開啟主資料庫，不執行 schema migration。
+4. 將舊資料匯入 V5；若 V5 已有資料，先驗證匯入完整性。
+5. 執行懸空資料修復與 V4／V5 回填，並冪等清除舊 `Organization`、角色—組織關聯、組織身分歷史及其 StoryPlanning metadata；其他主資料不允許刪除。
+6. 開啟獨立的 V5 settings、物品副本、能力進度與故事規劃 store；settings store 依 `V5SettingsMigrationPlan` 由既有版本逐步升級至 V10，故事規劃 store 依 `StoryPlanningMigrationPlan` lightweight migration 至 V7，再轉換舊結構標籤。
+7. 依主 store 的 Book／Character／Item／Ability／Node UUID 與 book 對照，冪等修復 settings、物品副本與能力進度後才顯示主畫面。
 
 V4.4.8 在主 container 與 StoryPlanning store 都成功開啟後，會以現存 Book／Event UUID 執行跨 store 一致性修復；進入世界時間軸時再做一次相同的冪等檢查。它不新增 schema 或 migration，也不會因 OutlineItem 來源缺失而刪除 Event metadata。
 
@@ -45,10 +48,12 @@ V4.4.8 在主 container 與 StoryPlanning store 都成功開啟後，會以現�
 - 新版本發布前，使用代表性舊 store 做開啟、匯入、重新開啟與資料抽查。
 - 多 store 備份必須視為一組；只備份主 store 會造成副本、能力或故事規劃遺失。
 
-## 已知缺口
+## V5.6 完整備份／還原
 
-- 目前介面尚未提供完整的使用者備份／復原流程。
-- 已建立 Book／Event 與 StoryPlanning store 的刪除一致性檢查；但 Volume／Section 與角色事件的部分 UI 入口仍直接刪除，尚未全部接入集中服務。其他獨立 store 的全面一致性檢查與多 store 備份封裝格式也仍未建立。
+- 作者設定可輸出單一 `.sailunebackup`；內容是帶 manifest 的版本化封裝，包含六個 SQLite online snapshot、封面、檔案大小與 SHA-256 checksum。
+- 建立備份前先提交全部 store；任一儲存或 snapshot 失敗時不產生成功備份。
+- 還原選擇時先驗證封裝版本、schema、檔案清單與 checksum，只排程已驗證備份。
+- 正式置換在下次啟動、container 開啟前執行；先強制建立 `Sailune/Recovery Backups` 安全備份，再整組置換。失敗會復原原 store 與封面，並停止啟動顯示原因。
 
 ## V4.2 故事規劃遷移
 

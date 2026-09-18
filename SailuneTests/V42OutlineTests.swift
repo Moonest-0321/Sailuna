@@ -1527,6 +1527,59 @@ final class V42OutlineTests: XCTestCase {
         XCTAssertEqual(invalid.locationText, "來源失效")
     }
 
+    func testAbilityLegacyMigrationIsVisibleImmediatelyAndIdempotent() throws {
+        let schema = Schema(versionedSchema: AbilityProgressSchemaV1.self)
+        let store = try AbilityProgressStore(container: ModelContainer(
+            for: schema,
+            configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)]
+        ))
+        let book = Book(title: "能力書", author: "作者")
+        let character = Character(realName: "露娜", book: book)
+        let ability = CharacterAbility(name: "星光", character: character)
+        ability.history = [AbilityStageHistory(stage: "初醒", descriptionText: "看見星軌", sortOrder: 0, ability: ability)]
+
+        try store.migrateLegacy([ability])
+        try store.migrateLegacy([ability])
+
+        XCTAssertEqual(store.bookLinks.filter { $0.abilityID == ability.id }.count, 1)
+        let connection = try XCTUnwrap(store.connections.first { $0.abilityID == ability.id && $0.characterID == character.id })
+        XCTAssertEqual(store.histories.filter { $0.connectionID == connection.id }.map(\.content), ["初醒：看見星軌"])
+    }
+
+    func testAbilityReconcileRemovesCrossBookLinksAndKeepsHistoryTextWhenNodeExpires() throws {
+        let schema = Schema(versionedSchema: AbilityProgressSchemaV1.self)
+        let container = try ModelContainer(
+            for: schema,
+            configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)]
+        )
+        let context = container.mainContext
+        let bookA = UUID(), bookB = UUID(), characterID = UUID(), abilityID = UUID(), staleNodeID = UUID()
+        let link = AbilityBookLink(abilityID: abilityID, bookID: bookA)
+        let connection = CharacterAbilityConnection(characterID: characterID, abilityID: abilityID)
+        let history = CharacterAbilityHistory(connectionID: connection.id, content: "保留的成長記錄", nodeID: staleNodeID)
+        context.insert(link); context.insert(connection); context.insert(history)
+        try context.save()
+        let store = try AbilityProgressStore(container: container)
+
+        try store.reconcile(
+            validBookIDs: [bookA, bookB],
+            characterBookIDs: [characterID: bookA],
+            abilityBookIDs: [abilityID: bookA],
+            validNodeIDs: []
+        )
+        XCTAssertEqual(store.histories.first?.content, "保留的成長記錄")
+        XCTAssertNil(store.histories.first?.nodeID)
+
+        try store.reconcile(
+            validBookIDs: [bookA, bookB],
+            characterBookIDs: [characterID: bookB],
+            abilityBookIDs: [abilityID: bookA],
+            validNodeIDs: []
+        )
+        XCTAssertTrue(store.connections.isEmpty)
+        XCTAssertTrue(store.histories.isEmpty)
+    }
+
     private func removeStoreFiles(at url: URL) {
         for suffix in ["", "-shm", "-wal"] {
             try? FileManager.default.removeItem(atPath: url.path + suffix)

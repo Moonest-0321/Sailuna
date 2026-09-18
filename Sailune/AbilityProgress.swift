@@ -51,9 +51,21 @@ enum AbilityProgressSchemaV1: VersionedSchema {
     private let context: ModelContext
     private(set) var levels: [AbilityLevel] = []; private(set) var connections: [CharacterAbilityConnection] = []
     private(set) var histories: [CharacterAbilityHistory] = []; private(set) var bookLinks: [AbilityBookLink] = []
+    private(set) var persistenceErrorMessage: String?
     init(container: ModelContainer) throws { self.container = container; context = container.mainContext; context.autosaveEnabled = true; try reload() }
     func reload() throws { levels = try context.fetch(FetchDescriptor<AbilityLevel>()); connections = try context.fetch(FetchDescriptor<CharacterAbilityConnection>()); histories = try context.fetch(FetchDescriptor<CharacterAbilityHistory>()); bookLinks = try context.fetch(FetchDescriptor<AbilityBookLink>()) }
-    func save() { try? context.save() }
+    func save() {
+        do {
+            try context.save()
+            persistenceErrorMessage = nil
+        } catch {
+            context.rollback()
+            try? reload()
+            let nsError = error as NSError
+            persistenceErrorMessage = "\(nsError.domain) \(nsError.code)：\(nsError.localizedDescription)"
+        }
+    }
+    func clearPersistenceError() { persistenceErrorMessage = nil }
     func register(abilityID: UUID, bookID: UUID) { guard !bookLinks.contains(where: { $0.abilityID == abilityID }) else { return }; let link = AbilityBookLink(abilityID: abilityID, bookID: bookID); context.insert(link); bookLinks.append(link); save() }
     func addLevel(abilityID: UUID) { let level = AbilityLevel(abilityID: abilityID, sortOrder: (levels.filter { $0.abilityID == abilityID }.map(\.sortOrder).max() ?? -1) + 1, name: "新等級"); context.insert(level); levels.append(level); save() }
     func deleteAbilityLevel(_ level: AbilityLevel) { connections.filter { $0.currentLevelID == level.id }.forEach { $0.currentLevelID = nil }; context.delete(level); levels.removeAll { $0.id == level.id }; save() }
@@ -61,18 +73,125 @@ enum AbilityProgressSchemaV1: VersionedSchema {
     func deleteConnection(_ connection: CharacterAbilityConnection) { histories.filter { $0.connectionID == connection.id }.forEach(context.delete); histories.removeAll { $0.connectionID == connection.id }; context.delete(connection); connections.removeAll { $0.id == connection.id }; save() }
     func addHistory(connectionID: UUID) { let history = CharacterAbilityHistory(connectionID: connectionID, sortOrder: (histories.filter { $0.connectionID == connectionID }.map(\.sortOrder).max() ?? -1) + 1); context.insert(history); histories.append(history); save() }
     func deleteHistory(_ history: CharacterAbilityHistory) { context.delete(history); histories.removeAll { $0.id == history.id }; save() }
-    func deleteAbility(abilityID: UUID) { levels.filter { $0.abilityID == abilityID }.forEach(context.delete); connections.filter { $0.abilityID == abilityID }.forEach(deleteConnection); bookLinks.filter { $0.abilityID == abilityID }.forEach(context.delete); save() }
-    func migrateLegacy(_ abilities: [CharacterAbility]) {
+    func deleteAbility(abilityID: UUID) {
+        levels.filter { $0.abilityID == abilityID }.forEach(context.delete)
+        let removedConnectionIDs = Set(connections.filter { $0.abilityID == abilityID }.map(\.id))
+        histories.filter { removedConnectionIDs.contains($0.connectionID) }.forEach(context.delete)
+        connections.filter { $0.abilityID == abilityID }.forEach(context.delete)
+        bookLinks.filter { $0.abilityID == abilityID }.forEach(context.delete)
+        levels.removeAll { $0.abilityID == abilityID }
+        histories.removeAll { removedConnectionIDs.contains($0.connectionID) }
+        connections.removeAll { $0.abilityID == abilityID }
+        bookLinks.removeAll { $0.abilityID == abilityID }
+        save()
+    }
+
+    func migrateLegacy(_ abilities: [CharacterAbility]) throws {
         for ability in abilities {
-            guard let character = ability.character else { continue }
-            register(abilityID: ability.id, bookID: character.book?.id ?? UUID())
-            guard !connections.contains(where: { $0.abilityID == ability.id && $0.characterID == character.id }) else { continue }
-            connect(characterID: character.id, abilityID: ability.id)
-            guard let connection = connections.first(where: { $0.abilityID == ability.id && $0.characterID == character.id }) else { continue }
+            guard let character = ability.character, let bookID = character.book?.id else { continue }
+            if !bookLinks.contains(where: { $0.abilityID == ability.id }) {
+                let link = AbilityBookLink(abilityID: ability.id, bookID: bookID)
+                context.insert(link)
+                bookLinks.append(link)
+            }
+            let connection: CharacterAbilityConnection
+            if let existing = connections.first(where: { $0.abilityID == ability.id && $0.characterID == character.id }) {
+                connection = existing
+            } else {
+                connection = CharacterAbilityConnection(characterID: character.id, abilityID: ability.id)
+                context.insert(connection)
+                connections.append(connection)
+            }
             for entry in ability.history where !histories.contains(where: { $0.connectionID == connection.id && $0.sortOrder == entry.sortOrder }) {
-                context.insert(CharacterAbilityHistory(connectionID: connection.id, content: [entry.stage, entry.descriptionText].filter { !$0.isEmpty }.joined(separator: "："), sortOrder: entry.sortOrder, nodeID: entry.node?.id))
+                let migrated = CharacterAbilityHistory(
+                    connectionID: connection.id,
+                    content: [entry.stage, entry.descriptionText].filter { !$0.isEmpty }.joined(separator: "："),
+                    sortOrder: entry.sortOrder,
+                    nodeID: entry.node?.id
+                )
+                context.insert(migrated)
+                histories.append(migrated)
             }
         }
-        save()
+        do {
+            if context.hasChanges { try context.save() }
+            try reload()
+            persistenceErrorMessage = nil
+        } catch {
+            context.rollback()
+            try? reload()
+            throw error
+        }
+    }
+
+    func reconcile(
+        validBookIDs: Set<UUID>,
+        characterBookIDs: [UUID: UUID],
+        abilityBookIDs: [UUID: UUID],
+        validNodeIDs: Set<UUID>
+    ) throws {
+        let orderedBookLinks = bookLinks.sorted { ($0.abilityID.uuidString, $0.id.uuidString) < ($1.abilityID.uuidString, $1.id.uuidString) }
+        var seenAbilityLinks = Set<UUID>()
+        for link in orderedBookLinks {
+            guard let expectedBookID = abilityBookIDs[link.abilityID],
+                  validBookIDs.contains(link.bookID),
+                  link.bookID == expectedBookID,
+                  seenAbilityLinks.insert(link.abilityID).inserted else {
+                context.delete(link)
+                continue
+            }
+        }
+
+        for level in levels where abilityBookIDs[level.abilityID] == nil {
+            context.delete(level)
+        }
+
+        let orderedConnections = connections.sorted {
+            ($0.characterID.uuidString, $0.abilityID.uuidString, $0.id.uuidString)
+                < ($1.characterID.uuidString, $1.abilityID.uuidString, $1.id.uuidString)
+        }
+        var seenConnectionKeys = Set<String>()
+        var validConnectionIDs = Set<UUID>()
+        for connection in orderedConnections {
+            guard let characterBookID = characterBookIDs[connection.characterID],
+                  let abilityBookID = abilityBookIDs[connection.abilityID],
+                  characterBookID == abilityBookID else {
+                context.delete(connection)
+                continue
+            }
+            let key = "\(connection.characterID.uuidString)|\(connection.abilityID.uuidString)"
+            guard seenConnectionKeys.insert(key).inserted else {
+                context.delete(connection)
+                continue
+            }
+            validConnectionIDs.insert(connection.id)
+        }
+
+        let validLevelsByID = Dictionary(uniqueKeysWithValues: levels.filter { abilityBookIDs[$0.abilityID] != nil }.map { ($0.id, $0) })
+        for connection in orderedConnections where validConnectionIDs.contains(connection.id) {
+            if let levelID = connection.currentLevelID,
+               validLevelsByID[levelID]?.abilityID != connection.abilityID {
+                connection.currentLevelID = nil
+            }
+        }
+        for history in histories {
+            guard validConnectionIDs.contains(history.connectionID) else {
+                context.delete(history)
+                continue
+            }
+            if let nodeID = history.nodeID, !validNodeIDs.contains(nodeID) {
+                history.nodeID = nil
+            }
+        }
+
+        do {
+            if context.hasChanges { try context.save() }
+            try reload()
+            persistenceErrorMessage = nil
+        } catch {
+            context.rollback()
+            try? reload()
+            throw error
+        }
     }
 }

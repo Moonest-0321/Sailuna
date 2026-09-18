@@ -1,14 +1,14 @@
 # 測試策略
 
-> 更新日期：2026-09-17。
+> 更新日期：2026-09-18。
 
 ## 現況
 
-- `SailuneTests/ItemV3Tests.swift`：39 個 XCTest，涵蓋編輯器橋接、右鍵選單、主 store、世界時間軸、標籤、物品副本、跨 store 刪除與投影。
-- `SailuneTests/V42OutlineTests.swift`：51 個 XCTest，涵蓋故事規劃 schema V1–V7、錨點、Undo／Redo 快照、故事背景、故事線／階段／安置、敘事／時間序投影、事件與來源 metadata 及修復。
-- `SailuneTests/V5SettingsTests.swift`：38 個 XCTest，涵蓋七項分類（語言退役後不再列入新選項）、八套政體、九套信仰、十四套技術階段（九套現實、五套虛構）、39 套資源及 18 套族群／種族固定案例的完整性、穩定 UUID、選擇保存／清除、勢力條目分類限制及參照修復保留；族群測試另驗證現實／虛構分組、普通條目可編輯與分類提示。
-- 原始碼合計：127 個 XCTest 方法。
-- 最近執行：2026-09-17，V5 settings 專項 38 項及完整 127 項 XCTest 通過，包含政體、信仰、現實／虛構技術階段、資源與族群／種族目錄、選擇保存、唯讀辨識、勢力連接分類限制與修復保留；無簽章 Debug 測試建置成功。
+- `SailuneTests/ItemV3Tests.swift`：41 個 XCTest，新增物品副本 reconcile 與六 store／封面完整備份還原。
+- `SailuneTests/V42OutlineTests.swift`：53 個 XCTest，新增能力舊歷史同次可見、冪等遷移與跨書／失效 Node 修復。
+- `SailuneTests/V5SettingsTests.swift`：46 個 XCTest，新增勢力跨書端點、重複、隸屬方向與允許承接循環的 reconcile 驗證。
+- 原始碼合計：140 個 XCTest 方法。
+- 最近執行：2026-09-18，完整 140 項 XCTest 通過；無簽章 Debug build 與測試成功。
 - 前次文件化基線：2026-09-14，V5 settings 專項 16 項及完整 106 項均通過；無簽章 Release 建置成功。
 
 ## 每次修改至少驗證
@@ -30,8 +30,7 @@
 
 ## 尚缺覆蓋
 
-- Volume／Section／角色事件各 UI 入口是否使用集中刪除及立即清除跨模組引用。
-- 六個 store 任一保存失敗時的完整 fault matrix、備份與還原。
-- 固定匯出路徑在其他 macOS 帳號下的失敗與 UI 回饋。
+- 六個 store 任一保存失敗時的完整 fault matrix，以及還原中斷的人工故障注入。
+- TXT／EPUB 存檔面板、卷節 Undo、備份排程重啟與刪除錯誤訊息的實機 UI 驗收。
 - 大型長篇正文、數百角色、同名角色／物品、密集重複錨點的效能與準確度。
 - V4.4.81 Undo／Redo、V4.4.9 右鍵工具、Apple 寫作工具的實機 UI 組合。

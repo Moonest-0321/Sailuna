@@ -36,6 +36,7 @@
 - [故事規劃與標籤](spec-story-planning.md)
 - [關係與組織](spec-relationships.md)
 - [V5.2 勢力細緻更新](spec-power-v5.2.md)
+- [V5.5 勢力生命週期與成員時間序](spec-power-v5.5.md)
 - [地點與世界條目專案討論](spec-places-world-terms.md)
 - [查找、替換與匯出](spec-search-export.md)
 

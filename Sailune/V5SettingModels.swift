@@ -2301,6 +2301,14 @@ final class V5SettingsStore {
         save()
     }
 
+    func removeAssets(kind: PowerAssetKind, sourceID: UUID) throws {
+        try context.fetch(FetchDescriptor<PowerAssetLink>()).filter {
+            $0.kind == kind && $0.sourceID == sourceID
+        }.forEach(context.delete)
+        try context.save()
+        didSave()
+    }
+
     @discardableResult
     func addAdvantage(kind: PowerAdvantageKind, name: String, detail: String, to power: PowerUnit, bookID: UUID) throws -> PowerAdvantage {
         guard power.bookID == bookID else { throw PowerDetailError.invalidBook }
@@ -2327,29 +2335,109 @@ final class V5SettingsStore {
         didSave()
     }
 
-    func reconcile(validBookIDs: Set<UUID>, validCharacterIDs: Set<UUID>, validItemIDs: Set<UUID> = [], validAbilityIDs: Set<UUID> = [], validNodeIDs: Set<UUID> = []) throws {
+    func reconcile(
+        validBookIDs: Set<UUID>,
+        validCharacterIDs: Set<UUID>,
+        validItemIDs: Set<UUID> = [],
+        validAbilityIDs: Set<UUID> = [],
+        validNodeIDs: Set<UUID> = [],
+        characterBookIDs: [UUID: UUID] = [:],
+        itemBookIDs: [UUID: UUID] = [:],
+        abilityBookIDs: [UUID: UUID] = [:]
+    ) throws {
         let allPowers = try context.fetch(FetchDescriptor<PowerUnit>())
-        let validPowerIDs = Set(allPowers.filter { validBookIDs.contains($0.bookID) }.map(\.id))
+        let validPowers = allPowers.filter { validBookIDs.contains($0.bookID) }
+        let powersByID = Dictionary(uniqueKeysWithValues: validPowers.map { ($0.id, $0) })
+        let allLevels = try context.fetch(FetchDescriptor<PowerLevel>())
+        let validLevels = allLevels.filter { validBookIDs.contains($0.bookID) }
+        let levelsByID = Dictionary(uniqueKeysWithValues: validLevels.map { ($0.id, $0) })
         let allTerms = try context.fetch(FetchDescriptor<WorldTerm>())
+        let validTerms = allTerms.filter { validBookIDs.contains($0.bookID) }
+        let termsByID = Dictionary(uniqueKeysWithValues: validTerms.map { ($0.id, $0) })
 
-        try context.fetch(FetchDescriptor<PowerMember>()).filter {
-            !validBookIDs.contains($0.bookID) || !validPowerIDs.contains($0.powerID) || !validCharacterIDs.contains($0.characterID)
+        try context.fetch(FetchDescriptor<BookSidebarSetting>()).filter {
+            !validBookIDs.contains($0.bookID) || $0.key == nil
         }.forEach(context.delete)
-        try context.fetch(FetchDescriptor<PowerAssetLink>()).filter { asset in
-            !validBookIDs.contains(asset.bookID) || !validPowerIDs.contains(asset.powerID)
-                || (asset.kind == .item && !validItemIDs.contains(asset.sourceID))
-                || (asset.kind == .ability && !validAbilityIDs.contains(asset.sourceID))
-                || ((asset.kind == .resource || asset.kind == .technology) && !allTerms.contains(where: { $0.id == asset.sourceID && $0.bookID == asset.bookID }))
-        }.forEach(context.delete)
+        allLevels.filter { !validBookIDs.contains($0.bookID) }.forEach(context.delete)
+        allPowers.filter { !validBookIDs.contains($0.bookID) }.forEach(context.delete)
+        try context.fetch(FetchDescriptor<Place>()).filter { !validBookIDs.contains($0.bookID) }.forEach(context.delete)
+        allTerms.filter { !validBookIDs.contains($0.bookID) }.forEach(context.delete)
+
+        for power in validPowers {
+            if let levelID = power.levelID, levelsByID[levelID]?.bookID != power.bookID { power.levelID = nil }
+        }
+
+        var seenMemberKeys = Set<String>()
+        for member in try context.fetch(FetchDescriptor<PowerMember>()).sorted(by: { $0.createdAt < $1.createdAt }) {
+            let key = "\(member.powerID.uuidString)|\(member.characterID.uuidString)"
+            guard let power = powersByID[member.powerID], power.bookID == member.bookID,
+                  validCharacterIDs.contains(member.characterID),
+                  characterBookIDs.isEmpty || characterBookIDs[member.characterID] == member.bookID,
+                  PowerMembershipStatus(rawValue: member.statusRawValue) != nil,
+                  seenMemberKeys.insert(key).inserted else {
+                context.delete(member)
+                continue
+            }
+        }
+
+        var seenAssetKeys = Set<String>()
+        for asset in try context.fetch(FetchDescriptor<PowerAssetLink>()).sorted(by: { $0.createdAt < $1.createdAt }) {
+            let sourceIsValid: Bool
+            switch asset.kind {
+            case .item:
+                sourceIsValid = validItemIDs.contains(asset.sourceID)
+                    && (itemBookIDs.isEmpty || itemBookIDs[asset.sourceID] == asset.bookID)
+            case .ability:
+                sourceIsValid = validAbilityIDs.contains(asset.sourceID)
+                    && (abilityBookIDs.isEmpty || abilityBookIDs[asset.sourceID] == asset.bookID)
+            case .resource, .technology:
+                let expected = asset.kind == .resource ? WorldTermCategory.resource.rawValue : WorldTermCategory.technology.rawValue
+                sourceIsValid = termsByID[asset.sourceID]?.bookID == asset.bookID
+                    && termsByID[asset.sourceID]?.termCategory == expected
+            case nil:
+                sourceIsValid = false
+            }
+            let key = "\(asset.powerID.uuidString)|\(asset.kindRawValue)|\(asset.sourceID.uuidString)"
+            guard powersByID[asset.powerID]?.bookID == asset.bookID,
+                  sourceIsValid,
+                  seenAssetKeys.insert(key).inserted else {
+                context.delete(asset)
+                continue
+            }
+        }
         try context.fetch(FetchDescriptor<PowerAdvantage>()).filter {
-            !validBookIDs.contains($0.bookID) || !validPowerIDs.contains($0.powerID)
+            powersByID[$0.powerID]?.bookID != $0.bookID || $0.kind == nil
         }.forEach(context.delete)
-        let validMemberIDs = Set(try context.fetch(FetchDescriptor<PowerMember>()).map(\.id))
-        try context.fetch(FetchDescriptor<PowerMemberRole>()).filter { !validMemberIDs.contains($0.memberID) || !validPowerIDs.contains($0.powerID) }.forEach(context.delete)
-        try context.fetch(FetchDescriptor<PowerLifecycleEvent>()).filter { !validPowerIDs.contains($0.powerID) }.forEach(context.delete)
-        try context.fetch(FetchDescriptor<PowerSuccessionLink>()).filter { !validPowerIDs.contains($0.predecessorPowerID) || !validPowerIDs.contains($0.successorPowerID) }.forEach(context.delete)
+
+        let validMembers = try context.fetch(FetchDescriptor<PowerMember>()).filter {
+            powersByID[$0.powerID]?.bookID == $0.bookID
+                && validCharacterIDs.contains($0.characterID)
+                && (characterBookIDs.isEmpty || characterBookIDs[$0.characterID] == $0.bookID)
+        }
+        let membersByID = Dictionary(uniqueKeysWithValues: validMembers.map { ($0.id, $0) })
+        for role in try context.fetch(FetchDescriptor<PowerMemberRole>()) {
+            guard let member = membersByID[role.memberID], role.bookID == member.bookID,
+                  role.powerID == member.powerID, PowerRoleStatus(rawValue: role.statusRawValue) != nil else {
+                context.delete(role)
+                continue
+            }
+        }
+        try context.fetch(FetchDescriptor<PowerLifecycleEvent>()).filter {
+            powersByID[$0.powerID]?.bookID != $0.bookID || $0.kind == nil
+        }.forEach(context.delete)
+
+        var seenSuccessionKeys = Set<String>()
+        for link in try context.fetch(FetchDescriptor<PowerSuccessionLink>()).sorted(by: { $0.createdAt < $1.createdAt }) {
+            let key = "\(link.bookID.uuidString)|\(link.kindRawValue)|\(link.predecessorPowerID.uuidString)|\(link.successorPowerID.uuidString)"
+            guard link.kind != nil, link.predecessorPowerID != link.successorPowerID,
+                  powersByID[link.predecessorPowerID]?.bookID == link.bookID,
+                  powersByID[link.successorPowerID]?.bookID == link.bookID,
+                  seenSuccessionKeys.insert(key).inserted else {
+                context.delete(link)
+                continue
+            }
+        }
         var seenPowerRelationKeys = Set<String>()
-        let powersByID = Dictionary(uniqueKeysWithValues: allPowers.map { ($0.id, $0) })
         for relation in try context.fetch(FetchDescriptor<PowerRelation>()).sorted(by: { $0.createdAt < $1.createdAt }) {
             guard let kind = relation.kind,
                   relation.sourcePowerID != relation.targetPowerID,
@@ -2371,16 +2459,32 @@ final class V5SettingsStore {
         for role in try context.fetch(FetchDescriptor<PowerMemberRole>()) { if let id = role.startNodeID, !validNodeIDs.contains(id) { role.startNodeID = nil }; if let id = role.endNodeID, !validNodeIDs.contains(id) { role.endNodeID = nil } }
         for event in try context.fetch(FetchDescriptor<PowerLifecycleEvent>()) { if let id = event.nodeID, !validNodeIDs.contains(id) { event.nodeID = nil } }
         for link in try context.fetch(FetchDescriptor<PowerSuccessionLink>()) { if let id = link.nodeID, !validNodeIDs.contains(id) { link.nodeID = nil } }
-        try context.fetch(FetchDescriptor<PowerSubordination>()).filter {
-            !validBookIDs.contains($0.bookID) || !validPowerIDs.contains($0.lowerPowerID) || !validPowerIDs.contains($0.upperPowerID)
-        }.forEach(context.delete)
-        for power in allPowers {
-            guard validBookIDs.contains(power.bookID) else { continue }
-            let validTermIDs = Set(allTerms.filter { $0.bookID == power.bookID }.map(\.id))
-            if let id = power.religionWorldTermID, !validTermIDs.contains(id) { power.religionWorldTermID = nil }
-            if let id = power.governmentWorldTermID, !validTermIDs.contains(id) { power.governmentWorldTermID = nil }
-            if let id = power.powerWorldTermID, !validTermIDs.contains(id) { power.powerWorldTermID = nil }
-            if let id = power.scopeWorldTermID, !validTermIDs.contains(id) { power.scopeWorldTermID = nil }
+        var seenSubordinationKeys = Set<String>()
+        for edge in try context.fetch(FetchDescriptor<PowerSubordination>()).sorted(by: { $0.createdAt < $1.createdAt }) {
+            let lower = powersByID[edge.lowerPowerID]
+            let upper = powersByID[edge.upperPowerID]
+            let lowerLevel = lower?.levelID.flatMap { levelsByID[$0] }
+            let upperLevel = upper?.levelID.flatMap { levelsByID[$0] }
+            let key = "\(edge.bookID.uuidString)|\(edge.lowerPowerID.uuidString)|\(edge.upperPowerID.uuidString)"
+            guard edge.lowerPowerID != edge.upperPowerID,
+                  lower?.bookID == edge.bookID, upper?.bookID == edge.bookID,
+                  let lowerLevel, let upperLevel, lowerLevel.sortOrder > upperLevel.sortOrder,
+                  seenSubordinationKeys.insert(key).inserted else {
+                context.delete(edge)
+                continue
+            }
+        }
+        for power in validPowers {
+            if let id = power.religionWorldTermID,
+               termsByID[id]?.bookID != power.bookID || termsByID[id]?.termCategory != WorldTermCategory.belief.rawValue {
+                power.religionWorldTermID = nil
+            }
+            if let id = power.governmentWorldTermID,
+               termsByID[id]?.bookID != power.bookID || termsByID[id]?.termCategory != WorldTermCategory.institution.rawValue {
+                power.governmentWorldTermID = nil
+            }
+            if let id = power.powerWorldTermID, termsByID[id]?.bookID != power.bookID { power.powerWorldTermID = nil }
+            if let id = power.scopeWorldTermID, termsByID[id]?.bookID != power.bookID { power.scopeWorldTermID = nil }
         }
         try context.save()
         didSave()

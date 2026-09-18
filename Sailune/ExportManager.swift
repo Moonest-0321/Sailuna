@@ -79,23 +79,47 @@ struct ExportManager {
         return result
     }
 
-    // MARK: - 存檔（固定寫入使用者 Downloads）
+    // MARK: - 存檔
     @MainActor
     static func presentSavePanel(for book: Book, defaultName: String, fileType: String, content: String) {
         let cleanName = sanitizeFileName(defaultName)
         let fileName = cleanName.lowercased().hasSuffix(".\(fileType.lowercased())")
             ? cleanName
             : "\(cleanName).\(fileType)"
-        let targetDir = URL(fileURLWithPath: "/Users/hsuchengyu/Downloads", isDirectory: true)
-        let url = targetDir.appendingPathComponent(fileName)
-        do {
-            try FileManager.default.createDirectory(at: targetDir, withIntermediateDirectories: true)
-            try content.write(to: url, atomically: true, encoding: .utf8)
-            NSWorkspace.shared.selectFile(url.path, inFileViewerRootedAtPath: targetDir.path)
-            print("✅ 已匯出到：\(url.path)")
-        } catch {
-            print("❌ 無法匯出到 /Users/hsuchengyu/Downloads：\(error)")
+        guard let data = content.data(using: .utf8) else {
+            presentError(message: "無法將文字轉換為 UTF-8。")
+            return
         }
+        presentSavePanel(defaultFileName: fileName, fileType: fileType, data: data)
+    }
+
+    @MainActor
+    static func presentSavePanel(defaultFileName: String, fileType: String, data: Data) {
+        let panel = NSSavePanel()
+        panel.title = "匯出 \(fileType.uppercased())"
+        panel.nameFieldStringValue = defaultFileName
+        if let contentType = UTType(filenameExtension: fileType) {
+            panel.allowedContentTypes = [contentType]
+        }
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            try data.write(to: url, options: .atomic)
+            NSWorkspace.shared.selectFile(url.path, inFileViewerRootedAtPath: url.deletingLastPathComponent().path)
+        } catch {
+            presentError(message: error.localizedDescription)
+        }
+    }
+
+    @MainActor
+    private static func presentError(message: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "匯出失敗"
+        alert.informativeText = message
+        alert.addButton(withTitle: "好")
+        alert.runModal()
     }
 
     private static func sanitizeFileName(_ name: String) -> String {

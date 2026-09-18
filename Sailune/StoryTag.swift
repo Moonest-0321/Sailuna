@@ -193,6 +193,7 @@ final class StoryPlanningStore {
     private(set) var itemPlacements: [OutlineItemPlacement] = []
     private(set) var timelineEventCardMetadata: [TimelineEventCardMetadata] = []
     private(set) var planningRecordMetadata: [PlanningRecordMetadata] = []
+    private(set) var persistenceErrorMessage: String?
 
     init(container: ModelContainer) throws {
         self.container = container
@@ -1331,9 +1332,22 @@ final class StoryPlanningStore {
 
     func saveChanges() throws {
         try context.save()
+        persistenceErrorMessage = nil
     }
 
-    func save() { try? context.save() }
+    func save() {
+        do {
+            try context.save()
+            persistenceErrorMessage = nil
+        } catch {
+            context.rollback()
+            try? reload()
+            let nsError = error as NSError
+            persistenceErrorMessage = "\(nsError.domain) \(nsError.code)：\(nsError.localizedDescription)"
+        }
+    }
+
+    func clearPersistenceError() { persistenceErrorMessage = nil }
 
     private func migrateLegacyStructuralTags() throws {
         let legacyTags = tags

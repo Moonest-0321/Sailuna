@@ -1,6 +1,7 @@
 import XCTest
 import SwiftData
 import AppKit
+import SQLite3
 @testable import Sailune
 
 private final class UndoGroupingProbe: NSObject, NSTextViewDelegate {
@@ -18,6 +19,17 @@ private final class UndoGroupingProbe: NSObject, NSTextViewDelegate {
 
 @MainActor
 final class ItemV3Tests: XCTestCase {
+    func testBookStatusDefaultsToDraftAndSupportsAllStatusesWithoutChangingV5Schema() {
+        let book = Book(title: "測試書", author: "作者")
+
+        XCTAssertEqual(book.status, .draft)
+
+        book.status = .ongoing
+        XCTAssertEqual(book.status, .ongoing)
+        book.status = .completed
+        XCTAssertEqual(book.status, .completed)
+    }
+
     func testTextViewDelegateUndoRegistrationJoinsTheSameEditingStep() {
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 300, height: 200),
@@ -375,6 +387,36 @@ final class ItemV3Tests: XCTestCase {
         )
     }
 
+    private func writeSQLiteValue(_ value: Int, at url: URL) throws {
+        var database: OpaquePointer?
+        guard sqlite3_open(url.path, &database) == SQLITE_OK else {
+            defer { sqlite3_close(database) }
+            throw NSError(domain: "SQLiteTest", code: 1)
+        }
+        defer { sqlite3_close(database) }
+        let sql = "CREATE TABLE IF NOT EXISTS marker(value INTEGER); DELETE FROM marker; INSERT INTO marker(value) VALUES (\(value));"
+        guard sqlite3_exec(database, sql, nil, nil, nil) == SQLITE_OK else {
+            throw NSError(domain: "SQLiteTest", code: 2)
+        }
+    }
+
+    private func readSQLiteValue(at url: URL) throws -> Int {
+        var database: OpaquePointer?
+        guard sqlite3_open_v2(url.path, &database, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {
+            defer { sqlite3_close(database) }
+            throw NSError(domain: "SQLiteTest", code: 3)
+        }
+        defer { sqlite3_close(database) }
+        var statement: OpaquePointer?
+        guard sqlite3_prepare_v2(database, "SELECT value FROM marker LIMIT 1", -1, &statement, nil) == SQLITE_OK,
+              sqlite3_step(statement) == SQLITE_ROW else {
+            sqlite3_finalize(statement)
+            throw NSError(domain: "SQLiteTest", code: 4)
+        }
+        defer { sqlite3_finalize(statement) }
+        return Int(sqlite3_column_int(statement, 0))
+    }
+
     private func createV5Store(at url: URL) throws {
         let schema = Schema(versionedSchema: NovelWriterSchemaV5.self)
         let container = try ModelContainer(
@@ -594,6 +636,59 @@ final class ItemV3Tests: XCTestCase {
             remainingCharacter.id
         )
         XCTAssertTrue(store.copies.contains { $0.id == releasedCopy.id })
+    }
+
+    func testCopyReconcileRemovesCrossBookAndInvalidReferencesWithoutDeletingValidHistoryText() throws {
+        let container = try makeContainer()
+        let store = try ItemCopyStore(container: container)
+        let bookA = UUID(), bookB = UUID()
+        let itemID = UUID(), characterA = UUID(), characterB = UUID()
+        let validNode = UUID(), invalidNode = UUID(), validLevel = UUID()
+        let copy = store.createCopy(itemID: itemID, holderID: characterB)
+        let history = store.addHistory(copyID: copy.id, content: "保留這段歷史")
+        history.nodeID = invalidNode
+        history.relatedCharacterIDs = [characterA, characterA, characterB]
+        store.setCurrentLevel(copyID: copy.id, levelID: UUID())
+
+        try store.reconcile(
+            itemBookIDs: [itemID: bookA],
+            characterBookIDs: [characterA: bookA, characterB: bookB],
+            validNodeIDs: [validNode],
+            itemLevelItemIDs: [validLevel: itemID]
+        )
+
+        XCTAssertTrue(store.copies.contains { $0.id == copy.id })
+        XCTAssertNil(store.holdings.first { $0.copyID == copy.id })
+        let retained = try XCTUnwrap(store.histories.first { $0.id == history.id })
+        XCTAssertEqual(retained.content, "保留這段歷史")
+        XCTAssertNil(retained.nodeID)
+        XCTAssertEqual(retained.relatedCharacterIDs, [characterA])
+        XCTAssertNil(store.currentLevelID(for: copy.id))
+    }
+
+    func testFullBackupRestoresAllSixSQLiteSnapshotsAndCovers() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("SailuneBackupTest-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let locations = SailuneDataLocations(mainStore: root.appendingPathComponent("Sailune-v5.store"))
+        for (index, store) in locations.stores.enumerated() { try writeSQLiteValue(index + 10, at: store.url) }
+        try FileManager.default.createDirectory(at: locations.coversDirectory, withIntermediateDirectories: true)
+        let coverData = Data([1, 2, 3, 4])
+        try coverData.write(to: locations.coversDirectory.appendingPathComponent("cover.png"))
+        let backup = root.appendingPathComponent("test.sailunebackup")
+
+        try SailuneBackupService.createBackup(at: backup, locations: locations)
+        for store in locations.stores { try writeSQLiteValue(999, at: store.url) }
+        try Data([9]).write(to: locations.coversDirectory.appendingPathComponent("cover.png"))
+        try SailuneBackupService.scheduleRestore(from: backup, locations: locations)
+        try SailuneBackupService.applyPendingRestoreIfNeeded(locations: locations)
+
+        for (index, store) in locations.stores.enumerated() {
+            XCTAssertEqual(try readSQLiteValue(at: store.url), index + 10)
+        }
+        XCTAssertEqual(try Data(contentsOf: locations.coversDirectory.appendingPathComponent("cover.png")), coverData)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: locations.pendingRestoreURL.path))
+        XCTAssertFalse((try FileManager.default.contentsOfDirectory(atPath: locations.recoveryDirectory.path)).isEmpty)
     }
 
     func testDeletingBookImmediatelyRemovesItsCopies() throws {

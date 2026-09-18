@@ -8,6 +8,7 @@ enum BookCoverStore {
     private static let directoryName = "Sailune/Covers"
     private static let imageCache = NSCache<NSUUID, NSImage>()
     private static var missingCoverIDs = Set<UUID>()
+    static var backupDirectoryURL: URL { coversDirectoryURL() }
 
     static func image(for book: Book) -> NSImage? {
         let key = book.id as NSUUID

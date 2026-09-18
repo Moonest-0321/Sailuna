@@ -658,8 +658,10 @@ struct CharacterEventSectionView: View {
     let character: Character
     let book: Book
     @Environment(\.modelContext) private var modelContext
+    @Environment(StoryPlanningStore.self) private var planningStore
     @Query(sort: \Event.sortOrder) private var allEvents: [Event]
     @Query(sort: \Character.sortOrder) private var allCharacters: [Character]
+    @State private var deletionErrorMessage: String?
 
     private var events: [Event] {
         allEvents.filter { event in event.characters.contains { $0.id == character.id } }
@@ -675,7 +677,7 @@ struct CharacterEventSectionView: View {
             } else {
                 ForEach(events) { event in
                     CharacterEventRow(event: event, character: character, book: book, allCharacters: bookCharacters) {
-                        modelContext.delete(event)
+                        deleteEvent(event)
                     }
                 }
             }
@@ -684,6 +686,12 @@ struct CharacterEventSectionView: View {
             }
             .buttonStyle(.borderless)
         }
+        .alert("無法刪除事件", isPresented: Binding(
+            get: { deletionErrorMessage != nil },
+            set: { if !$0 { deletionErrorMessage = nil } }
+        )) { Button("好") { deletionErrorMessage = nil } } message: {
+            Text(deletionErrorMessage ?? "請稍後再試。")
+        }
     }
 
     private func addEvent() {
@@ -691,6 +699,20 @@ struct CharacterEventSectionView: View {
         event.characters = [character]
         event.sortOrder = (allEvents.map(\.sortOrder).max() ?? -1) + 1
         modelContext.insert(event)
+    }
+
+    private func deleteEvent(_ event: Event) {
+        do {
+            let outcome = try CrossStoreDeletionCoordinator.deleteEvent(
+                event, in: modelContext, planningStore: planningStore
+            )
+            if outcome.requiresRepair {
+                deletionErrorMessage = "事件已刪除，但附屬規劃資料將在下次啟動修復。"
+            }
+        } catch {
+            modelContext.rollback()
+            deletionErrorMessage = "事件未刪除。\n\n\(error.localizedDescription)"
+        }
     }
 }
 

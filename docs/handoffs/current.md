@@ -1,5 +1,82 @@
 # 當前聊天交接
 
+> 整體狀態：active
+>
+> 目前階段：V6 首頁完成
+>
+> 唯一下一步：下一個產品工作需另建工作單。
+>
+> 2026-09-18 V5.6 實作：已修正固定匯出路徑、加入六 store／封面完整備份與啟動前安全還原、補齊 AbilityProgress／ItemCopy／V5 settings reconcile、集中產品刪除入口，並讓關鍵儲存失敗可見且 rollback／reload。
+>
+> 資料策略：六個 store 以 SQLite snapshot 封裝成具 manifest／checksum 的 `.sailunebackup`；還原先驗證，強制備份現況，再於下次啟動、container 開啟前整組置換，失敗自動 rollback。其餘跨 store 資料以主 store UUID／book 對照做可證明、冪等的清理，不猜測內容。
+>
+> 驗證：無簽章 Debug／Release build 與完整 140 項 XCTest 通過；備份測試使用 `/private/tmp` 隔離資料並驗證六個 store、封面、安全備份及 pending 清除。人工 UI／故障注入尚待完成。
+>
+> 2026-09-18 20:34 啟動崩潰診斷：crash report 的第一個 Sailune frame 是舊 binary 的 `sharedModelContainer`，統一日誌顯示它嘗試以已不相容的即時模型開啟 `Sailune-v4.store`，得到 Core Data 134130（missing source managed object model）後 `fatalError`。該產物位於舊的 `DerivedData/DreaMoon-*`，編譯日期為 2026-08-08；目前工作樹沒有這段啟動碼。已重建 `Sailune.xcodeproj` 的 Debug 產物至 `DerivedData/Sailune-*`，並以 `/private/tmp/sailune-v56-crash-smoke` 隔離資料成功啟動六 store，未再崩潰；正式作者資料未用於驗證。
+>
+> 2026-09-18 23:04 編輯器崩潰修正：目前 binary 可在開啟右側「設定集」時重現 AppKit `Update Constraints in Window` 無限重排，最後由 `NSApplication _crashOnException` 形成 `EXC_BREAKPOINT`；不是 store 或作者資料錯誤。已停用系統 `.inspector`，改為工作區內固定 300pt 的第三欄，並為中央編輯區、工作區與設定種類 segmented picker 加入可收斂的尺寸／水平捲動約束。Xcode Debug build 成功，實際作者介面已完成開啟、關閉、再次開啟設定集的冒煙驗證，未再崩潰且未修改作者資料。
+>
+> 2026-09-18 文件整理：新增 `docs/spec-power-v5.5.md`，並同步資料模型、功能盤點、測試基線及 settings V10 遷移說明。V5.0「不連接角色／物品／能力等」保留為第一版歷史邊界，後續 V5.2～V5.6 增量能力分開描述。
+
+## V6 首頁響應式搜尋修正（完成）
+
+- 根因是搜尋框已佔用 `HStack` 寬度，新建按鈕又施加同段固定像素位移，視窗尺寸改變後形成重複位移。
+- `Sailune/ContentView.swift` 現依內容區可用寬度的 38% 計算搜尋框，保留按鈕比例空間並加入上下限；新建按鈕移除額外 `offset`，改用容器自然排版。
+- 長期規則已加入 `AGENTS.md` 與 `docs/coding-standards.md`：與視窗或整體版面比對位置的物件，必須根據父容器可用尺寸、比例與上下限約束計算，不得以固定像素 offset 模擬跨區位移。
+- 驗證：Swift frontend parse、`git diff --check`、無簽章 Debug build 通過；隔離 V5 store UI 冒煙中，一般與最大化視窗切換後重新點擊尋找，搜尋框與新建按鈕位置正常、無重疊或越界。
+- 本輪只修改首頁排版與協作規範，沒有修改 schema、migration、搜尋條件或正式作者資料。
+
+## V6.0a 開始介面（實作完成，待 UI 驗收）
+
+- 使用者已確認 V6.0a 只更新開始／書櫃介面：標題改為「帆夢 Sailune」、暫時不呈現作者介紹卡、加入約 210–230 pt 且不可收合的固定左側欄。
+- 側欄依 Apple Music 式低密度系統導覽呈現：作品／首頁、尋找、發布；作者／成就、關於我。首頁為預設選取並顯示現有作品區；其餘四個按鈕目前只保留外觀，不建立內容或改變既有搜尋。
+- 作品區的卡片、搜尋、新建、刪除、空狀態和資料語意均維持不變；作者資料也不刪除，只是不在書櫃呈現。
+- R、U 與 I 已批准；`ContentView` 已完成固定窄側欄、品牌標題與作者卡移除。V5.6 人工資料安全驗收仍是獨立未完成工作，不與此 UI 工作混合。
+- 驗證：`swiftc -frontend -parse Sailune/ContentView.swift`、`git diff --check`、主機環境隔離 Debug build 與 `xcodebuild test -only-testing:SailuneTests` 均通過。唯一下一步是實機 UI 冒煙；沙盒宏 plugin 錯誤已由主機建置環境排除。
+
+## V6.0b 開始介面互動（實作完成，待 UI 驗收）
+
+- 使用者提出：移除頂欄「帆夢 Sailune」、尋找按鈕觸發搜尋框與新建按鈕的邊界滑動、首頁返回最初畫面、發布／成就／關於我暫留空白，以及左下角圓形使用者頭像。
+- 目前提案沿用側欄品牌文字，頭像優先取既有 `AuthorProfile.avatarData`，無資料時使用系統人物圖示；不新增作者欄位或內容頁。
+- 架構已確認：進入作品總覽／編輯器後開始介面側欄消失；「首頁」只在開始介面內返回最初書櫃，維持現有 `NavigationStack` 外框。
+- R、U 與 I 已完成批准；使用者於 2026-09-19 回覆「正確」後，已完成開始頁頂欄／搜尋滑動、首頁重設、三個空白入口與左下角圓形頭像。進入作品後仍由既有 `NavigationStack` 路由取代開始頁，因此側欄消失。
+- 側欄五個選單按鈕現為整列可點擊，非僅限文字／圖示範圍；每列維持 38 pt 最小高度與選取背景。
+- 品牌文字已放大；左下角頭像改為可點擊的「登入」整列按鈕，從底部向上開啟帳號面板，五個帳號／方案／設定入口目前僅保留 UI。
+- 帳號面板已收斂為原生背景；方案提供三種選單，Sign in with Apple 曾嘗試但現已暫停。關於我改為作者資料彈窗，顯示筆名、簡介與筆名首字預設頭像。
+- 帳號面板後續改為 220 pt 側欄同寬、無箭頭圓角面板，從登入區上方浮出；方案名稱會顯示在方案列尾端。Apple ID 最後一次模板嘗試仍失敗，現改為顯示暫停提示；關於我可加入 PNG 頭像。
+- 已移除方案列重複的自訂箭頭；關於我不再選取空白內容狀態，只保留目前頁面並開啟作者彈窗。
+- `ContentView` parse、`git diff --check`、主機隔離 Debug build 與 `xcodebuild test -only-testing:SailuneTests` 均通過；唯一下一步是人工 UI 冒煙，確認一般／窄視窗搜尋邊界、選單狀態、空白內容、頭像及作品路由。
+- 本次增量重新建置受既有 Swift macro plugin server malformed response 阻斷；篩選輸出未見 `AccountPopoverView` 或本次 popover 相關專屬錯誤。
+
+## V6.0c 首頁彈窗規則與書籍狀態（實作完成，待 UI 驗收）
+
+- 已將「首頁任何彈窗、浮動面板或自訂 modal 都可點擊空白處取消」加入 `docs/coding-standards.md`，並套用新建書籍、關於我與登入面板；遮罩會攔截點擊，不穿透背景。
+- `Book` 新增 `BookStatus`（連載／完結／草稿），但持久化欄位曾造成 `Sailune-v5.store` 模型不相容，現已撤回；目前使用 `@Transient`、預設草稿，未新增連載／完結入口，也未動正式資料。
+- `ContentView`／`Book` parse、狀態單元測試與主機環境無簽章 Debug build 通過。
+- 已將正式 V5 store 的 `.store`／WAL／SHM 複製到 `/private/tmp` 隔離目錄，用修正版 App 成功開啟副本並在書櫃看見既有作品；沒有再出現 V5 主資料庫載入失敗，正式資料未被修改。
+- 唯一下一步：人工確認三個首頁彈窗的空白取消、圓角尺寸與草稿預設顯示，並沿用 V6.0b 的側欄與路由冒煙。
+
+## V6.0d 書櫃狀態分區與設定頁（實作完成，待最終 UI 複核）
+
+- 書籍卡資料區顯示草稿／連載／完結狀態，卡片高度調整為 310 pt；書櫃依連載、草稿、完結三區排列並以低對比線分隔，空分類保留提示。
+- 登入面板改由首頁全頁遮罩處理，已人工確認點擊右側書架空白可取消且不穿透；「設定」會關閉面板並顯示暫時空白頁，第一列為「開發階段 V6.0d」。
+- 正式 V5 store 的隔離副本可正常開啟，既有作品出現在草稿區，沒有修改正式資料；frontend parse、狀態專項 XCTest、無簽章 Debug build 與 diff check 通過。
+- 書籍狀態仍為 `@Transient`；本輪只呈現 UI，不宣稱重啟後保留連載／完結，正式持久化等待相容的 V6 schema migration。
+
+## V6.0e 首頁收尾（完成）
+
+- 側欄已在作者分組上方新增只有標題與分隔線的「社群」分類；未建立額外按鈕或內容。
+- Apple ID 已完成最後一次官方流程嘗試：程式、官方按鈕與 entitlement 可無簽章編譯，但 Xcode 實際簽章回報目前 Personal Team 不支援 Sign in with Apple，無法建立 `com.MooNest.Sailune` 的 provisioning profile。
+- 為保持專案可建置，已撤回無法簽署的 capability／entitlement；帳號列顯示需要付費 Apple Developer Program 的明確原因。最終 Debug build、parse、pbxproj lint、diff check 與隔離 V5 store UI 冒煙通過。
+- 使用者指定此項完成後結束首頁開發；下一項產品功能應另建工作單。書籍狀態持久化仍是未來 V6 schema migration，不屬於已完成首頁 UI。
+
+## V6.0f 新建書籍流程修正（完成）
+
+- 已重現取消／儲存跑到主視窗工具列，以及完成後沒有進入編輯器。根因是自訂 overlay 誤用 environment `dismiss()`／系統 action 快捷語意，且 `onCreated` 被改成清空導覽回首頁；不是資料庫或卷節 schema 損壞。
+- 取消／完成現在固定在圓角彈窗內；建立成功後以新書 UUID 直接開啟第一卷第一節編輯器。
+- 隔離 V5 store 實際建書 UI 冒煙通過，未見黃色警告；parse、Debug build 與 diff check 通過，正式作者資料未修改。V6 首頁工作再次標記完成。
+- 追加全域首頁規則：只有一個主要確認動作的短輸入彈窗，文字欄按 Enter 直接確認並關閉；規則已同步至 `AGENTS.md` 與 `docs/coding-standards.md`。新建書籍的書名與作者欄已使用 `onSubmit` 套用。
+
 ## V5.6 勢力非隸屬關係（完成）
 
 - settings store 升級至 V10，新增 `PowerRelation`；同盟、敵對、競爭、貿易與臨時合作為對稱關係，宗主／附庸以宗主→附庸保存，不含時間序。
@@ -151,7 +228,7 @@
 - 角色刪除已納入跨 store 成員清理，啟動時會修復孤立或跨書連結；既有自由文字欄位未轉換或覆蓋。
 - 2026-09-16 驗證：frontend parse、`git diff --check`、無簽章 Debug build 通過；V5SettingsTests 21 項全部通過。
 
-> 狀態：active
+> 狀態：historical_checkpoint
 >
 > 更新日期：2026-09-15
 >

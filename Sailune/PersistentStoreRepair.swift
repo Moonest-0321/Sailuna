@@ -493,6 +493,20 @@ struct CrossStoreDeletionOutcome {
 enum CrossStoreDeletionCoordinator {
     private static let logger = Logger(subsystem: "com.MooNest.Sailune", category: "CrossStoreDeletion")
 
+    /// Marks a hierarchy row for deletion while the five-second UI undo window
+    /// is open. The UI commits through `commitStagedDeletion` after that window.
+    static func stageDeleteVolume(_ volume: Volume, in context: ModelContext) {
+        context.delete(volume)
+    }
+
+    static func stageDeleteSection(_ section: Section, in context: ModelContext) {
+        context.delete(section)
+    }
+
+    static func commitStagedDeletion(in context: ModelContext) throws {
+        try performPrimary(in: context) { try context.save() }
+    }
+
     @discardableResult
     static func deleteEvent(
         _ event: Event,
@@ -515,40 +529,59 @@ enum CrossStoreDeletionCoordinator {
         _ character: Character,
         in context: ModelContext,
         copyStore: ItemCopyStore?,
-        settingsStore: V5SettingsStore
+        settingsStore: V5SettingsStore,
+        abilityStore: AbilityProgressStore? = nil
     ) throws -> CrossStoreDeletionOutcome {
         let characterID = character.id
         try performPrimary(in: context) {
             try PersistentModelDeletion.deleteCharacter(character, in: context, copyStore: copyStore)
         }
-        let error = performDeferredCleanup("角色 \(characterID) 勢力成員資料") {
+        var errors: [String] = []
+        if let error = performDeferredCleanup("角色 \(characterID) 勢力成員資料", cleanup: {
             try settingsStore.removeMemberships(characterID: characterID)
-        }
-        return CrossStoreDeletionOutcome(deferredCleanupErrors: error.map { [$0] } ?? [])
+        }) { errors.append(error) }
+        errors.append(contentsOf: reconcileReferenceStores(
+            in: context, copyStore: copyStore, settingsStore: settingsStore, abilityStore: abilityStore
+        ))
+        return CrossStoreDeletionOutcome(deferredCleanupErrors: errors)
     }
 
     @discardableResult
     static func deleteNodes(
         _ nodes: [Node],
         in context: ModelContext,
-        planningStore: StoryPlanningStore
+        planningStore: StoryPlanningStore,
+        copyStore: ItemCopyStore? = nil,
+        settingsStore: V5SettingsStore? = nil,
+        abilityStore: AbilityProgressStore? = nil
     ) throws -> CrossStoreDeletionOutcome {
         try performPrimary(in: context) {
             try PersistentModelDeletion.deleteNodes(nodes, in: context)
         }
-        return reconcileTimelineMetadata(in: context, planningStore: planningStore)
+        var errors = reconcileTimelineMetadata(in: context, planningStore: planningStore).deferredCleanupErrors
+        errors.append(contentsOf: reconcileReferenceStores(
+            in: context, copyStore: copyStore, settingsStore: settingsStore, abilityStore: abilityStore
+        ))
+        return CrossStoreDeletionOutcome(deferredCleanupErrors: errors)
     }
 
     @discardableResult
     static func deleteTimeline(
         _ timeline: Timeline,
         in context: ModelContext,
-        planningStore: StoryPlanningStore
+        planningStore: StoryPlanningStore,
+        copyStore: ItemCopyStore? = nil,
+        settingsStore: V5SettingsStore? = nil,
+        abilityStore: AbilityProgressStore? = nil
     ) throws -> CrossStoreDeletionOutcome {
         try performPrimary(in: context) {
             try PersistentModelDeletion.deleteTimeline(timeline, in: context)
         }
-        return reconcileTimelineMetadata(in: context, planningStore: planningStore)
+        var errors = reconcileTimelineMetadata(in: context, planningStore: planningStore).deferredCleanupErrors
+        errors.append(contentsOf: reconcileReferenceStores(
+            in: context, copyStore: copyStore, settingsStore: settingsStore, abilityStore: abilityStore
+        ))
+        return CrossStoreDeletionOutcome(deferredCleanupErrors: errors)
     }
 
     @discardableResult
@@ -557,7 +590,8 @@ enum CrossStoreDeletionCoordinator {
         in context: ModelContext,
         copyStore: ItemCopyStore?,
         planningStore: StoryPlanningStore,
-        settingsStore: V5SettingsStore? = nil
+        settingsStore: V5SettingsStore? = nil,
+        abilityStore: AbilityProgressStore? = nil
     ) throws -> CrossStoreDeletionOutcome {
         let bookID = book.id
         try performPrimary(in: context) {
@@ -573,6 +607,59 @@ enum CrossStoreDeletionCoordinator {
            }) { errors.append(error) }
         if let error = performDeferredCleanup("書籍 \(bookID) 封面", cleanup: {
             try BookCoverStore.removeCover(forID: bookID)
+        }) { errors.append(error) }
+        errors.append(contentsOf: reconcileReferenceStores(
+            in: context, copyStore: copyStore, settingsStore: settingsStore, abilityStore: abilityStore
+        ))
+        return CrossStoreDeletionOutcome(deferredCleanupErrors: errors)
+    }
+
+    @discardableResult
+    static func deleteItem(
+        _ item: Item,
+        levels: [ItemLevel],
+        in context: ModelContext,
+        copyStore: ItemCopyStore,
+        settingsStore: V5SettingsStore
+    ) throws -> CrossStoreDeletionOutcome {
+        let itemID = item.id
+        try performPrimary(in: context) {
+            levels.forEach(context.delete)
+            context.delete(item)
+            try context.save()
+        }
+        var errors: [String] = []
+        if let error = performDeferredCleanup("物品 \(itemID) 副本", cleanup: {
+            copyStore.deleteCopies(itemID: itemID)
+            if let message = copyStore.persistenceErrorMessage { throw LinkedStoreCleanupError(message: message) }
+        }) {
+            errors.append(error)
+        }
+        if let error = performDeferredCleanup("物品 \(itemID) 勢力資產連結", cleanup: {
+            try settingsStore.removeAssets(kind: .item, sourceID: itemID)
+        }) { errors.append(error) }
+        return CrossStoreDeletionOutcome(deferredCleanupErrors: errors)
+    }
+
+    @discardableResult
+    static func deleteAbility(
+        _ ability: CharacterAbility,
+        in context: ModelContext,
+        abilityStore: AbilityProgressStore,
+        settingsStore: V5SettingsStore
+    ) throws -> CrossStoreDeletionOutcome {
+        let abilityID = ability.id
+        try performPrimary(in: context) {
+            context.delete(ability)
+            try context.save()
+        }
+        var errors: [String] = []
+        if let error = performDeferredCleanup("能力 \(abilityID) 進度資料", cleanup: {
+            abilityStore.deleteAbility(abilityID: abilityID)
+            if let message = abilityStore.persistenceErrorMessage { throw LinkedStoreCleanupError(message: message) }
+        }) { errors.append(error) }
+        if let error = performDeferredCleanup("能力 \(abilityID) 勢力資產連結", cleanup: {
+            try settingsStore.removeAssets(kind: .ability, sourceID: abilityID)
         }) { errors.append(error) }
         return CrossStoreDeletionOutcome(deferredCleanupErrors: errors)
     }
@@ -606,6 +693,76 @@ enum CrossStoreDeletionCoordinator {
             try planningStore.removeOrphanedTimelineMetadata(validEventIDs: validEventIDs)
         }
         return CrossStoreDeletionOutcome(deferredCleanupErrors: error.map { [$0] } ?? [])
+    }
+
+    private struct ReferenceSnapshot {
+        let bookIDs: Set<UUID>
+        let characterIDs: Set<UUID>
+        let itemIDs: Set<UUID>
+        let abilityIDs: Set<UUID>
+        let nodeIDs: Set<UUID>
+        let characterBookIDs: [UUID: UUID]
+        let itemBookIDs: [UUID: UUID]
+        let abilityBookIDs: [UUID: UUID]
+        let itemLevelItemIDs: [UUID: UUID]
+    }
+
+    private struct LinkedStoreCleanupError: LocalizedError {
+        let message: String
+        var errorDescription: String? { message }
+    }
+
+    private static func reconcileReferenceStores(
+        in context: ModelContext,
+        copyStore: ItemCopyStore?,
+        settingsStore: V5SettingsStore?,
+        abilityStore: AbilityProgressStore?
+    ) -> [String] {
+        let snapshot: ReferenceSnapshot
+        do {
+            let books = try context.fetch(FetchDescriptor<Book>())
+            let characters = try context.fetch(FetchDescriptor<Character>())
+            let items = try context.fetch(FetchDescriptor<Item>())
+            let abilities = try context.fetch(FetchDescriptor<CharacterAbility>())
+            let nodes = try context.fetch(FetchDescriptor<Node>())
+            let levels = try context.fetch(FetchDescriptor<ItemLevel>())
+            snapshot = ReferenceSnapshot(
+                bookIDs: Set(books.map(\.id)),
+                characterIDs: Set(characters.map(\.id)),
+                itemIDs: Set(items.map(\.id)),
+                abilityIDs: Set(abilities.map(\.id)),
+                nodeIDs: Set(nodes.map(\.id)),
+                characterBookIDs: Dictionary(uniqueKeysWithValues: characters.compactMap { character in character.book.map { (character.id, $0.id) } }),
+                itemBookIDs: Dictionary(uniqueKeysWithValues: items.compactMap { item in item.book.map { (item.id, $0.id) } }),
+                abilityBookIDs: Dictionary(uniqueKeysWithValues: abilities.compactMap { ability in ability.character?.book.map { (ability.id, $0.id) } }),
+                itemLevelItemIDs: Dictionary(uniqueKeysWithValues: levels.map { ($0.id, $0.itemID) })
+            )
+        } catch {
+            return ["無法建立跨資料庫修復對照：\(error.localizedDescription)"]
+        }
+
+        var errors: [String] = []
+        if let settingsStore, let error = performDeferredCleanup("V5 設定集參照", cleanup: {
+            try settingsStore.reconcile(
+                validBookIDs: snapshot.bookIDs, validCharacterIDs: snapshot.characterIDs,
+                validItemIDs: snapshot.itemIDs, validAbilityIDs: snapshot.abilityIDs,
+                validNodeIDs: snapshot.nodeIDs, characterBookIDs: snapshot.characterBookIDs,
+                itemBookIDs: snapshot.itemBookIDs, abilityBookIDs: snapshot.abilityBookIDs
+            )
+        }) { errors.append(error) }
+        if let copyStore, let error = performDeferredCleanup("物品副本參照", cleanup: {
+            try copyStore.reconcile(
+                itemBookIDs: snapshot.itemBookIDs, characterBookIDs: snapshot.characterBookIDs,
+                validNodeIDs: snapshot.nodeIDs, itemLevelItemIDs: snapshot.itemLevelItemIDs
+            )
+        }) { errors.append(error) }
+        if let abilityStore, let error = performDeferredCleanup("能力進度參照", cleanup: {
+            try abilityStore.reconcile(
+                validBookIDs: snapshot.bookIDs, characterBookIDs: snapshot.characterBookIDs,
+                abilityBookIDs: snapshot.abilityBookIDs, validNodeIDs: snapshot.nodeIDs
+            )
+        }) { errors.append(error) }
+        return errors
     }
 
     static func coordinate(

@@ -1,35 +1,31 @@
 # 文件與實作一致性檢查
 
-> 稽核日期：2026-09-17。範圍包含 Swift 原始碼、三個 XCTest 檔、Xcode 設定與 `docs/`；本文件記錄程式事實和產品文件的差異，不代表已修正程式。
+> 稽核日期：2026-09-18。範圍包含 Swift 原始碼、三個 XCTest 檔、Xcode 設定與 `docs/`；本文件記錄程式事實和產品文件的差異，不代表已修正程式。
 
 ## 已確認一致
 
 - 主資料使用 `NovelWriterSchemaV5`；故事規劃使用 `StoryPlanningSchemaV7`，產品版本與 schema 版本分離。
 - 應用建立一個既有主 store 與五個獨立功能 store；V5 settings store 只以 UUID 連結，不遷移主資料。
 - V5 settings schema V10 保存設定集、勢力、直接隸屬、非隸屬關係、成員／多重職務、生命週期／承接、資產／優勢、地點及世界條目；跨主 store 的角色、物品、能力與 Node 都只保存 UUID。V9→V10 不解析既有關係自由文字，V1～V9 快照保持不可變。
+- V5.0「不連接角色、物品、能力等」是第一版歷史邊界；V5.2～V5.6 的成員、資產、生命週期與結構化關係是後續增量能力。長期文件不得把 V5.0 邊界誤寫成目前產品限制。
 - 勢力 WorldTerm 連接由欄位語意限制：宗教只能連「信仰」、政體只能連「制度」；核心／範圍目前不連 WorldTerm，既有欄位只作相容保留，後續改接地點／地圖。
 - 角色正文引用使用穩定 URL；已連結名稱可同步，未連結文字只列候選。
 - 正文大綱來源和伏筆／修改標籤均可重新定位；來源消失時分別採大綱降級與標籤刪除。
 - 世界時間軸使用主 store Timeline／Era／Node／Event；既有敘事大綱可建立 Event 並以 metadata 關聯。
-- 原始碼中共有 135 個 XCTest 方法；2026-09-17 V5 settings 專項 45 項及完整 135 項均通過，包含實檔 V8→V9、V9→V10 遷移、對稱關係正規化、宗主／附庸方向及刪除清理。
+- 原始碼中共有 140 個 XCTest 方法；2026-09-18 完整 140 項均通過，包含六 store／封面備份還原、AbilityProgress／ItemCopy／V5 settings reconcile 及原有遷移。
 
-## P0：公開測試前應處理
+## 2026-09-18 已修正
 
-### 匯出目的地寫死為開發者帳號
+### 匯出目的地不再依賴開發者帳號
 
-`ExportManager` 與 `EpubExporter` 都寫入 `/Users/hsuchengyu/Downloads`。其他使用者通常無法使用該路徑；文件曾寫成泛稱「使用者 Downloads」，與程式不符。應改用存檔面板或系統 Downloads URL，並呈現成功／失敗結果。
+TXT 與 EPUB 現均使用 `NSSavePanel`；取消不寫檔，覆寫由系統確認，寫入失敗顯示警告，成功後在 Finder 選取成品。
 
-## P1：資料一致性
+### 跨 store 一致性、刪除與備份
 
-### 部分刪除入口繞過既有集中服務
+- Book／Character／Item／Ability／Node／Timeline／Event 的破壞性操作已透過 `CrossStoreDeletionCoordinator` 協調；Volume／Section 的五秒 Undo 保留，但標記與最終儲存也改由協調服務進入。
+- 啟動與刪除後會以主 store UUID／book 對照冪等修復 V5 settings、ItemCopy 與 AbilityProgress；失效 Node 只清除定位，保留歷史文字。
 
-- `BookOverviewView` 與 `EditorWorkspaceView` 直接刪除 Volume／Section，沒有呼叫 `PersistentModelDeletion.deleteVolume/deleteSection`。這可能讓 Node／Event 的 Section 引用依賴 SwiftData 行為或後續修復，而不是立即明確解除。
-- `CharacterEventSectionView` 直接刪除 Event，沒有呼叫 `CrossStoreDeletionCoordinator.deleteEvent`，可能留下 `TimelineEventCardMetadata`，直到下一次冪等修復才清除。
-- 文件不得宣稱「所有 Event／Node／Timeline／Book／卷節刪除都已統一」。目前協調服務本身存在且有測試，但不是所有 UI 入口都使用。
-
-### 多 store 備份仍不完整
-
-目前沒有把六個 store、SQLite sidecar 與封面目錄一起封裝的備份／還原流程。公開測試前至少需提供可驗證的備份方式。
+已提供單檔 `.sailunebackup`，內含六個 SQLite online snapshot、封面、schema manifest 與 SHA-256；還原在下次啟動前執行，先建安全備份並可 rollback。
 
 ## P1：產品宣稱邊界
 
@@ -53,4 +49,4 @@
 
 ## 結論
 
-帆夢已具備可展示的「正文—設定—敘事大綱—世界時間」連動骨架，也有相當完整的模型與遷移測試。現階段最值得發展的產品方向是伏筆生命週期，但在 schema 與 UI 完成前只能作為預告方向。公開測試的技術前置則是匯出路徑、刪除入口一致性、多 store 備份與人工冒煙。
+帆夢已具備可展示的「正文—設定—敘事大綱—世界時間」連動骨架，也有相當完整的模型與遷移測試。現階段最值得發展的產品方向是伏筆生命週期，但在 schema 與 UI 完成前只能作為預告方向。匯出路徑、刪除入口一致性與多 store 備份已補齊；公開測試前仍需完成真實 UI、故障注入、簽章與封裝驗證。

@@ -273,6 +273,44 @@ final class V5SettingsTests: XCTestCase {
         XCTAssertTrue(guidance.worldImpact.contains("政治"))
     }
 
+    func testReconcileEnforcesSameBookEndpointsAndDeduplicatesWithoutRemovingSuccessionCycles() throws {
+        let container = try makeMainContainer()
+        let context = container.mainContext
+        let store = V5SettingsStore(container: container)
+        let bookA = UUID(), bookB = UUID(), characterA = UUID(), characterB = UUID(), itemA = UUID()
+        let upperLevel = PowerLevel(bookID: bookA, name: "上層", sortOrder: 0)
+        let lowerLevel = PowerLevel(bookID: bookA, name: "下層", sortOrder: 1)
+        let first = PowerUnit(bookID: bookA, name: "前身", levelID: upperLevel.id)
+        let second = PowerUnit(bookID: bookA, name: "後繼", levelID: lowerLevel.id)
+        let validMember = PowerMember(bookID: bookA, powerID: first.id, characterID: characterA)
+        let crossBookMember = PowerMember(bookID: bookA, powerID: first.id, characterID: characterB)
+        let validAsset = PowerAssetLink(bookID: bookA, powerID: first.id, kind: .item, sourceID: itemA)
+        let duplicateAsset = PowerAssetLink(bookID: bookA, powerID: first.id, kind: .item, sourceID: itemA)
+        let forward = PowerSuccessionLink(bookID: bookA, predecessorPowerID: first.id, successorPowerID: second.id, kind: .succeeded)
+        let duplicateForward = PowerSuccessionLink(bookID: bookA, predecessorPowerID: first.id, successorPowerID: second.id, kind: .succeeded)
+        let cycleBack = PowerSuccessionLink(bookID: bookA, predecessorPowerID: second.id, successorPowerID: first.id, kind: .succeeded)
+        let validEdge = PowerSubordination(bookID: bookA, lowerPowerID: second.id, upperPowerID: first.id)
+        let reversedEdge = PowerSubordination(bookID: bookA, lowerPowerID: first.id, upperPowerID: second.id)
+        [upperLevel, lowerLevel].forEach(context.insert)
+        [first, second].forEach(context.insert)
+        [validMember, crossBookMember].forEach(context.insert)
+        [validAsset, duplicateAsset].forEach(context.insert)
+        [forward, duplicateForward, cycleBack].forEach(context.insert)
+        [validEdge, reversedEdge].forEach(context.insert)
+        try context.save()
+
+        try store.reconcile(
+            validBookIDs: [bookA, bookB], validCharacterIDs: [characterA, characterB],
+            validItemIDs: [itemA], characterBookIDs: [characterA: bookA, characterB: bookB],
+            itemBookIDs: [itemA: bookA]
+        )
+
+        XCTAssertEqual(store.members(for: bookA).map(\.id), [validMember.id])
+        XCTAssertEqual(store.assets(for: first, bookID: bookA).count, 1)
+        XCTAssertEqual(store.successionLinks(for: first, bookID: bookA).count, 2)
+        XCTAssertEqual(store.edges(for: bookA).map(\.id), [validEdge.id])
+    }
+
     func testWorldTermGuidanceTreatsPeopleAsAContextualWorldSystem() {
         let guidance = WorldTermContentGuidance.forCategory(WorldTermCategory.people.rawValue)
 

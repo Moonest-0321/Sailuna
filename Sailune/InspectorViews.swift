@@ -517,12 +517,15 @@ struct InspectorRootView: View {
                         }
                     } else {
                         HStack(spacing: 8) {
-                            Picker("設定種類", selection: $selectedTab) {
-                                ForEach(visibleSidebarKeys) { key in
-                                    Text(key.title).tag(key)
+                            ScrollView(.horizontal) {
+                                Picker("設定種類", selection: $selectedTab) {
+                                    ForEach(visibleSidebarKeys) { key in
+                                        Text(key.title).tag(key)
+                                    }
                                 }
+                                .pickerStyle(.segmented)
                             }
-                            .pickerStyle(.segmented)
+                            .scrollIndicators(.hidden)
                             Button { showingSidebarSettings = true } label: {
                                 Image(systemName: "slider.horizontal.3")
                             }
@@ -741,6 +744,7 @@ private struct ItemListContainerView: View {
     let onOpen: (Item) -> Void
     @Environment(\.modelContext) private var modelContext
     @Environment(ItemCopyStore.self) private var copyStore
+    @Environment(V5SettingsStore.self) private var settingsStore
     @Query(sort: \Item.updatedAt, order: .reverse) private var allItems: [Item]
     @State private var searchText = ""
     @State private var showCurrentSectionOnly = false
@@ -914,8 +918,10 @@ private struct ItemDetailView: View {
     let onSelectSection: ((Section) -> Void)?
     @Environment(\.modelContext) private var modelContext
     @Environment(ItemCopyStore.self) private var copyStore
+    @Environment(V5SettingsStore.self) private var settingsStore
     @Query(sort: \ItemLevel.sortOrder) private var allLevels: [ItemLevel]
     @State private var showDeleteConfirmation = false
+    @State private var deletionErrorMessage: String?
 
     private var referencedSections: [Section] {
         WritingReferenceScanner.sections(for: item, in: book)
@@ -993,6 +999,12 @@ private struct ItemDetailView: View {
         } message: {
             Text("所有副本、副本持有人、副本當下等級與副本歷史將一併刪除；正文內容本身會保留。")
         }
+        .alert("物品刪除未完成", isPresented: Binding(
+            get: { deletionErrorMessage != nil },
+            set: { if !$0 { deletionErrorMessage = nil } }
+        )) { Button("好") { deletionErrorMessage = nil } } message: {
+            Text(deletionErrorMessage ?? "請稍後再試。")
+        }
     }
 
     private var itemCopiesSection: some View {
@@ -1054,10 +1066,24 @@ private struct ItemDetailView: View {
     private func itemEditor(_ label: String, text: Binding<String>, minHeight: CGFloat) -> some View { VStack(alignment: .leading, spacing: 4) { Text(label).font(.caption).foregroundStyle(.secondary); InsetTextEditor(text: text, minHeight: minHeight) } }
     private func addCopy() { copyStore.createCopy(itemID: item.id) }
     private func deleteItem() {
-        for level in levels { modelContext.delete(level) }
-        copyStore.deleteCopies(itemID: item.id)
-        modelContext.delete(item)
-        onBack()
+        do {
+            let outcome = try CrossStoreDeletionCoordinator.deleteItem(
+                item, levels: levels, in: modelContext,
+                copyStore: copyStore, settingsStore: settingsStore
+            )
+            if outcome.requiresRepair {
+                let alert = NSAlert()
+                alert.alertStyle = .warning
+                alert.messageText = "物品已刪除"
+                alert.informativeText = "部分附屬連結將在下次啟動修復。\n\n\(outcome.deferredCleanupErrors.joined(separator: "\n"))"
+                alert.addButton(withTitle: "好")
+                alert.runModal()
+            }
+            onBack()
+        } catch {
+            modelContext.rollback()
+            deletionErrorMessage = "物品未刪除。\n\n\(error.localizedDescription)"
+        }
     }
     private func sectionNumber(_ section: Section) -> Int { guard let volume = section.volume else { return 1 }; return volume.sections.sorted { $0.sortOrder < $1.sortOrder }.firstIndex(where: { $0.id == section.id }).map { $0 + 1 } ?? 1 }
 }
@@ -1442,6 +1468,7 @@ private struct AbilityDetailView: View {
     let onOpenCharacter: (Character) -> Void
     @Environment(\.modelContext) private var modelContext
     @Environment(AbilityProgressStore.self) private var abilityStore
+    @Environment(V5SettingsStore.self) private var settingsStore
     @Query(sort: \Character.sortOrder) private var allCharacters: [Character]
 
     private var levels: [AbilityLevel] { abilityStore.levels.filter { $0.abilityID == ability.id }.sorted { $0.sortOrder < $1.sortOrder } }
@@ -1460,7 +1487,7 @@ private struct AbilityDetailView: View {
                         VStack(alignment: .leading, spacing: 7) {
                             if connections.isEmpty { Text("尚未連接角色；請到角色詳細資料連接能力。").font(.caption).foregroundStyle(.secondary) }
                             ForEach(connections) { connection in
-                                let name = allCharacters.first { $0.id == connection.characterID }?.realName.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                                let name = characterDisplayName(id: connection.characterID)
                                 let level = levels.first { $0.id == connection.currentLevelID }?.name ?? "未設定等級"
                                 HStack {
                                     if let character = allCharacters.first(where: { $0.id == connection.characterID }) {
@@ -1519,10 +1546,33 @@ private struct AbilityDetailView: View {
         }
     }
 
+    private func characterDisplayName(id: UUID) -> String {
+        guard let character = allCharacters.first(where: { $0.id == id }) else { return "" }
+        return character.realName.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     private func deleteAbility() {
-        abilityStore.deleteAbility(abilityID: ability.id)
-        modelContext.delete(ability)
-        onBack()
+        do {
+            let outcome = try CrossStoreDeletionCoordinator.deleteAbility(
+                ability, in: modelContext,
+                abilityStore: abilityStore, settingsStore: settingsStore
+            )
+            if outcome.requiresRepair {
+                presentDeletionMessage("能力已刪除，但部分附屬連結將在下次啟動修復。\n\n\(outcome.deferredCleanupErrors.joined(separator: "\n"))")
+            }
+            onBack()
+        } catch {
+            modelContext.rollback()
+            presentDeletionMessage("能力未刪除。\n\n\(error.localizedDescription)")
+        }
+    }
+
+    private func presentDeletionMessage(_ message: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "能力刪除未完成"
+        alert.informativeText = message
+        alert.runModal()
     }
 }
 
@@ -1593,6 +1643,7 @@ struct CharacterListContainerView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(ItemCopyStore.self) private var copyStore
     @Environment(V5SettingsStore.self) private var settingsStore
+    @Environment(AbilityProgressStore.self) private var abilityStore
     @Query(sort: \Character.sortOrder) private var allCharacters: [Character]
     @State private var deletionErrorMessage: String?
 
@@ -1616,7 +1667,8 @@ struct CharacterListContainerView: View {
                         character,
                         in: modelContext,
                         copyStore: copyStore,
-                        settingsStore: settingsStore
+                        settingsStore: settingsStore,
+                        abilityStore: abilityStore
                     )
                     if outcome.requiresRepair {
                         deletionErrorMessage = "角色已刪除，但勢力成員連結將於下次啟動修復。"

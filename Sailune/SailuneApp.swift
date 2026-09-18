@@ -51,27 +51,21 @@ struct SailuneApp: App {
     }
 
     private static var v5SettingsStoreURL: URL {
-        let baseName = storeURL.deletingPathExtension().lastPathComponent
-        return storeURL.deletingLastPathComponent()
-            .appendingPathComponent("\(baseName)-settings.store")
+        SailuneDataLocations(mainStore: storeURL).settingsStore
     }
 
     /// Copy data deliberately lives outside the released V5 store. The name is
     /// derived from an override during tests so test and production data can
     /// never be mixed.
     private static var itemCopyStoreURL: URL {
-        let baseName = storeURL.deletingPathExtension().lastPathComponent
-        return storeURL.deletingLastPathComponent()
-            .appendingPathComponent("\(baseName)-item-copies.store")
+        SailuneDataLocations(mainStore: storeURL).itemCopyStore
     }
 
     private static var itemCopyLevelSelectionStoreURL: URL {
-        let baseName = storeURL.deletingPathExtension().lastPathComponent
-        return storeURL.deletingLastPathComponent()
-            .appendingPathComponent("\(baseName)-item-copy-level-selections.store")
+        SailuneDataLocations(mainStore: storeURL).itemCopyLevelStore
     }
-    private static var abilityProgressStoreURL: URL { storeURL.deletingLastPathComponent().appendingPathComponent("\(storeURL.deletingPathExtension().lastPathComponent)-ability-progress.store") }
-    private static var storyPlanningStoreURL: URL { storeURL.deletingLastPathComponent().appendingPathComponent("\(storeURL.deletingPathExtension().lastPathComponent)-story-planning.store") }
+    private static var abilityProgressStoreURL: URL { SailuneDataLocations(mainStore: storeURL).abilityProgressStore }
+    private static var storyPlanningStoreURL: URL { SailuneDataLocations(mainStore: storeURL).storyPlanningStore }
 
     private enum LegacyStoreSource {
         case v3(ModelContainer)
@@ -90,6 +84,11 @@ struct SailuneApp: App {
     }
 
     private static func makeModelContainer() throws -> (ModelContainer, V5SettingsStore, ItemCopyStore, AbilityProgressStore, StoryPlanningStore) {
+        do {
+            try SailuneBackupService.applyPendingRestoreIfNeeded(locations: SailuneDataLocations(mainStore: storeURL))
+        } catch {
+            throw StartupStageError(stage: "備份還原失敗，原資料已回復", underlying: error)
+        }
         // Open the released schema before V5. SwiftData caches model metadata
         // for shared top-level model types, so reversing this order makes it
         // attempt to open the V3 store with V5's expanded model graph.
@@ -191,7 +190,7 @@ struct SailuneApp: App {
             let schema = Schema(versionedSchema: AbilityProgressSchemaV1.self)
             let abilityContainer = try ModelContainer(for: schema, configurations: [ModelConfiguration(schema: schema, url: abilityProgressStoreURL)])
             abilityStore = try AbilityProgressStore(container: abilityContainer)
-            abilityStore.migrateLegacy(try container.mainContext.fetch(FetchDescriptor<CharacterAbility>()))
+            try abilityStore.migrateLegacy(try container.mainContext.fetch(FetchDescriptor<CharacterAbility>()))
         } catch { throw StartupStageError(stage: "能力進度資料庫載入失敗", underlying: error) }
         let planningStore: StoryPlanningStore
         do {
@@ -214,11 +213,45 @@ struct SailuneApp: App {
         )
         do {
             let validBookIDs = Set(try container.mainContext.fetch(FetchDescriptor<Book>()).map(\.id))
-            let validCharacterIDs = Set(try container.mainContext.fetch(FetchDescriptor<Character>()).map(\.id))
-            let validItemIDs = Set(try container.mainContext.fetch(FetchDescriptor<Item>()).map(\.id))
-            let validAbilityIDs = Set(try container.mainContext.fetch(FetchDescriptor<CharacterAbility>()).map(\.id))
+            let items = try container.mainContext.fetch(FetchDescriptor<Item>())
+            let abilities = try container.mainContext.fetch(FetchDescriptor<CharacterAbility>())
+            let characters = try container.mainContext.fetch(FetchDescriptor<Character>())
+            let itemLevels = try container.mainContext.fetch(FetchDescriptor<ItemLevel>())
+            let validCharacterIDs = Set(characters.map(\.id))
+            let validItemIDs = Set(items.map(\.id))
+            let validAbilityIDs = Set(abilities.map(\.id))
             let validNodeIDs = Set(try container.mainContext.fetch(FetchDescriptor<Node>()).map(\.id))
-            try settingsStore.reconcile(validBookIDs: validBookIDs, validCharacterIDs: validCharacterIDs, validItemIDs: validItemIDs, validAbilityIDs: validAbilityIDs, validNodeIDs: validNodeIDs)
+            let characterBookIDs = Dictionary(uniqueKeysWithValues: characters.compactMap { character in
+                character.book.map { (character.id, $0.id) }
+            })
+            let itemBookIDs = Dictionary(uniqueKeysWithValues: items.compactMap { item in
+                item.book.map { (item.id, $0.id) }
+            })
+            let abilityBookIDs = Dictionary(uniqueKeysWithValues: abilities.compactMap { ability in
+                ability.character?.book.map { (ability.id, $0.id) }
+            })
+            try settingsStore.reconcile(
+                validBookIDs: validBookIDs,
+                validCharacterIDs: validCharacterIDs,
+                validItemIDs: validItemIDs,
+                validAbilityIDs: validAbilityIDs,
+                validNodeIDs: validNodeIDs,
+                characterBookIDs: characterBookIDs,
+                itemBookIDs: itemBookIDs,
+                abilityBookIDs: abilityBookIDs
+            )
+            try copyStore.reconcile(
+                itemBookIDs: itemBookIDs,
+                characterBookIDs: characterBookIDs,
+                validNodeIDs: validNodeIDs,
+                itemLevelItemIDs: Dictionary(uniqueKeysWithValues: itemLevels.map { ($0.id, $0.itemID) })
+            )
+            try abilityStore.reconcile(
+                validBookIDs: validBookIDs,
+                characterBookIDs: characterBookIDs,
+                abilityBookIDs: abilityBookIDs,
+                validNodeIDs: validNodeIDs
+            )
         } catch {
             throw StartupStageError(stage: "V5 勢力跨資料庫連結修復失敗", underlying: error)
         }
@@ -296,6 +329,16 @@ private struct SailuneRootView: View {
             } message: {
                 Text(settingsStore.persistenceErrorMessage ?? "未知錯誤")
             }
+            .alert("能力資料無法儲存", isPresented: abilityPersistenceErrorBinding) {
+                Button("好") { abilityStore.clearPersistenceError() }
+            } message: {
+                Text(abilityStore.persistenceErrorMessage ?? "未知錯誤")
+            }
+            .alert("故事規劃無法儲存", isPresented: planningPersistenceErrorBinding) {
+                Button("好") { planningStore.clearPersistenceError() }
+            } message: {
+                Text(planningStore.persistenceErrorMessage ?? "未知錯誤")
+            }
     }
 
     private var persistenceErrorBinding: Binding<Bool> {
@@ -310,6 +353,20 @@ private struct SailuneRootView: View {
         Binding(
             get: { settingsStore.persistenceErrorMessage != nil },
             set: { if !$0 { settingsStore.clearPersistenceError() } }
+        )
+    }
+
+    private var abilityPersistenceErrorBinding: Binding<Bool> {
+        Binding(
+            get: { abilityStore.persistenceErrorMessage != nil },
+            set: { if !$0 { abilityStore.clearPersistenceError() } }
+        )
+    }
+
+    private var planningPersistenceErrorBinding: Binding<Bool> {
+        Binding(
+            get: { planningStore.persistenceErrorMessage != nil },
+            set: { if !$0 { planningStore.clearPersistenceError() } }
         )
     }
 }

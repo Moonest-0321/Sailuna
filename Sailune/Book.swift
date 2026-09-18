@@ -1,12 +1,22 @@
 import Foundation
 import SwiftData
 
+enum BookStatus: String, CaseIterable, Codable, Identifiable {
+    case ongoing = "連載"
+    case completed = "完結"
+    case draft = "草稿"
+
+    var id: String { rawValue }
+}
+
 @Model
 final class Book {
     var id: UUID = UUID()
     var title: String = ""       // 書名
     var author: String = ""      // 作者
     var synopsis: String = ""    // 簡介
+    // V6.0c 暫不改動已發布的 V5 主 store；正式持久化會另行建立相容 schema。
+    @Transient var status: BookStatus = .draft
     // PRD 提到「隨機柔和底色」，我們用 Data 儲存顏色的 RGBA 資料。
     // 設為可選 (?) 是因為新建時可能還沒算出顏色。
     var coverColorData: Data? = nil
@@ -28,6 +38,7 @@ final class Book {
         title: String,
         author: String,
         synopsis: String = "",
+        status: BookStatus = .draft,
         coverColorData: Data? = nil,
         createdAt: Date = Date(),
         updatedAt: Date = Date(),
@@ -37,6 +48,7 @@ final class Book {
         self.title = title
         self.author = author
         self.synopsis = synopsis
+        self.status = status
         self.coverColorData = coverColorData
         self.createdAt = createdAt
         self.updatedAt = updatedAt

@@ -33,6 +33,14 @@ private final class EditorKeyboardMonitor {
 
 // MARK: - 三欄式編輯工作區 (PRD 3.3)
 struct EditorWorkspaceView: View {
+    private enum Layout {
+        static let minimumWorkspaceWidth: CGFloat = 960
+        static let minimumWorkspaceHeight: CGFloat = 560
+        static let minimumEditorWidth: CGFloat = 360
+        static let minimumEditorHeight: CGFloat = 320
+        static let inspectorWidth: CGFloat = 300
+    }
+
     let book: Book
     @State private var selectedSection: Section?
     @State private var showInspector = false
@@ -69,69 +77,75 @@ struct EditorWorkspaceView: View {
     }
 
     var body: some View {
-        ZStack {
-            NavigationSplitView(columnVisibility: $columnVisibility) {
-                EditorSidebarView(book: book, selectedSection: $selectedSection, bridge: bridge)
-                    .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 380)
-            } detail: {
-                EditorCenterView(
-                    section: selectedSection,
-                    bridge: bridge,
-                    book: book,
-                    onOpenCharacter: { character in
-                        focusedCharacter = character
-                        characterFocusRequestID = UUID()
-                        setInspectorPresented(true)
-                    },
-                    onOpenSettings: openSettings
-                )
-                .toolbar { workspaceToolbar }
-            }
-            .opacity(isShowingPlanningWorkspace ? 0 : 1)
-            .allowsHitTesting(!isShowingPlanningWorkspace)
-            .accessibilityHidden(isShowingPlanningWorkspace)
+        HStack(spacing: 0) {
+            ZStack {
+                NavigationSplitView(columnVisibility: $columnVisibility) {
+                    EditorSidebarView(book: book, selectedSection: $selectedSection, bridge: bridge)
+                        .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
+                } detail: {
+                    EditorCenterView(
+                        section: selectedSection,
+                        bridge: bridge,
+                        book: book,
+                        onOpenCharacter: { character in
+                            focusedCharacter = character
+                            characterFocusRequestID = UUID()
+                            setInspectorPresented(true)
+                        },
+                        onOpenSettings: openSettings
+                    )
+                    .frame(minWidth: Layout.minimumEditorWidth, minHeight: Layout.minimumEditorHeight)
+                    .toolbar { workspaceToolbar }
+                }
+                .opacity(isShowingPlanningWorkspace ? 0 : 1)
+                .allowsHitTesting(!isShowingPlanningWorkspace)
+                .accessibilityHidden(isShowingPlanningWorkspace)
 
-            if hasLoadedPlanningWorkspace {
-                BookPlanningWorkspaceView(
+                if hasLoadedPlanningWorkspace {
+                    BookPlanningWorkspaceView(
+                        book: book,
+                        onOpenOutlineItem: openOutlineItem,
+                        onOpenTimelineSection: openTimelineSection,
+                        onOpenPlanningRecord: openPlanningRecord
+                    )
+                        .opacity(isShowingPlanningWorkspace ? 1 : 0)
+                        .allowsHitTesting(isShowingPlanningWorkspace)
+                        .accessibilityHidden(!isShowingPlanningWorkspace)
+                } else if isShowingPlanningWorkspace {
+                    ProgressView("整理大綱…")
+                }
+            }
+
+            if showInspector {
+                Divider()
+                WorkspaceInspectorView(
                     book: book,
-                    onOpenOutlineItem: openOutlineItem,
-                    onOpenTimelineSection: openTimelineSection,
-                    onOpenPlanningRecord: openPlanningRecord
+                    currentSection: selectedSection,
+                    focusedCharacter: focusedCharacter,
+                    focusRequestID: characterFocusRequestID,
+                    settingsDestination: settingsDestination,
+                    settingsRequestID: settingsRequestID,
+                    planningRecordReference: planningRecordReference,
+                    planningRecordRequestID: planningRecordRequestID,
+                    onSelectSection: { section in
+                        bridge.flushPendingSave()
+                        selectedSection = section
+                    },
+                    onOpenStoryTag: { tag in
+                        guard let section = BookStructure.orderedSections(in: book).first(where: { $0.id == tag.sectionID }) else { return }
+                        bridge.flushPendingSave()
+                        let offset = tag.resolvedOffset(in: String(section.content.characters))
+                        bridge.requestSelect(sectionID: section.id, range: NSRange(location: offset, length: 0))
+                        selectedSection = section
+                    },
+                    onOpenOutlineItem: openOutlineItem
                 )
-                    .opacity(isShowingPlanningWorkspace ? 1 : 0)
-                    .allowsHitTesting(isShowingPlanningWorkspace)
-                    .accessibilityHidden(!isShowingPlanningWorkspace)
-            } else if isShowingPlanningWorkspace {
-                ProgressView("整理大綱…")
+                .workspaceFloatingPanel()
+                .frame(width: Layout.inspectorWidth)
             }
         }
         .navigationTitle("")
-        .inspector(isPresented: $showInspector) {
-            WorkspaceInspectorView(
-                book: book,
-                currentSection: selectedSection,
-                focusedCharacter: focusedCharacter,
-                focusRequestID: characterFocusRequestID,
-                settingsDestination: settingsDestination,
-                settingsRequestID: settingsRequestID,
-                planningRecordReference: planningRecordReference,
-                planningRecordRequestID: planningRecordRequestID,
-                onSelectSection: { section in
-                    bridge.flushPendingSave()
-                    selectedSection = section
-                },
-                onOpenStoryTag: { tag in
-                    guard let section = BookStructure.orderedSections(in: book).first(where: { $0.id == tag.sectionID }) else { return }
-                    bridge.flushPendingSave()
-                    let offset = tag.resolvedOffset(in: String(section.content.characters))
-                    bridge.requestSelect(sectionID: section.id, range: NSRange(location: offset, length: 0))
-                    selectedSection = section
-                },
-                onOpenOutlineItem: openOutlineItem
-            )
-            .workspaceFloatingPanel()
-            .inspectorColumnWidth(min: 250, ideal: 300, max: 400)
-        }
+        .frame(minWidth: Layout.minimumWorkspaceWidth, minHeight: Layout.minimumWorkspaceHeight)
         .sheet(isPresented: $showingCommandPalette) {
             CommandPaletteView { command in
                 showingCommandPalette = false
@@ -268,8 +282,8 @@ struct EditorWorkspaceView: View {
     }
 
     private func setInspectorPresented(_ presented: Bool) {
-        // AppKit 的 inspector 展開會對中央 NSTextView 執行 live resize。
-        // 先結束文字輸入並關閉動畫，避免文字配置與分欄動畫互相觸發重排。
+        // 右欄切換會改變中央 NSTextView 的可用寬度。先結束文字輸入並
+        // 關閉動畫，避免輸入法組字與文字配置在同一個 layout pass 中重排。
         NSApp.keyWindow?.makeFirstResponder(nil)
         var transaction = Transaction()
         transaction.animation = nil
@@ -735,16 +749,19 @@ struct EditorSidebarView: View {
             if selectedSection?.volume?.id == v.id {
                 selectedSection = findFallbackSectionForDeletedVolume(v, in: book)
             }
-            modelContext.delete(v)
+            CrossStoreDeletionCoordinator.stageDeleteVolume(v, in: modelContext)
         case .section(let s):
             if selectedSection?.id == s.id {
                 selectedSection = findFallbackSection(for: s, in: book)
             }
-            modelContext.delete(s)
+            CrossStoreDeletionCoordinator.stageDeleteSection(s, in: modelContext)
         }
         deleteTarget = nil
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-            if undoTarget?.id == target.id { undoTarget = nil }
+            if undoTarget?.id == target.id {
+                do { try CrossStoreDeletionCoordinator.commitStagedDeletion(in: modelContext); undoTarget = nil }
+                catch { presentPersistenceError(error) }
+            }
         }
     }
 
@@ -771,8 +788,15 @@ struct EditorSidebarView: View {
             modelContext.insert(section)
             selectedSection = section
         }
-        try? modelContext.save()
-        undoTarget = nil
+        do { try modelContext.save(); undoTarget = nil }
+        catch { modelContext.rollback(); presentPersistenceError(error) }
+    }
+    private func presentPersistenceError(_ error: Error) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "目錄資料無法儲存"
+        alert.informativeText = error.localizedDescription
+        alert.runModal()
     }
     private func findFallbackSection(for deletedSection: Section, in book: Book) -> Section? {
         let sortedVolumes = book.volumes.sorted { $0.sortOrder < $1.sortOrder }

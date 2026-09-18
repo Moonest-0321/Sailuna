@@ -11,7 +11,11 @@ enum EpubExporter {
     @MainActor
     static func exportBook(book: Book) {
         let epubData = buildEpub(book: book)
-        writeData(epubData, fileName: sanitize(book.title) + ".epub")
+        ExportManager.presentSavePanel(
+            defaultFileName: sanitize(book.title) + ".epub",
+            fileType: "epub",
+            data: epubData
+        )
     }
 
     // MARK: - 組裝 EPUB（回傳 zip 的 Data）
@@ -203,20 +207,6 @@ enum EpubExporter {
         return f.string(from: date)
     }
 
-    // MARK: - 寫 Data 到固定 Downloads 位置（不碰存檔對話框）
-    @MainActor
-    private static func writeData(_ data: Data, fileName: String) {
-        let targetDir = URL(fileURLWithPath: "/Users/hsuchengyu/Downloads", isDirectory: true)
-        let url = targetDir.appendingPathComponent(fileName)
-        do {
-            try FileManager.default.createDirectory(at: targetDir, withIntermediateDirectories: true)
-            try data.write(to: url, options: .atomic)
-            NSWorkspace.shared.selectFile(url.path, inFileViewerRootedAtPath: targetDir.path)
-            print("✅ 已匯出 EPUB 到：\(url.path)")
-        } catch {
-            print("❌ 無法匯出 EPUB 到 /Users/hsuchengyu/Downloads：\(error)")
-        }
-    }
 }
 
 // MARK: - stored-only zip writer（mimetype 第一個、全部 stored、無 extra field）

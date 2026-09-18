@@ -8,6 +8,10 @@ struct AuthorSettingsView: View {
     
     // 取得資料庫操作權限
     @Environment(\.modelContext) private var modelContext
+    @Environment(V5SettingsStore.self) private var settingsStore
+    @Environment(ItemCopyStore.self) private var copyStore
+    @Environment(AbilityProgressStore.self) private var abilityStore
+    @Environment(StoryPlanningStore.self) private var planningStore
     // 查詢所有的 AuthorProfile (根據 PRD，我們只會有唯一一筆資料)
     @Query private var profiles: [AuthorProfile]
     // 用來關閉當前視窗
@@ -15,6 +19,8 @@ struct AuthorSettingsView: View {
     
     // 狀態變數：用來暫存預覽的頭像圖片
     @State private var avatarImage: NSImage?
+    @State private var dataOperationMessage: String?
+    @State private var dataOperationFailed = false
     
     // 取得唯一的作者資料。如果資料庫裡還沒有，我們就建立一個。
     private var profile: AuthorProfile {
@@ -47,6 +53,19 @@ struct AuthorSettingsView: View {
                 TextField("請輸入您的筆名", text: $bindableProfile.penName)
                     .textFieldStyle(.roundedBorder)
                     .font(.title3)
+            }
+
+            GroupBox("資料備份") {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("備份包含全部六個資料庫與書籍封面。還原會先驗證檔案並排程於下次啟動執行。")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    HStack {
+                        Button("建立完整備份", systemImage: "externaldrive.badge.plus") { createBackup() }
+                        Button("從備份還原", systemImage: "arrow.counterclockwise") { scheduleRestore() }
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
             
             // 3. 簡介輸入
@@ -89,10 +108,18 @@ struct AuthorSettingsView: View {
             }
         }
         .padding(30)
-        .frame(width: 400, height: 500) // 設定一個舒適的彈出視窗大小
+        .frame(width: 460, height: 640)
         .onAppear {
             // 畫面出現時，如果已有頭像資料，載入顯示
             loadAvatarImage()
+        }
+        .alert(dataOperationFailed ? "資料作業失敗" : "資料作業完成", isPresented: Binding(
+            get: { dataOperationMessage != nil },
+            set: { if !$0 { dataOperationMessage = nil } }
+        )) {
+            Button("好") { dataOperationMessage = nil }
+        } message: {
+            Text(dataOperationMessage ?? "")
         }
     }
     
@@ -163,10 +190,49 @@ struct AuthorSettingsView: View {
             }
         }
     }
-}
 
-// 預覽 (可選，幫助你在 Xcode 中快速看畫面)
-#Preview {
-    AuthorSettingsView()
-        .modelContainer(for: AuthorProfile.self, inMemory: true)
+    @MainActor
+    private func createBackup() {
+        guard let destination = SailuneBackupService.chooseBackupDestination() else { return }
+        do {
+            try commitAllStores()
+            try SailuneBackupService.createBackup(at: destination)
+            dataOperationFailed = false
+            dataOperationMessage = "已建立備份：\(destination.lastPathComponent)"
+            NSWorkspace.shared.selectFile(destination.path, inFileViewerRootedAtPath: destination.deletingLastPathComponent().path)
+        } catch {
+            dataOperationFailed = true
+            dataOperationMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func scheduleRestore() {
+        guard let source = SailuneBackupService.chooseRestoreSource() else { return }
+        do {
+            try SailuneBackupService.scheduleRestore(from: source)
+            dataOperationFailed = false
+            dataOperationMessage = "備份已通過完整性與 schema 驗證。請完全退出並重新開啟 Sailune；下次啟動會先備份目前資料，再進行還原。"
+        } catch {
+            dataOperationFailed = true
+            dataOperationMessage = error.localizedDescription
+        }
+    }
+
+    @MainActor
+    private func commitAllStores() throws {
+        if modelContext.hasChanges { try modelContext.save() }
+        guard settingsStore.saveAndReport() else {
+            throw NSError(domain: "SailuneBackup", code: 1, userInfo: [NSLocalizedDescriptionKey: settingsStore.persistenceErrorMessage ?? "設定集無法儲存。"])
+        }
+        copyStore.save()
+        if let message = copyStore.persistenceErrorMessage {
+            throw NSError(domain: "SailuneBackup", code: 2, userInfo: [NSLocalizedDescriptionKey: message])
+        }
+        abilityStore.save()
+        if let message = abilityStore.persistenceErrorMessage {
+            throw NSError(domain: "SailuneBackup", code: 3, userInfo: [NSLocalizedDescriptionKey: message])
+        }
+        try planningStore.saveChanges()
+    }
 }

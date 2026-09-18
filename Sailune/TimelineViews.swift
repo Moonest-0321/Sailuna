@@ -399,6 +399,7 @@ struct TimelinePanelView: View {
     @Environment(StoryPlanningStore.self) private var planningStore
     @Environment(AbilityProgressStore.self) private var abilityStore
     @Environment(ItemCopyStore.self) private var copyStore
+    @Environment(V5SettingsStore.self) private var settingsStore
 
     @Query private var allTimelines: [Timeline]
     @Query private var allNodes: [Node]
@@ -1267,7 +1268,10 @@ struct TimelinePanelView: View {
             try CrossStoreDeletionCoordinator.deleteNodes(
                 pendingDeleteNodes,
                 in: modelContext,
-                planningStore: planningStore
+                planningStore: planningStore,
+                copyStore: copyStore,
+                settingsStore: settingsStore,
+                abilityStore: abilityStore
             )
         } catch {
             operationError = error.localizedDescription
@@ -1298,7 +1302,10 @@ struct TimelinePanelView: View {
             try CrossStoreDeletionCoordinator.deleteTimeline(
                 t,
                 in: modelContext,
-                planningStore: planningStore
+                planningStore: planningStore,
+                copyStore: copyStore,
+                settingsStore: settingsStore,
+                abilityStore: abilityStore
             )
         } catch {
             operationError = error.localizedDescription
@@ -2575,6 +2582,7 @@ private struct EventProjectionRow: View {
     @Bindable var event: Event
     @Environment(\.modelContext) private var modelContext
     @State private var hovering = false
+    @State private var saveErrorMessage: String?
 
     private var bandColor: Color {
         if !event.isVisible { return .secondary.opacity(0.25) }
@@ -2629,7 +2637,8 @@ private struct EventProjectionRow: View {
                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                     event.isVisible.toggle()
                 }
-                try? modelContext.save()
+                do { try modelContext.save() }
+                catch { modelContext.rollback(); saveErrorMessage = error.localizedDescription }
             } label: {
                 ZStack {
                     Circle()
@@ -2660,5 +2669,11 @@ private struct EventProjectionRow: View {
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
         .animation(.easeInOut(duration: 0.12), value: hovering)
+        .alert("事件顯示狀態無法儲存", isPresented: Binding(
+            get: { saveErrorMessage != nil },
+            set: { if !$0 { saveErrorMessage = nil } }
+        )) { Button("好") { saveErrorMessage = nil } } message: {
+            Text(saveErrorMessage ?? "請稍後再試。")
+        }
     }
 }

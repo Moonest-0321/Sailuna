@@ -6,7 +6,7 @@
 
 | Store | Schema／主要模型 | 連結方式 |
 |---|---|---|
-| `Sailune-v5.store` | `NovelWriterSchemaV5`：Book、Volume、Section、Character、Ability、Item、Timeline、Node、Event 與舊 Organization 相容型別 | SwiftData relationship；V5 不升級此 store schema |
+| `Sailune-v5.store` | `NovelWriterSchemaV5`：Book、Volume、Section、Character、Ability、Item、Timeline、Node、Event 與舊 Organization 相容型別 | SwiftData relationship；V6.0c 不改此已發布 schema，Book 狀態目前為 transient |
 | `Sailune-v5-settings.store` | `V5SettingsSchemaV10`：BookSidebarSetting、PowerLevel、PowerUnit、PowerSubordination、PowerMember、PowerMemberRole、PowerLifecycleEvent、PowerSuccessionLink、PowerRelation、PowerAssetLink、PowerAdvantage、Place、WorldTerm | 只以 `bookID` 與穩定 UUID 連結其他 store；時間序以 `nodeID` 指向主 store Node；V1～V9 保留為不可變遷移快照 |
 | `Sailune-v5-item-copies.store` | ItemCopy、ItemCopyHolding、ItemCopyHistory | `bookID`、`itemID`、`characterID`、`copyID` |
 | `Sailune-v5-item-copy-level-selections.store` | ItemCopyLevelSelection | `copyID`、`levelID` |
@@ -19,6 +19,7 @@ Book 封面不在 SwiftData，另存於 Application Support 的 `Sailune/Covers`
 
 ```text
 Book
+├─ status（連載／完結／草稿；目前 transient，新書與重載預設草稿）
 ├─ Volume ─ Section（AttributedString 正文）
 ├─ Character
 │  ├─ Alias / Profile / Appearance / Psychology
@@ -67,9 +68,9 @@ TimelineEventCardMetadata ─ eventID + 可選 outlineItemID
 - StoryPlanning V6 的 event metadata 只補充主 store Event；它不擁有事件。刪除 OutlineItem 不刪 Event，缺來源時卡片顯示來源失效。
 - StoryPlanning V7 的 `PlanningRecordMetadata` 只保存每筆設定時間序的故事線與可選階段；標題、摘要、世界日期和節次仍以原始來源及 Node 為唯一來源。同一 Node 可供多筆來源共用，不承擔故事線歸屬。
 - 物品副本是共用 Item 的獨立實例；副本目前等級不改寫父 Item 定義。
-- 產品 V5 只保存目前勢力與直接隸屬，不建立角色／勢力、物品／勢力或正文／勢力關聯；舊 Organization 資料啟動時清除。
+- V5.0 第一版只保存目前勢力與直接隸屬，不建立角色／勢力、物品／勢力或正文／勢力關聯；舊 Organization 資料啟動時清除。後續 V5.2 以 `PowerMember` 連接同書角色，V5.4 以 `PowerAssetLink` 連接資源、技術、物品與能力，V5.5 再加入生命週期、承接及成員／職務時間定位；正文仍沒有勢力穩定連結。
 - 每本書首次建立設定配置時預設兩個可改名層級「層級 1／層級 2」；勢力先指定層級才可建立隸屬。下級層級的 `sortOrder` 必須大於上級，允許跨級、多上級與多下級。
-- 高層管理員、其他名單、勢力關係、政治與宗教在 V5 第一版都是勢力自身的自由文字，不建立角色或其他設定資料的外部連結。
+- 高層管理員、其他名單、政治與宗教自由文字是 V5.0 的相容欄位；後續版本另以成員、世界條目與結構化關係提供可查詢資料，既有文字不解析、不覆蓋。V5.6 的非隸屬關係也保留原 `relationshipNotes` 作補充筆記。
 - 勢力目前只有宗教／政體兩個 WorldTerm 連接，並分別限制為「信仰」／「制度」分類；核心與範圍是未來的地點／地圖連接概念，既有 UUID 欄位暫保相容性。
 - 勢力改層或層級重新排序若會使既有連線反向或同級，整項操作失敗並保留原層級、原順序與全部連線。
 - 設定集隱藏只改變導航，不刪除設定資料；V5.2.1 預設顯示角色、勢力、世界條目、物品、能力、標籤，地點可選加入。V5→V6 以每書目錄版本只顯示世界條目一次，作者後續隱藏不會被覆蓋。

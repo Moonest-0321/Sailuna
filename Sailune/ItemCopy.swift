@@ -262,6 +262,73 @@ final class ItemCopyStore {
         save()
     }
 
+    /// Repairs UUID links against the main store without inventing replacement
+    /// owners, items, levels, characters, or timeline positions.
+    func reconcile(
+        itemBookIDs: [UUID: UUID],
+        characterBookIDs: [UUID: UUID],
+        validNodeIDs: Set<UUID>,
+        itemLevelItemIDs: [UUID: UUID]
+    ) throws {
+        let validCopies = copies.filter { itemBookIDs[$0.itemID] != nil }
+        let validCopyIDs = Set(validCopies.map(\.id))
+        let copyItemIDs = Dictionary(uniqueKeysWithValues: validCopies.map { ($0.id, $0.itemID) })
+
+        for copy in copies where !validCopyIDs.contains(copy.id) { context.delete(copy) }
+        for holding in holdings {
+            guard let itemID = copyItemIDs[holding.copyID],
+                  let itemBookID = itemBookIDs[itemID],
+                  characterBookIDs[holding.characterID] == itemBookID else {
+                context.delete(holding)
+                continue
+            }
+        }
+        for history in histories {
+            guard validCopyIDs.contains(history.copyID) else {
+                context.delete(history)
+                continue
+            }
+            if let nodeID = history.nodeID, !validNodeIDs.contains(nodeID) {
+                history.nodeID = nil
+            }
+            guard let itemID = copyItemIDs[history.copyID], let bookID = itemBookIDs[itemID] else { continue }
+            var seen = Set<UUID>()
+            history.relatedCharacterIDs = history.relatedCharacterIDs.filter {
+                characterBookIDs[$0] == bookID && seen.insert($0).inserted
+            }
+        }
+        for selection in levelSelections {
+            guard let itemID = copyItemIDs[selection.copyID],
+                  itemLevelItemIDs[selection.levelID] == itemID else {
+                levelSelectionContext.delete(selection)
+                continue
+            }
+        }
+
+        do {
+            if context.hasChanges { try context.save() }
+            if levelSelectionContext !== context, levelSelectionContext.hasChanges {
+                try levelSelectionContext.save()
+            }
+            copies.removeAll { !validCopyIDs.contains($0.id) }
+            holdings.removeAll { holding in
+                guard let itemID = copyItemIDs[holding.copyID], let bookID = itemBookIDs[itemID] else { return true }
+                return characterBookIDs[holding.characterID] != bookID
+            }
+            histories.removeAll { !validCopyIDs.contains($0.copyID) }
+            levelSelections.removeAll { selection in
+                guard let itemID = copyItemIDs[selection.copyID] else { return true }
+                return itemLevelItemIDs[selection.levelID] != itemID
+            }
+            persistenceErrorMessage = nil
+        } catch {
+            context.rollback()
+            if levelSelectionContext !== context { levelSelectionContext.rollback() }
+            try? refresh()
+            throw error
+        }
+    }
+
     func currentLevelID(for copyID: UUID) -> UUID? {
         levelSelections.first(where: { $0.copyID == copyID })?.levelID
     }
@@ -346,6 +413,9 @@ final class ItemCopyStore {
             }
             persistenceErrorMessage = nil
         } catch {
+            context.rollback()
+            if levelSelectionContext !== context { levelSelectionContext.rollback() }
+            try? refresh()
             let nsError = error as NSError
             persistenceErrorMessage = "\(nsError.domain) \(nsError.code)：\(nsError.localizedDescription)"
         }

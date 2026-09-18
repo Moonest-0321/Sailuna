@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import UniformTypeIdentifiers
 import Foundation
+import AppKit
 
 // MARK: - 拖曳層級標記
 enum DragKind: Equatable {
@@ -749,13 +750,16 @@ struct VolumeSectionTreeView: View {
     private func performDelete(_ target: DeleteTarget) {
         undoTarget = target
         switch target {
-        case .volume(let v): modelContext.delete(v)
-        case .section(let s): modelContext.delete(s)
+        case .volume(let v): CrossStoreDeletionCoordinator.stageDeleteVolume(v, in: modelContext)
+        case .section(let s): CrossStoreDeletionCoordinator.stageDeleteSection(s, in: modelContext)
         }
         book.updatedAt = Date()
         deleteTarget = nil
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-            if undoTarget?.id == target.id { undoTarget = nil }
+            if undoTarget?.id == target.id {
+                do { try CrossStoreDeletionCoordinator.commitStagedDeletion(in: modelContext); undoTarget = nil }
+                catch { presentPersistenceError(error) }
+            }
         }
     }
 
@@ -783,7 +787,15 @@ struct VolumeSectionTreeView: View {
             onSelectSection?(section)
         }
         book.updatedAt = Date()
-        try? modelContext.save()
-        undoTarget = nil
+        do { try modelContext.save(); undoTarget = nil }
+        catch { modelContext.rollback(); presentPersistenceError(error) }
+    }
+
+    private func presentPersistenceError(_ error: Error) {
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "目錄資料無法儲存"
+        alert.informativeText = error.localizedDescription
+        alert.runModal()
     }
 }

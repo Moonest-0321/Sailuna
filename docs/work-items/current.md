@@ -1,5 +1,413 @@
 # 目前功能工作單
 
+> 整體狀態：active
+>
+> 目前階段：V6 首頁完成
+>
+> 單一下一步：下一個產品工作需另建工作單。
+
+## V6 首頁追加修正：視窗縮放後的搜尋工具列
+
+> 狀態：completed
+>
+> 階段：completed
+>
+> 更新時間：2026-09-19（Asia/Taipei）
+
+### 工作單元與決策
+
+- 目標：修正調整視窗大小後點擊「尋找」造成的搜尋框／新建按鈕位置錯誤。
+- 根因：搜尋框已佔用 `HStack` 寬度，新建按鈕又套用同一段固定像素 `offset`，形成重複位移；窄視窗時會越界或被裁切。
+- 修正：以內容區可用寬度的 38% 計算搜尋框，預留按鈕比例空間並設定最小可讀寬度；移除按鈕的額外固定 offset，讓兩者由同一容器自然排列。
+- 長期規則：與整體版面比對位置的物件必須依父容器尺寸、比例及上下限約束定位，不使用固定像素 offset 模擬跨區位移；已同步至 `AGENTS.md` 與 `docs/coding-standards.md`。
+- 非目標：不改搜尋條件、書櫃分區、側欄寬度或資料模型。
+- 這是使用者直接要求的明確 UI 修正與規則文件化，R／U／I 均視為 `approved`。
+
+### 實作與驗證結果
+
+- `StartTopBarView` 改由 `GeometryReader` 的內容區可用寬度計算搜尋框：以 38% 為目標寬度，同時保留新建按鈕空間並夾在可讀下限與實際上限之間。
+- 移除「新建書籍」原本重複施加的固定像素 `offset`，改由同一 `HStack` 的排版提案決定位置。
+- 以隔離 V5 store 副本實際啟動 App；在一般視窗與最大化視窗之間切換後，分別由首頁開啟「尋找」，搜尋框與新建按鈕均沒有重疊、越界或裁切。
+- Swift frontend parse、`git diff --check` 與無簽章 Debug build 通過；正式作者資料未被修改。
+
+## V6.0f 新建書籍彈窗與完成路由修正
+
+> 狀態：completed
+>
+> 階段：completed
+>
+> 更新時間：2026-09-19（Asia/Taipei）
+
+### 需求、範圍與批准
+
+- 「取消」與「完成」必須位於新建書籍圓角彈窗內，不使用可能落到視窗工具列的 `.toolbar`。
+- 完成建立後關閉彈窗，直接開啟新書第一卷第一節的編輯器；先前記錄的「完成後留在首頁」與使用者最新要求衝突，現已否決。
+- 保留書名必填、作者預填、預設卷節、時間軸 bootstrap、儲存錯誤提示及點擊空白取消。
+- 這是既有首頁流程的明確小型修正；R、U、I 依使用者直接要求均為 `approved`。
+
+### 診斷
+
+- 已用隔離 V5 store 重現：「取消／儲存」被 macOS 顯示在主視窗右上工具列，表單內沒有可見按鈕。
+- `NewBookSheet` 是自訂首頁 overlay，卻同時呼叫 environment `dismiss()` 並使用 cancellation/default keyboard shortcut；本輪移除這組系統視窗語意，讓按鈕固定留在 overlay 內。
+- 新書保存程式仍會建立 `Book`、第一卷與第一節；錯誤在 `onCreated` 被改成清空路徑回首頁，而非資料庫或卷節 schema 損壞。
+
+### 實作與驗證結果
+
+- 移除自訂 overlay 中不適用的 environment `dismiss()` 與 cancellation/default keyboard shortcut；取消與完成改為明確的彈窗內 bordered buttons。
+- `onCreated` 現在以新書 UUID 建立 `BookRoute(opensEditor: true)`，完成保存後直接開啟第一卷第一節的 `EditorWorkspaceView`。
+- 以正式 V5 store 的隔離副本實際建立「V6 新書流程驗證」：按鈕位於圓角彈窗內，完成後直接進入第一節編輯器，未出現黃色警告圖示；正式資料未修改。
+- Swift frontend parse、無簽章 Debug build 與 `git diff --check` 通過。
+- 追加短輸入操作：新建書籍的書名或作者欄在書名有效時按 Enter，會直接執行完成並關閉彈窗；使用 `TextField.onSubmit`，不恢復會把按鈕移到視窗工具列的 default-action shortcut。
+
+## V6.0e 首頁收尾：社群分組與 Apple ID 最終嘗試
+
+> 狀態：completed
+>
+> 階段：completed
+>
+> 更新時間：2026-09-19（Asia/Taipei）
+
+### 需求、UI 與邊界
+
+- 在側欄「作者」上方新增「社群」分類標題與低對比分隔線；目前不自行新增社群功能按鈕。
+- 登入面板最後一次採 Apple 官方 `SignInWithAppleButton` 與 AuthenticationServices 授權流程，要求姓名與電子郵件 scope。
+- 加入 Sign in with Apple entitlement 與 Xcode target capability；成功時只在本機當次介面顯示已登入，不宣稱已建立 Sailune 雲端帳號或完成伺服器 token 驗證。
+- 若 Apple Developer Portal 尚未為 `com.MooNest.Sailune` 啟用 capability、簽章描述檔不含 entitlement，必須保留原始錯誤並明確停止，不再建立第三套替代登入 UI。
+
+### 批准狀態
+
+| 關卡 | 狀態 | 說明 |
+|---|---|---|
+| R：需求 | approved | 使用者指定首頁最後收尾項目。 |
+| U：UI | approved | 社群只新增分類；登入沿用既有帳號面板並採 Apple 官方按鈕。 |
+| I：實作與測試 | approved | 使用者要求最後一次實作嘗試。 |
+
+### 實作與最終結果
+
+- 側欄已在「作者」上方加入「社群」分類標題與分隔線，未增加未經指定的社群按鈕或內容。
+- 已依 Apple 官方流程加入 `SignInWithAppleButton`、AuthenticationServices 回呼、Sign in with Apple entitlement 與 target capability；無簽章 build 可成功編譯。
+- 使用現有 Team `BL56JJR493` 執行 `-allowProvisioningUpdates` 的實際簽章建置失敗，Xcode 明確回報 Personal development team 不支援 Sign in with Apple，因而無法為 `com.MooNest.Sailune` 建立 Mac App Development provisioning profile。
+- 為避免首頁完成後整個專案無法正常簽章，已撤回不可用的 entitlement／capability 與官方按鈕；帳號列保留可理解提示：「Apple ID 登入需要付費 Apple Developer Program；目前個人開發團隊不支援。」不再嘗試替代流程。
+- 最終版本完成 Swift parse、pbxproj lint、`git diff --check` 與無簽章 Debug build；以隔離 V5 store 人工確認社群分類、帳號提示及既有書櫃正常，正式資料未修改。
+
+## V6.0d 書櫃狀態分區與登入面板取消範圍
+
+> 狀態：active
+>
+> 階段：verification
+>
+> 更新時間：2026-09-19（Asia/Taipei）
+
+### 需求與範圍
+
+- 每張書籍卡的資料區增加狀態列，顯示「草稿」、「連載」或「完結」。
+- 書櫃依序分為「連載」、「草稿」、「完結」三區，各區以淡白／低對比線條分隔。
+- 登入帳號面板開啟時，點擊面板外的首頁任何空白處都會取消，不限於側邊欄範圍；遮罩不得讓點擊穿透。
+- 點擊登入面板內的「設定」後，右側書架內容切換為暫時空白的設定頁；第一個項目顯示產品開發階段 `V6.0d`，不顯示 Xcode App 版本 `1.0 (Build 1)`。
+- 本輪不新增修改狀態的入口，也不改動已發布的 `NovelWriterSchemaV5`；目前既有書籍載入後皆使用暫存預設「草稿」。
+
+### 明確非目標
+
+- 不新增連載／完結切換流程、篩選器或批次操作。
+- 不在設定頁加入其他帳號、偏好、更新或系統操作。
+- 不建立新的主資料庫欄位或 migration，也不刪除、重建正式 V5 store。
+- 不改變作品卡進入、搜尋、新建與刪除行為。
+
+### UI 提案（待確認）
+
+- 卡片資料區在作者下方加入小型狀態列，例如「狀態　草稿」，使用次要文字與低對比膠囊標記，不搶過書名。
+- 書櫃由上而下排列「連載／草稿／完結」；標題右側延伸一條淡色分隔線，標題下方維持現有自適應卡片網格。
+- 空分類保留標題與分隔線，並顯示簡短「尚無連載作品」等空狀態，讓三類結構保持可見。
+- 搜尋時仍保留三區，只在對應區域顯示符合書名或作者的作品；完全無結果時沿用目前「找不到書籍」。
+- 登入面板的呈現狀態提升到首頁外框，由全頁透明遮罩接收面板外點擊；面板本身阻止手勢向下傳遞。
+- 「設定」沿用開始頁內容切換，不開新視窗；點擊後收起登入面板，右側只呈現單列版本資訊，其餘區域留白。返回「首頁」即可回到書櫃。
+
+### 批准狀態
+
+| 關卡 | 狀態 | 說明 |
+|---|---|---|
+| R：需求 | approved | 使用者直接指定卡片狀態列、三個書櫃分類、登入面板空白取消與設定空白頁。 |
+| U：UI | approved | 使用者要求兩項一併開始，並確認設定頁顯示產品開發階段。 |
+| I：實作與測試 | approved | 使用者明確回覆「兩個都開始實作」。 |
+
+### 實作與測試計畫
+
+1. 將登入面板顯示狀態提升至 `ContentView`，以全頁透明遮罩處理空白取消；面板本身保持可操作且不穿透。
+2. 新增僅供開始頁使用的設定內容狀態；設定入口關閉帳號面板並顯示 `V6.0d`，首頁重設回書櫃。
+3. 將目前書籍集合依 `BookStatus.allCases` 的指定順序分組，搜尋沿用既有書名／作者條件；空分類顯示標題、分隔線及空狀態。
+4. 書籍卡資料區加入低對比狀態列；不新增狀態修改入口、不改 V5 schema。
+5. 執行 Swift frontend parse、狀態單元測試、無簽章 Debug build、`git diff --check`，並以隔離 V5 store 冒煙驗證書櫃與設定頁。
+
+### 實作與驗證結果
+
+- 書櫃已依「連載／草稿／完結」排列，各區使用低對比分隔線；空分類保留並顯示對應提示，搜尋結果沿用相同分區。
+- 書籍卡資料區已加入狀態膠囊，並將卡片高度由 280 pt 調整為 310 pt，避免狀態、字數與日期被裁切。
+- 登入面板狀態已提升到首頁外框；實際點擊右側書架空白可關閉，點擊面板「設定」則關閉面板並切換至只顯示「開發階段 V6.0d」的設定頁。
+- 以正式 V5 store 的 `/private/tmp` 隔離副本啟動驗證：既有作品顯示於草稿區，連載／完結空狀態正常，設定頁與空白取消均通過，正式資料未修改。
+- Swift frontend parse、狀態專項 XCTest、無簽章 Debug build 與 `git diff --check` 通過。
+
+## V6.0c 首頁彈窗規則與書籍狀態
+
+> 狀態：active
+>
+> 階段：verification
+>
+> 更新時間：2026-09-19（Asia/Taipei）
+
+### 需求與範圍
+
+- 將「首頁任何彈窗、浮動面板或自訂 modal 都可點擊空白處取消」加入長期程式碼規範，並套用目前首頁的新建書籍、關於我與登入面板。
+- 書籍新增狀態：連載、完結、草稿；新建立的書籍預設為草稿。
+- 本輪只建立可持久化狀態與預設值，不新增連載／完結的其他操作入口、篩選或流程。
+
+### 批准狀態
+
+| 關卡 | 狀態 | 說明 |
+|---|---|---|
+| R：需求 | approved | 使用者直接提出彈窗取消規則與書籍狀態需求。 |
+| U：UI | approved | 首頁彈窗使用半透明空白遮罩點擊取消；狀態入口延後，不新增本輪 UI。 |
+| I：實作與測試 | approved | 使用者直接要求具體修改，依小型明確修正略過額外提案。 |
+
+### 實作與驗證結果
+
+- 首頁新建書籍與關於我改為自訂圓角 modal，點擊遮罩空白處會取消；登入面板也加入空白處關閉，且不會讓點擊穿透到側欄。
+- `Book` 新增 `BookStatus`（連載／完結／草稿），但為避免破壞已發布的 `NovelWriterSchemaV5`，目前以 `@Transient` 保存；新建與重新載入時預設草稿，正式持久化留待相容 schema 工作單。
+- 曾直接加入持久化欄位而造成 `Sailune-v5.store` 無法載入；已撤回該 schema 變更，未刪除或重建正式資料庫。
+- `swiftc -frontend -parse Sailune/ContentView.swift`、書籍狀態單元測試與主機環境無簽章 Debug build 通過。
+- 已把正式 `Sailune-v5.store` 及 WAL／SHM 複製到 `/private/tmp` 隔離目錄，以修正版 App 開啟副本；書櫃成功顯示既有作品，未出現 V5 主資料庫載入失敗。正式資料庫未被修改。
+
+## V6.0a 開始介面與固定導覽側欄
+
+> 狀態：active
+>
+> 階段：verification
+>
+> 更新時間：2026-09-18（Asia/Taipei）
+
+### 需求與範圍
+
+- 將開始／書櫃畫面的頂欄標題由「Sailune」改為「帆夢 Sailune」。
+- 暫時移除書櫃中的作者介紹卡；既有作者資料不刪除、不遷移，未來版本再設計呈現方式。
+- 新增約 210–230 pt、不可收合的左側導覽欄，視覺密度參考 macOS Apple Music 的安靜系統側欄。
+- 側欄依序顯示品牌「帆夢 Sailune」、分組標題「作品」與分隔線、首頁／尋找／發布按鈕、分組標題「作者」與分隔線、成就／關於我按鈕。
+- 首頁為預設選取項目，顯示既有作品區；尋找、發布、成就與關於我目前只保留可點擊的按鈕，不建立內容、資料或導航行為。
+- 既有作品區的書籍卡、搜尋欄、新建、刪除、空狀態與操作保持原樣；尋找按鈕不取代既有搜尋欄。
+
+### 明確非目標
+
+- 不修改書籍總覽、編輯工作區、設定集、大綱或任何資料模型。
+- 不刪除作者資料，也不實作發布、成就、關於我或新的搜尋流程。
+- 不把 V5.6 尚待人工驗收的資料安全改動併入本工作單。
+
+### UI 提案（已確認）
+
+- 側欄固定存在、不提供收合控制；寬度約 210–230 pt。
+- 分組標題使用小型次要色文字；各分組標題與按鈕以低對比橫線區隔。
+- 首頁使用系統側欄風格的淡色選取底；尚未有內容的按鈕維持正常可點擊外觀，但不切換作品區。
+- 移除作者介紹卡後，作品區以完整剩餘寬度保留原有書籍網格、搜尋與空狀態。
+
+### 建議實作與測試計畫（待批准）
+
+1. 將 `ContentView` 拆分為固定導覽外框、側欄與既有作品內容三個明確 View；保持現有書籍查詢、路由、sheet 與刪除協調器不變。
+2. 新增僅供呈現用的開始頁導覽列舉與選取狀態；首頁為唯一可呈現 route，其他四個按鈕不建立 placeholder 頁、不改變作品區。
+3. 移除 `AuthorShelfCard` 在書櫃中的呼叫；保留 `AuthorProfile`、作者設定 sheet 與相關資料，避免資料遺失或不必要的 schema 風險。
+4. 使用原生 SwiftUI 版面與系統色／側欄選取語意，讓固定窄欄在小視窗仍保留可讀性；不引入第三方 UI 套件或自繪視覺系統。
+5. 更新開始介面相關規格／功能盤點／專案狀態；以隔離資料驗收新書、已有書、搜尋、刪除確認與五個側欄按鈕的可見性／首頁選取狀態。
+6. 執行 `swiftc -frontend -parse`、`git diff --check`、適用 XCTest 與 Debug build；V5.6 人工資料安全驗收另行保留為未完成項目。
+
+### 批准狀態
+
+| 關卡 | 狀態 | 說明 |
+|---|---|---|
+| R：需求 | approved | 使用者確認側欄項目、保留既有作品區與尋找按鈕不取代既有搜尋欄。 |
+| U：UI | approved | 使用者確認窄、不可收合、接近 Apple Music 的系統側欄方向。 |
+| I：實作與測試 | approved | 使用者於 2026-09-19 回覆「確認」，批准依本工作單計畫實作與驗證。 |
+
+### 實作與驗證結果
+
+- `ContentView` 已加入固定 220 pt 左側導覽欄，分成「作品」與「作者」兩組，包含首頁／尋找／發布／成就／關於我按鈕；首頁預設選取，其他按鈕只改變選取狀態，不建立內容頁。
+- 開始畫面標題已改為「帆夢 Sailune」；書櫃中的 `AuthorShelfCard` 已移除，`AuthorProfile` 資料與其他作者設定模型未刪除。
+- 作品卡片、搜尋欄、新建書籍、刪除確認、空狀態及既有 NavigationStack 路由保留；書櫃內容移除作者卡後使用剩餘寬度。
+- `swiftc -frontend -parse Sailune/ContentView.swift` 與 `git diff --check` 通過。
+- 主機環境以隔離 DerivedData 完成 Debug build；沙盒內先前的 `SwiftDataMacros`／`SwiftUIMacros` plugin server 錯誤不再阻礙可靠建置。
+- 主機環境 `xcodebuild test -only-testing:SailuneTests` 通過；尚未完成實機 UI 冒煙，需確認窄視窗、側欄高度、按鈕選取狀態及作品區既有操作。
+
+## V6.0b 開始介面互動與個人入口
+
+> 狀態：active
+>
+> 階段：verification
+>
+> 更新時間：2026-09-19（Asia/Taipei）
+
+### 目前需求草案
+
+- 移除開始畫面頂欄中的「帆夢 Sailune」文字；側欄品牌文字保留。
+- 點擊側欄「尋找」後，顯示可搜尋書名／作者的搜尋框；搜尋框由左側欄右邊界滑入並停在靠近內容區左側的位置。
+- 搜尋框出現時，新建書籍按鈕向右移動，接近視窗右側邊界時停止，不可超出工具列可視範圍。
+- 點擊「首頁」返回最初的書櫃畫面，清除開始頁選取狀態、搜尋呈現與目前 NavigationStack 路徑。
+- 「發布」、「成就」、「關於我」暫時保留選單按鈕與選取狀態，內容區留空，不建立資料或功能流程。
+- 左側欄左下角增加圓形使用者頭像；優先使用既有 `AuthorProfile.avatarData`，沒有頭像時顯示系統人物圖示；目前不新增點擊行為。
+
+### 待確認的架構語意
+
+- 使用者已確認：進入作品總覽／編輯器後開始介面側欄消失；「首頁」只處理開始介面內的返回，不調整 NavigationStack 外層結構。
+
+### 明確非目標
+
+- 不實作發布、成就或關於我內容。
+- 不新增作者資料欄位、帳號系統或頭像上傳流程；沿用既有 `AuthorProfile` 資料。
+- 不改變書籍搜尋條件、書籍卡、刪除流程、SwiftData schema 或 V5.6 資料可靠性行為。
+
+### 批准狀態
+
+| 關卡 | 狀態 | 說明 |
+|---|---|---|
+| R：需求 | approved | 使用者確認進入作品後側欄消失；其餘 V6.0b 項目依需求草案進入 UI 提案。 |
+| U：UI | approved | 使用者確認搜尋滑動、空白內容頁、頂欄標題移除與側欄左下角頭像位置。 |
+| I：實作與測試 | approved | 使用者於 2026-09-19 回覆「正確」，批准實作與測試計畫。 |
+
+### 實作與測試計畫
+
+1. 維持目前 `NavigationStack` 架構，讓側欄只存在開始／書櫃頁；進入作品總覽／編輯器後由路由取代，符合已確認的消失行為。
+2. 移除開始頁 `.navigationTitle("帆夢 Sailune")`，保留側欄內的品牌文字；不改作品路由內既有標題語意。
+3. 移除原生 `.searchable` 的固定顯示，改由開始頁頂部工具列控制搜尋框可見狀態。選取「尋找」時，以可裁切的滑動容器從側欄右邊界滑入；新建書籍按鈕依搜尋框展開量向右移動，並以工具列可用寬度計算最大位移，避免碰出右側邊界。
+4. 「首頁」執行開始頁重設：選取首頁、清除搜尋文字、關閉搜尋動畫並清空 `NavigationPath`；尋找只在開始頁顯示書名／作者搜尋結果。
+5. 發布／成就／關於我改為空白內容容器，保留側欄選取狀態與按鈕，不建立 placeholder 文案、資料模型或功能路由。
+6. `ContentView` 查詢既有 `AuthorProfile`；側欄使用 `Spacer` 將 32–36 pt 圓形頭像固定於最左下角，優先顯示 `avatarData`，無資料時顯示 `person.crop.circle`，暫不加入點擊動作。
+7. 執行 `swiftc -frontend -parse`、`git diff --check`、主機 Debug build 與完整 `SailuneTests`；人工 UI 驗收涵蓋首頁重設、搜尋滑動／窄視窗邊界、三個空白入口、頭像有／無資料及進入作品後側欄消失。
+
+### 實作與驗證結果
+
+- `ContentView` 已移除開始頁頂欄標題與原生固定搜尋欄，改用開始頁自訂滑動搜尋工具列；「首頁」會清除搜尋與目前路徑，發布／成就／關於我保留按鈕但顯示空白內容。
+- 側欄選單保留在既有 `NavigationStack` 內，進入作品總覽／編輯器後自然消失；頭像使用既有 `AuthorProfile.avatarData`，無資料時顯示系統人物圖示並固定於左下角。
+- 側欄五個選單按鈕已擴大為整列可點擊區域，並保留選取背景與原有文字／圖示配置。
+- 側欄品牌「帆夢 Sailune」已放大；左下角頭像區改為整列「登入」按鈕，點擊後由底部向上開啟帳號面板，先提供帳號、方案、設定、切換帳號與退出登入入口。
+- 帳號面板已改為原生系統背景與低裝飾列；方案改為可選的 Light 輕量／Creator 創作者／Business 商業選單，曾嘗試加入 Sign in with Apple，後依失敗結果暫停。
+- 「關於我」按鈕現在開啟作者資料彈窗，顯示可編輯筆名、簡介與頭像；沒有自訂頭像時以筆名第一個字作為預設顯示。
+- 帳號面板改為與 220 pt 側欄同寬的無箭頭圓角方塊，固定從登入區上方浮出並使用低強度陰影；方案選擇後名稱會保留顯示在方案列右側，預設為 Light 輕量。
+- Apple ID 最後一次模板嘗試仍無法完成，現暫停登入流程；點擊「帳號」只顯示暫停提示，不再觸發失敗授權 UI。
+- 「關於我」作者彈窗新增「加入圖片」檔案選取，圖片會轉為 PNG 寫入既有 `AuthorProfile.avatarData`。
+- 方案列移除自訂重複箭頭，只保留單一原生 Picker 選單按鈕；點擊「關於我」只開啟作者彈窗，不再切換到空白內容頁。
+- `swiftc -frontend -parse Sailune/ContentView.swift`、`git diff --check`、主機隔離 Debug build 與 `xcodebuild test -only-testing:SailuneTests` 均通過。
+- 本次登入入口增量修改的 parse 與 diff check 通過；重新建置時受既有 `SwiftDataMacros`／`SwiftUIMacros` plugin server malformed response 阻斷，輸出未出現 popover 專屬型別錯誤。
+- 尚待人工 UI 冒煙：搜尋框／新建按鈕在一般與窄視窗的滑動邊界、五個選單狀態、三個空白入口、頭像顯示，以及進入作品後側欄消失。
+
+## V5.6 追加修正：匯出、備份與資料可靠性
+
+> 狀態：active
+>
+> 階段：verification
+>
+> 更新時間：2026-09-18（Asia/Taipei）
+
+### 使用者要求與目前問題
+
+- TXT／EPUB 不再寫死開發者 Downloads，改由使用者自行選擇路徑。
+- 建立包含六個 SwiftData store、SQLite sidecar 與封面的完整備份／還原流程。
+- 修正 AbilityProgress 的靜默儲存失敗、遷移後記憶體未刷新，以及角色／書籍／Node 刪除後的孤立資料。
+- 將其餘已確認的資料問題一併收斂：V5 settings 跨書／錯接修復、物品與能力資產連接清理、卷節／事件刪除入口一致、延後清理結果提示及新書儲存失敗處理。
+- 使用者要求說明資料處理策略後直接處理；不得拿正式作者資料做測試。2026-09-18 已依本工作單策略獲直接授權並完成實作。
+
+### 建議必要範圍
+
+#### 1. 匯出路徑與結果
+
+- TXT 與 EPUB 使用原生 `NSSavePanel`，由作者選擇檔名與位置。
+- 保留目前檔名清理與輸出內容；副檔名依格式固定為 `.txt` 或 `.epub`。
+- 已存在檔案交由系統面板確認覆寫；取消不寫檔。
+- 寫入失敗在畫面顯示可理解錯誤，不只輸出 console；成功後可在 Finder 顯示成品。
+
+#### 2. 完整備份格式
+
+- 匯出單一 `.sailunebackup` 備份封裝，內容包含主 store、settings、物品副本、副本等級、能力進度、故事規劃及 Covers。
+- 備份內加入 `manifest.json`：備份格式版本、App／build 版本、各 schema 版本、建立時間、檔案清單、大小及 SHA-256 checksum。
+- 備份前先提交所有 context 的待存變更並暫停資料寫入；每個 SQLite store 以 SQLite online backup/snapshot 方式產生一致副本，不直接複製仍在使用中的單一 `.store` 檔。
+- 所有 snapshot、封面與 manifest 完成並驗證 checksum 後才原子性輸出最終備份；任一步失敗只刪除暫存成果，不改動正式資料。
+- 第一版為完整資料庫備份，不提供單書匯出、跨版本合併或選擇性還原。
+
+#### 3. 安全還原
+
+- 作者選擇 `.sailunebackup` 後，先驗證格式版本、必要檔案、checksum 與可支援的 schema；驗證失敗不改動目前資料。
+- 驗證成功後把內容解開到 staging，並先為目前資料建立一份安全備份。
+- 因 SwiftData container 已在執行中，正式置換在下次啟動、任何 `ModelContainer` 開啟前執行；不在已開啟資料庫上覆寫檔案。
+- 啟動置換採「整組成功或回復」：先把現況移到 rollback 目錄，再置入全部 store 與封面；任一步失敗就恢復原組。
+- 還原完成後依現有 migration plan 開啟各 store，再執行全域 reconcile；若開啟或修復失敗，保留 rollback 並顯示可診斷錯誤。
+- 不允許把比目前 App 更新、schema 無法辨識的備份強行降版開啟。
+
+#### 4. AbilityProgress 與其他獨立 store 修復
+
+- `AbilityProgressStore.save` 改為可回報失敗；失敗時 rollback／reload，畫面顯示錯誤，不能維持看似成功但未落盤的陣列狀態。
+- 舊能力歷史遷移完成後立即 reload，同次啟動即可顯示；回填保持冪等。
+- 新增 AbilityProgress reconcile，以主 store 的 Book／Character／Ability／Node 對照清理孤立或跨書的 BookLink、Level、Connection、History，並清除失效 Node UUID、保留歷史文字。
+- ItemCopy reconcile 同步清理失效 Node 與相關角色 UUID；刪除角色只移除持有人及相關角色 UUID，不刪副本與歷史內容。
+
+#### 5. 集中刪除與 V5 settings 一致性
+
+- 擴充 `CrossStoreDeletionCoordinator`，讓 Book／Character／Item／Ability／Node／Timeline 的刪除立即協調主 store、settings、copy、ability 與 planning；主資料先成功保存，附屬清理可重試。
+- Volume／Section 與角色事件的所有 UI 入口改用集中服務，不再直接 `modelContext.delete`。
+- 刪除 Item／Ability 後立即移除相應 `PowerAssetLink`；刪除 Node 後立即清空 settings、copy、ability 的定位 UUID。
+- 強化 V5 settings reconcile：依 UUID→book 對照驗證成員、資產、職務、生命週期、承接與隸屬；清除跨書、自連結、端點不符及完全重複記錄。承接循環仍依 V5.5 規格允許，不當成錯誤。
+- 所有延後清理錯誤由 UI 告知「主資料已刪除、附屬資料待修復」，並在下次啟動冪等收斂。
+
+#### 6. 一般儲存失敗
+
+- 新書 bootstrap 或首次保存失敗時不關閉 sheet、不呼叫 `onCreated`，rollback 後顯示錯誤。
+- 移除會影響資料完整性的 `try? save()`；可預期儲存失敗皆有錯誤狀態與重試入口。
+- ItemCopy 兩個 store 仍無共同 transaction；若第二個 store 保存失敗，明確標示部分成功並立即執行修復／reload，不假裝整體成功。
+
+### 資料處理原則
+
+- 不新增或修改現有 SwiftData schema；本工作以 service、store API、reconcile 與備份封裝完成。
+- 修復只刪除能以主 store UUID／book 歸屬證明為孤立或非法的附屬記錄；不猜測替代來源、不改寫正文與歷史文字。
+- Node 失效時清除定位 UUID，保留事件、職務、能力與副本歷史內容。
+- 跨 store 無共同 transaction，採主資料優先、附屬清理可重試；備份／還原則以 staging、checksum、rollback 形成整組操作。
+- 自動測試只使用 `/private/tmp` 隔離 store 與臨時封面，不讀寫 Application Support 的正式作者資料。
+
+### 明確非目標
+
+- 不做 iCloud／網路同步、自動排程備份或多裝置合併。
+- 不做單書備份、選擇性還原、兩份資料庫合併或降版還原。
+- 不在本工作新增勢力、能力、物品或時間序的產品欄位。
+- 不自動修正 V5.5 規格允許的時間矛盾或承接循環。
+- 不把 TXT／EPUB 匯出當成可還原的資料備份。
+
+### 建議驗收條件
+
+- [x] TXT／EPUB 可選目的地、可取消、可確認覆寫，成功與失敗都有可見結果；待人工操作面板冒煙。
+- [x] 備份封裝包含六個 store 與封面，manifest 及所有 checksum 驗證通過。
+- [x] 備份期間任一步失敗不改動正式資料，也不留下看似成功的最終檔案。
+- [x] 還原前自動保存現況；無效、損壞或較新 schema 備份被拒絕且目前資料不變。
+- [x] 合法備份在下次啟動整組還原；自動測試驗證六個 store、封面、安全備份與 pending 清除。中途 I/O 故障注入仍待發布前補測。
+- [x] AbilityProgress 儲存失敗可見且不留下虛假的記憶體成功狀態；舊歷史在遷移同次啟動可見。
+- [x] Book／Character／Item／Ability／Node／Timeline／Volume／Section／Event 的產品刪除入口均接入集中協調，啟動 reconcile 可清除孤立資料；待人工逐入口冒煙。
+- [x] V5 settings 可冪等清除跨書、錯接、自連結及重複記錄，同時保留所有有效資料與 V5.5 允許的承接循環。
+- [x] 新書首次儲存失敗時畫面保留、資料 rollback、錯誤可見；成功才關閉。
+- [x] 編輯器右側設定集可開啟、關閉及再次開啟，不會觸發 AppKit constraint-update loop 或 `EXC_BREAKPOINT`。
+- [ ] 新增 fault-matrix、備份／還原、刪除、reconcile、遷移同次可見與匯出測試；完整 XCTest、Debug／Release build 與人工 UI 冒煙通過。
+
+### 批准狀態
+
+| 關卡 | 狀態 | 說明 |
+|---|---|---|
+| R：需求 | approved | 使用者指定 V5.6 並要求說明資料策略後處理全部缺口。 |
+| U：UI | approved | 沿用原生存檔／開檔面板，在既有作者設定加入完整備份與還原，不重做產品介面。 |
+| I：實作與測試 | approved | 使用者明確回覆「開始處理這些問題」，批准依本工作單策略實作。 |
+
+### 實作與驗證結果
+
+- TXT／EPUB 已改用 `NSSavePanel`；不再含個人路徑。
+- 新增單一 `.sailunebackup` 封裝、六個 SQLite online snapshot、封面、schema manifest 與 SHA-256；還原採驗證、排程、啟動前安全備份、整組置換及失敗 rollback。
+- AbilityProgress、ItemCopy 與 V5 settings 啟動 reconcile 已依主 store UUID／book 歸屬清理可證明的孤立、跨書與重複資料；Node 失效只清定位，歷史文字保留。
+- 產品層 Book／Character／Item／Ability／Node／Timeline／Volume／Section／Event 刪除入口已集中；附屬清理失敗會告知並留待下次啟動冪等修復。
+- 新書 bootstrap、獨立 store 與事件顯示等關鍵儲存失敗會 rollback／reload 並顯示錯誤。
+- 編輯器不再使用會與 `NSTextView`／`NavigationSplitView` 反覆更新 constraints 的系統 `.inspector`；右側設定集改為工作區內第三欄。Xcode Debug build 成功，實際介面開啟／關閉／再次開啟皆未再崩潰，作者資料未修改。
+- Debug／Release build 與完整 140 項 XCTest 已通過；人工 UI 冒煙及更完整的 I/O fault matrix 列為最後驗證。
+
+---
+
+> 下列較早的工作區段是歷史實作與驗收記錄；尚未完成的人工 UI 冒煙會在本工作完成後整合執行。
+
 ## V5.6 勢力非隸屬關係（完成）
 
 > 狀態：completed
@@ -96,10 +504,11 @@
 - V8→V9 自訂遷移會把舊 `PowerMember.title` 回填為第一筆現任職務，避免舊職稱在新版畫面消失。
 - 載入故障修正：V5.4 已可能建立 V8 store，因此 V5.5 不再改寫 V8 snapshot；保留原 V8 結構並將生命週期與職務模型升至 V9。檔案型測試已直接驗證舊 V8 store 可開啟且資料保留。
 - 驗證：frontend parse、`git diff --check`、V5SettingsTests 43 項與完整 macOS XCTest 132 項通過；使用隔離 DerivedData 與無簽章 Debug 測試。
+- 正式資料語意、刪除規則與驗收條件見 `docs/spec-power-v5.5.md`。
 
-## V5.4 勢力別名與資源／能力識別（實作與驗證中）
+## V5.4 勢力別名與資源／能力識別（自動驗證完成，待整合人工冒煙）
 
-> 狀態：active
+> 狀態：completed_with_manual_followup
 >
 > 階段：completed
 >
@@ -114,7 +523,7 @@
 
 ## V5.2 追加修正：勢力條目連接限制（實作完成，待人工 UI 冒煙）
 
-> 狀態：active
+> 狀態：completed_with_manual_followup
 >
 > 階段：verification
 >
@@ -127,7 +536,7 @@
 
 ## V5.3.4 世界條目預設：族群／種族與移除獨立語言分類（實作完成，待人工 UI 冒煙）
 
-> 狀態：active
+> 狀態：completed_with_manual_followup
 >
 > 階段：implementation／verification
 >
@@ -228,7 +637,7 @@
 
 ## V5.3.3 世界條目預設：資源
 
-> 狀態：active
+> 狀態：completed_with_manual_followup
 >
 > 階段：implementation／verification
 >
@@ -311,7 +720,7 @@
 
 ## V5.3.2 追加需求：人類現實社會的技術階段（需求草案）
 
-> 狀態：active
+> 狀態：completed_with_manual_followup
 >
 > 階段：implementation／verification
 >
@@ -383,7 +792,7 @@
 
 ## V5.3.2 世界條目預設：虛構技術階段
 
-> 狀態：active
+> 狀態：completed_with_manual_followup
 >
 > 階段：implementation／verification
 >
@@ -466,7 +875,7 @@
 
 ## V5.3.1 世界條目預設：信仰
 
-> 狀態：active
+> 狀態：completed_with_manual_followup
 >
 > 階段：implementation／verification
 >
@@ -539,7 +948,7 @@
 
 ## V5.3 世界條目預設：政體
 
-> 狀態：active
+> 狀態：completed_with_manual_followup
 >
 > 階段：implementation／verification
 >
@@ -723,7 +1132,7 @@
 
 ## V5.2.2 世界條目內容結構
 
-> 狀態：active
+> 狀態：completed_with_manual_followup
 >
 > 階段：verification
 >
@@ -887,7 +1296,7 @@
 
 ## V5.2.1 世界條目預設入口
 
-> 狀態：active
+> 狀態：completed_with_manual_followup
 >
 > 階段：verification
 >
@@ -959,7 +1368,7 @@
 - 本工作不改變下方仍在驗證中的 V5.1 工作單；使用者已於 2026-09-16 回覆「繼續」批准 V5.2 實作計畫。
 - 實作進度：settings schema V5、Store、勢力詳細頁、角色刪除清理與 3 項 V5.2 專項測試已完成；V5SettingsTests 共 21 項通過，Debug build、frontend parse 與 `git diff --check` 通過，待人工 UI 驗收。
 
-> 狀態：active
+> 狀態：completed_with_manual_followup
 >
 > 階段：verification
 >
