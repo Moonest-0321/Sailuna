@@ -1111,6 +1111,7 @@ struct WorldTermListView: View {
 struct PlaceDetailView: View {
     @Bindable var place: Place
     let book: Book
+    var onBack: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @Environment(V5SettingsStore.self) private var settingsStore
     @State private var showingDeleteConfirmation = false
@@ -1118,13 +1119,15 @@ struct PlaceDetailView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("編輯地點").font(.headline)
+                if let onBack {
+                    Button(action: onBack) { Label("返回地點", systemImage: "chevron.left") }
+                        .buttonStyle(.plain)
+                } else {
+                    Text("編輯地點").font(.headline)
+                }
                 Spacer()
                 Button("刪除", role: .destructive) { showingDeleteConfirmation = true }
-                Button("完成") {
-                    settingsStore.save()
-                    dismiss()
-                }
+                Button("完成", action: finish)
             }
 
             ScrollView {
@@ -1142,12 +1145,12 @@ struct PlaceDetailView: View {
             }
         }
         .padding(16)
-        .frame(minWidth: 480, minHeight: 560)
+        .frame(minWidth: onBack == nil ? 480 : 0, minHeight: onBack == nil ? 560 : 320)
         .onDisappear { settingsStore.save() }
         .confirmationDialog("確定要刪除這個地點嗎？", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
             Button("刪除地點", role: .destructive) {
                 settingsStore.deletePlace(place, bookID: book.id)
-                dismiss()
+                finish()
             }
             Button("取消", role: .cancel) {}
         }
@@ -1170,12 +1173,18 @@ struct PlaceDetailView: View {
             set: { place[keyPath: keyPath] = $0 }
         )
     }
+
+    private func finish() {
+        settingsStore.save()
+        if let onBack { onBack() } else { dismiss() }
+    }
 }
 
 struct WorldTermDetailView: View {
     @Bindable var term: WorldTerm
     let book: Book
     let shouldFocusName: Bool
+    var onBack: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @Environment(V5SettingsStore.self) private var settingsStore
     @State private var showingDeleteConfirmation = false
@@ -1196,12 +1205,17 @@ struct WorldTermDetailView: View {
         let guidance = WorldTermContentGuidance.forCategory(term.termCategory)
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("編輯世界條目").font(.headline)
+                if let onBack {
+                    Button(action: onBack) { Label("返回條目", systemImage: "chevron.left") }
+                        .buttonStyle(.plain)
+                } else {
+                    Text("編輯世界條目").font(.headline)
+                }
                 Spacer()
                 Button("刪除", role: .destructive) { showingDeleteConfirmation = true }
                 Button("完成") {
                     if settingsStore.saveAndReport() {
-                        dismiss()
+                        finish()
                     } else {
                         saveErrorMessage = settingsStore.persistenceErrorMessage ?? "請稍後再試。"
                     }
@@ -1287,7 +1301,7 @@ struct WorldTermDetailView: View {
             }
         }
         .padding(16)
-        .frame(minWidth: 480, minHeight: 620)
+        .frame(minWidth: onBack == nil ? 480 : 0, minHeight: onBack == nil ? 620 : 320)
         .task {
             if shouldFocusName {
                 isNameFocused = true
@@ -1353,7 +1367,7 @@ struct WorldTermDetailView: View {
         .confirmationDialog("確定要刪除這個世界條目嗎？", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
             Button("刪除世界條目", role: .destructive) {
                 settingsStore.deleteWorldTerm(term, bookID: book.id)
-                dismiss()
+                finish()
             }
             Button("取消", role: .cancel) {}
         }
@@ -1382,5 +1396,9 @@ struct WorldTermDetailView: View {
             get: { term.termCategory },
             set: { term.termCategory = $0 }
         )
+    }
+
+    private func finish() {
+        if let onBack { onBack() } else { dismiss() }
     }
 }

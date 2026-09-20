@@ -2,9 +2,56 @@
 
 > 整體狀態：active
 >
-> 目前階段：書籍目錄拖曳重排穩定性修正中
+> 目前階段：V6.2 頁面地圖空白入口實作與驗證
 >
-> 唯一下一步：請使用者在新建置驗收總覽與編輯器側欄的同卷節次拖放；封面新建置實檔驗收仍待使用者執行。
+> 唯一下一步：以隔離書籍完成頁面地圖 UI 冒煙，驗證保留工具列與左右側欄、按同一按鈕返回正文。
+
+## 2026-09-21 V6.2 頁面地圖空白入口（R／U／I approved；實作完成，待 UI 驗收）
+
+- 使用者要求在「大綱」與「設定集」按鈕之間新增「頁面地圖」，點擊後進入暫不顯示其他內容的空白頁；之後確認該頁只取代中央正文區，既有側欄及工具列保留。R approved。
+- 程式確認目前「大綱」進入規劃工作區時會隱藏左目錄與設定集右欄；不假定新頁面必須沿用該行為。
+- 使用者回覆「U」，批准按鈕位置、中央純空白、側欄／工具列保留，以及同一按鈕再次點擊返回正文；再回覆「I」，批准 workspace 顯示狀態、穩定 toolbar 容器及進入前 flush 待儲存正文的實作計畫，不新增資料或其他 UI。
+- `Sailune/EditorWorkspaceView.swift` 已新增指定位置的頁面地圖按鈕與空白中央狀態；同一按鈕返回正文，切入前 flush 正文待存內容，工具列 modifier 留在 detail 共用容器。
+- 受影響 Swift frontend parse、`git diff --check` 及 macOS Debug build 均通過；build 使用 `/private/tmp/sailune-v62-toolbar-build`。
+- 隔離資料 UI 冒煙尚未執行；未人工確認空白中央區、工具列／左右欄保留及正文返回。沒有修改 schema 或 store。
+- 下一步：以隔離書籍實際操作新按鈕，確認進入與返回及保存狀態。
+
+## 2026-09-20 V6.2 編輯頁面 UI 更新
+
+- 使用者已確認兩項需求：設定集項目反白時右欄直接導向；同一工具列橫列顯示標籤顏色含義。
+- 使用者要求調換圖例與開關位置；目前 UI 提案順序已改為先顯示五色圖例，再顯示「反白顯示設定集」開關。
+- 使用者回覆「U」，UI 關卡已批准。
+- 使用者回覆「I」，實作與測試計畫已批准，開始功能實作。
+- 已檢視實際 Sailune 編輯器含正文及右側角色詳情畫面。現有中央工具列是「反白角色時顯示資訊」開關；角色資訊列需要再按按鈕才導向右欄。
+- 已在 `docs/work-items/current.md` 記錄 R／U approved 與 I 計畫。程式查證發現角色／物品／能力／勢力已有 Inspector 詳情 route；地點與世界條目目前以 modal 編輯，需新增右欄 route 並讓詳情可在 300 pt 寬度使用。
+- I 計畫要求採全書唯一匹配、同名歧義不跳轉、隱藏分類不改持久偏好、保留既有 AppStorage 鍵與標記色彩來源，並測試 AppKit route 切換時的正文選取／繼續輸入安全。
+- 已完成唯一匹配與直接導向、一次性請求消耗、五色圖例共用標記色彩定義，以及地點／世界條目的 inline Inspector route；保留清單原 modal 編輯流程及既有偏好鍵。
+- matcher／圖例 7 項專項 XCTest、完整 XCTest（結束碼 0）、受影響 Swift parse、`git diff --check` 均通過；完整 XCTest 使用 `/private/tmp/sailune-v62-derived-host`。
+- 六個 production store 僅以 SQLite backup 複製到 `/private/tmp/sailune-v62-ui.x3WAcD`，供隔離啟動使用。測試 app 直接啟動於 AppKit 註冊階段中止，而 LaunchServices 無法開啟 Xcode 產物（`kLSNoExecutableErr`）；正式 app 未啟動、正式 store 未寫入，人工 UI 冒煙仍待完成。
+- 本工作修改邊界：`Sailune/EditorSettingSelection.swift`（新增）、`SailuneTests/EditorSettingSelectionTests.swift`（新增）、`Sailune/EditorWorkspaceView.swift`、`Sailune/InspectorViews.swift`、`Sailune/RichEditorView.swift`、`Sailune/TimelineViews.swift`、`Sailune/V5SettingViews.swift` 及本工作單、交接、專案狀態文件。未修改 schema、正式 store、正文或標籤資料。
+- 單一下一步：以可正常啟動的新建置和隔離書籍驗收六類反白跳轉與右欄詳情；新聊天最小讀取集合為本文件、`docs/work-items/current.md`、`docs/project-status.md` 與上述功能檔。
+
+## 2026-09-21 V6.2 角色名稱選取粒度修正
+
+- 使用者澄清主要問題不是跳轉，而是拖曳經過連接角色名稱時會直接整名反白。
+- 已在 `SailuneTextView.mouseDown` 與 `mouseDragged` 強制 `selectionGranularity = .selectByCharacter`，修正 AppKit 在 word／paragraph 粒度下延伸拖曳選取的情況；並保留手勢期間暫緩 Inspector 導向作為版面穩定保護。沒有程式化設定選取範圍。
+- 受影響 Swift parse、完整 macOS XCTest（結束碼 0）與 `git diff --check` 均通過。人工 UI 冒煙仍待可正常啟動的新建置；先前測試產物無法由 LaunchServices 啟動，正式 store 未寫入。
+- 唯一下一步：以新建置／隔離書籍確認連接角色名稱拖曳時逐字元選取、放開後設定集導向正常。
+
+## 2026-09-21 V6.2 編輯器工具列微調
+
+- 使用者要求移除獨立的「指令」按鈕，只留「更多」裡的「指令面板」；⌘K 快捷鍵保留在該選單項目。
+- 最新確認：「內文／幕標題」狀態貼左；標題尺寸圖示／切換、註記及圖例共置於緊鄰「反白顯示設定集」左側的水平捲動帶，開關固定最右。
+- 截圖驗收補正：左側標籤文字被右側彈性視圖擠壓，故固定標籤自然寬度以完整顯示「內文」；工具列維持開關自然列高並採垂直置中，捲動帶內容以同一視窗高度置中對齊開關。移除會讓開關無限伸展、可能撐高整列的 max-height 設定。
+- 僅修改 `Sailune/EditorWorkspaceView.swift` 相關工具列排版；沒有更動其它工作樹改動或資料。工作單與專案狀態文件記錄此次追加範圍。
+- 受影響 Swift parse、`git diff --check` 與 macOS Debug build（`/private/tmp/sailune-v62-toolbar-build`）通過；首次受沙盒限制的 build 失敗後，同一命令以核准的建置權限重跑成功。
+- 尚未完成實際 UI 驗收。第一步：用可啟動建置／隔離書籍確認窄版圖例捲動時開關仍貼齊右側、「更多」內指令面板及 ⌘K 正常，並接續驗收逐字元拖曳與設定集導向。
+
+## 2026-09-21 V6.2 設定集側欄滑動開合
+
+- 使用者明確要求右側設定集側欄改以滑動打開；同一側欄關閉時滑回收起。僅改顯示過渡，不改欄寬或內容。
+- `EditorWorkspaceView` 將右欄與分隔線包為單一 trailing-edge move transition，並在開合狀態變更時啟用動畫；仍先結束 NSTextView 第一響應者。
+- 尚待 parse、diff check、macOS Debug build 及隔離 UI 冒煙確認滑入／滑出與正文版面穩定。
 
 ## 2026-09-20 書籍目錄拖曳重排
 

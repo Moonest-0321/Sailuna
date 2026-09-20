@@ -437,6 +437,8 @@ enum InspectorRoute: Hashable {
     case itemCopyDetail(Item, ItemCopy, Character?)
     case abilityDetail(CharacterAbility)
     case powerDetail(PowerUnit)
+    case placeDetail(Place)
+    case worldTermDetail(WorldTerm)
 
     func hash(into hasher: inout Hasher) {
         switch self {
@@ -450,6 +452,10 @@ enum InspectorRoute: Hashable {
             hasher.combine(5); hasher.combine(ability.id)
         case .powerDetail(let power):
             hasher.combine(6); hasher.combine(power.id)
+        case .placeDetail(let place):
+            hasher.combine(7); hasher.combine(place.id)
+        case .worldTermDetail(let term):
+            hasher.combine(8); hasher.combine(term.id)
         }
     }
 
@@ -464,6 +470,8 @@ enum InspectorRoute: Hashable {
             return itemA.id == itemB.id && copyA.id == copyB.id && sourceA?.id == sourceB?.id
         case (.abilityDetail(let a), .abilityDetail(let b)): return a.id == b.id
         case (.powerDetail(let a), .powerDetail(let b)): return a.id == b.id
+        case (.placeDetail(let a), .placeDetail(let b)): return a.id == b.id
+        case (.worldTermDetail(let a), .worldTermDetail(let b)): return a.id == b.id
         default: return false
         }
     }
@@ -477,6 +485,9 @@ struct InspectorRootView: View {
     let focusRequestID: UUID
     let settingsDestination: EditorSettingsDestination?
     let settingsRequestID: UUID
+    let matchedSettingTarget: EditorSettingsTarget?
+    let matchedSettingRequestID: UUID
+    let onMatchedSettingHandled: ((UUID) -> Void)?
     let planningRecordReference: PlanningRecordSourceReference?
     let planningRecordRequestID: UUID
     let onSelectSection: ((Section) -> Void)?
@@ -488,14 +499,20 @@ struct InspectorRootView: View {
     @Environment(AbilityProgressStore.self) private var abilityStore
     @Environment(ItemCopyStore.self) private var copyStore
     @Environment(\.modelContext) private var modelContext
+    @Query(sort: \Character.sortOrder) private var allCharacters: [Character]
+    @Query(sort: \Item.updatedAt, order: .reverse) private var allItems: [Item]
+    @Query(sort: \CharacterAbility.createdAt) private var allAbilities: [CharacterAbility]
 
-    init(book: Book, currentSection: Section? = nil, focusedCharacter: Character? = nil, focusRequestID: UUID = UUID(), settingsDestination: EditorSettingsDestination? = nil, settingsRequestID: UUID = UUID(), planningRecordReference: PlanningRecordSourceReference? = nil, planningRecordRequestID: UUID = UUID(), onSelectSection: ((Section) -> Void)? = nil, onOpenStoryTag: ((StoryTag) -> Void)? = nil) {
+    init(book: Book, currentSection: Section? = nil, focusedCharacter: Character? = nil, focusRequestID: UUID = UUID(), settingsDestination: EditorSettingsDestination? = nil, settingsRequestID: UUID = UUID(), matchedSettingTarget: EditorSettingsTarget? = nil, matchedSettingRequestID: UUID = UUID(), onMatchedSettingHandled: ((UUID) -> Void)? = nil, planningRecordReference: PlanningRecordSourceReference? = nil, planningRecordRequestID: UUID = UUID(), onSelectSection: ((Section) -> Void)? = nil, onOpenStoryTag: ((StoryTag) -> Void)? = nil) {
         self.book = book
         self.currentSection = currentSection
         self.focusedCharacter = focusedCharacter
         self.focusRequestID = focusRequestID
         self.settingsDestination = settingsDestination
         self.settingsRequestID = settingsRequestID
+        self.matchedSettingTarget = matchedSettingTarget
+        self.matchedSettingRequestID = matchedSettingRequestID
+        self.onMatchedSettingHandled = onMatchedSettingHandled
         self.planningRecordReference = planningRecordReference
         self.planningRecordRequestID = planningRecordRequestID
         self.onSelectSection = onSelectSection
@@ -609,6 +626,10 @@ struct InspectorRootView: View {
                 AbilityDetailView(ability: ability, book: book, onBack: { navigate(to: .list) }, onOpenCharacter: { navigate(to: .detail($0)) })
             case .powerDetail(let power):
                 PowerDetailView(power: power, book: book, onBack: { navigate(to: .list) })
+            case .placeDetail(let place):
+                PlaceDetailView(place: place, book: book, onBack: { navigate(to: .list) })
+            case .worldTermDetail(let term):
+                WorldTermDetailView(term: term, book: book, shouldFocusName: false, onBack: { navigate(to: .list) })
             }
         }
         .sheet(isPresented: $showingSidebarSettings) {
@@ -626,6 +647,8 @@ struct InspectorRootView: View {
         .onChange(of: focusRequestID) { _, _ in showFocusedCharacter() }
         .onAppear { showRequestedSettings() }
         .onChange(of: settingsRequestID) { _, _ in showRequestedSettings() }
+        .onAppear { showMatchedSetting() }
+        .onChange(of: matchedSettingRequestID) { _, _ in showMatchedSetting() }
         .onAppear { showRequestedPlanningRecord() }
         .onChange(of: planningRecordRequestID) { _, _ in showRequestedPlanningRecord() }
     }
@@ -654,6 +677,46 @@ struct InspectorRootView: View {
             selectedTab = .item
         case .ability:
             selectedTab = .ability
+        }
+    }
+
+    private func showMatchedSetting() {
+        guard let matchedSettingTarget else { return }
+        onMatchedSettingHandled?(matchedSettingRequestID)
+        let targetKey: SidebarSettingKey
+        switch matchedSettingTarget {
+        case .character: targetKey = .character
+        case .item: targetKey = .item
+        case .ability: targetKey = .ability
+        case .power: targetKey = .power
+        case .place: targetKey = .place
+        case .worldTerm: targetKey = .worldTerm
+        }
+        selectedTab = visibleSidebarKeys.contains(targetKey) ? targetKey : activeSidebarKey
+
+        switch matchedSettingTarget {
+        case .character(let id):
+            guard let character = allCharacters.first(where: { $0.id == id && $0.book?.id == book.id }) else { return }
+            navigate(to: .detail(character))
+        case .item(let id):
+            guard let item = allItems.first(where: { $0.id == id && $0.book?.id == book.id }) else { return }
+            navigate(to: .itemDetail(item, nil))
+        case .ability(let id):
+            guard let ability = allAbilities.first(where: { $0.id == id }) else { return }
+            let characterIDs = Set(allCharacters.filter { $0.book?.id == book.id }.map(\.id))
+            let belongsToBook = abilityStore.bookLinks.contains { $0.abilityID == id && $0.bookID == book.id }
+                || ability.character.map { characterIDs.contains($0.id) } == true
+            guard belongsToBook else { return }
+            navigate(to: .abilityDetail(ability))
+        case .power(let id):
+            guard let power = settingsStore.powers(for: book.id).first(where: { $0.id == id }) else { return }
+            navigate(to: .powerDetail(power))
+        case .place(let id):
+            guard let place = settingsStore.places(for: book.id).first(where: { $0.id == id }) else { return }
+            navigate(to: .placeDetail(place))
+        case .worldTerm(let id):
+            guard let term = settingsStore.worldTerms(for: book.id).first(where: { $0.id == id }) else { return }
+            navigate(to: .worldTermDetail(term))
         }
     }
 

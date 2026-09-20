@@ -231,8 +231,17 @@ final class SailuneTextView: CompositionAwareTextView {
     required init?(coder: NSCoder) { fatalError("不支援 storyboard 初始化") }
     override func mouseDown(with event: NSEvent) {
         coordinator?.onEditorFocus?()
+        coordinator?.onSelectionGestureChange?(true)
+        selectionGranularity = .selectByCharacter
         super.mouseDown(with: event)
         window?.makeFirstResponder(self)
+        coordinator?.onSelectionGestureChange?(false)
+    }
+    override func mouseDragged(with event: NSEvent) {
+        // AppKit may retain word/paragraph granularity after a multi-click;
+        // ordinary dragging in the editor should continue selection by character.
+        selectionGranularity = .selectByCharacter
+        super.mouseDragged(with: event)
     }
     override func flagsChanged(with event: NSEvent) {
         super.flagsChanged(with: event)
@@ -503,6 +512,7 @@ struct RichEditorView: NSViewRepresentable {
     var onEditorFocus: (() -> Void)? = nil
     var onLoadingChange: ((Bool) -> Void)? = nil
     var onSelectionTextChange: ((String) -> Void)? = nil
+    var onSelectionGestureChange: ((Bool) -> Void)? = nil
     var onOpenSelectedText: ((String) -> Bool)? = nil
     var onOpenCharacterReference: ((UUID) -> Bool)? = nil
     var canCreateCharacter: ((String) -> Bool)? = nil
@@ -531,6 +541,7 @@ struct RichEditorView: NSViewRepresentable {
         context.coordinator.onEditorFocus = onEditorFocus
         context.coordinator.onLoadingChange = onLoadingChange
         context.coordinator.onSelectionTextChange = onSelectionTextChange
+        context.coordinator.onSelectionGestureChange = onSelectionGestureChange
         context.coordinator.onOpenSelectedText = onOpenSelectedText
         context.coordinator.onOpenCharacterReference = onOpenCharacterReference
         context.coordinator.canCreateCharacterHandler = canCreateCharacter
@@ -605,6 +616,7 @@ struct RichEditorView: NSViewRepresentable {
         coord.onEditorFocus = onEditorFocus
         coord.onLoadingChange = onLoadingChange
         coord.onSelectionTextChange = onSelectionTextChange
+        coord.onSelectionGestureChange = onSelectionGestureChange
         coord.onOpenSelectedText = onOpenSelectedText
         coord.onOpenCharacterReference = onOpenCharacterReference
         coord.canCreateCharacterHandler = canCreateCharacter
@@ -690,6 +702,7 @@ struct RichEditorView: NSViewRepresentable {
         var onEditorFocus: (() -> Void)?
         var onLoadingChange: ((Bool) -> Void)?
         var onSelectionTextChange: ((String) -> Void)?
+        var onSelectionGestureChange: ((Bool) -> Void)?
         var onOpenSelectedText: ((String) -> Bool)?
         var onOpenCharacterReference: ((UUID) -> Bool)?
         var canCreateCharacterHandler: ((String) -> Bool)?
@@ -773,19 +786,15 @@ struct RichEditorView: NSViewRepresentable {
             for tag in storyTags() where tag.sectionID == section?.id {
                 let location = tag.resolvedOffset(in: textView.string)
                 guard location < storage.length else { continue }
-                let color: NSColor
-                let opacity: CGFloat
-                switch tag.kind {
-                case .main: (color, opacity) = (.systemRed, 0.58)
-                case .branch: (color, opacity) = (.systemBlue, 0.58)
-                case .foreshadowing: (color, opacity) = (.systemYellow, 0.72)
-                case .revision: (color, opacity) = (.systemOrange, 0.16)
-                case .plannedAddition: (color, opacity) = (.systemGreen, 0.14)
-                }
+                let appearance = StoryTagMarkerDefinition.definition(for: tag.kind)
                 let length = tag.markerLength(availableFromOffset: storage.length - location)
                 guard length > 0 else { continue }
                 let range = NSRange(location: location, length: length)
-                storage.addAttribute(.backgroundColor, value: color.withAlphaComponent(opacity), range: range)
+                storage.addAttribute(
+                    .backgroundColor,
+                    value: appearance.color.withAlphaComponent(appearance.opacity),
+                    range: range
+                )
                 storage.addAttribute(.sailuneStoryTagMarker, value: tag.id.uuidString, range: range)
             }
             for marker in outlineMarkers() where marker.anchor.sectionID == section?.id {

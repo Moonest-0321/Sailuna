@@ -35,6 +35,9 @@ struct WorkspaceInspectorView: View {
     var focusRequestID = UUID()
     var settingsDestination: EditorSettingsDestination? = nil
     var settingsRequestID = UUID()
+    var matchedSettingTarget: EditorSettingsTarget? = nil
+    var matchedSettingRequestID = UUID()
+    var onMatchedSettingHandled: ((UUID) -> Void)? = nil
     var planningRecordReference: PlanningRecordSourceReference? = nil
     var planningRecordRequestID = UUID()
     var onSelectSection: ((Section) -> Void)? = nil
@@ -64,6 +67,9 @@ struct WorkspaceInspectorView: View {
                     focusRequestID: focusRequestID,
                     settingsDestination: settingsDestination,
                     settingsRequestID: settingsRequestID,
+                    matchedSettingTarget: matchedSettingTarget,
+                    matchedSettingRequestID: matchedSettingRequestID,
+                    onMatchedSettingHandled: onMatchedSettingHandled,
                     planningRecordReference: planningRecordReference,
                     planningRecordRequestID: planningRecordRequestID,
                     onSelectSection: onSelectSection,
@@ -77,6 +83,7 @@ struct WorkspaceInspectorView: View {
         .onAppear { showFocusedCharacter() }
         .onChange(of: focusedCharacter?.id) { _, _ in showFocusedCharacter() }
         .onChange(of: focusRequestID) { _, _ in showFocusedCharacter() }
+        .onChange(of: matchedSettingRequestID) { _, _ in tab = .settings }
     }
 
     private func showFocusedCharacter() {

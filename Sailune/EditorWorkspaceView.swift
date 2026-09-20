@@ -52,9 +52,12 @@ struct EditorWorkspaceView: View {
     @State private var characterFocusRequestID = UUID()
     @State private var settingsDestination: EditorSettingsDestination?
     @State private var settingsRequestID = UUID()
+    @State private var matchedSettingTarget: EditorSettingsTarget?
+    @State private var matchedSettingRequestID = UUID()
     @State private var planningRecordReference: PlanningRecordSourceReference?
     @State private var planningRecordRequestID = UUID()
     @State private var isShowingPlanningWorkspace = false
+    @State private var isShowingPageMap = false
     @State private var hasLoadedPlanningWorkspace = false
     @State private var writingColumnVisibility: NavigationSplitViewVisibility = .automatic
     @State private var exportRequest: SailuneExportRequest?
@@ -83,17 +86,30 @@ struct EditorWorkspaceView: View {
                     EditorSidebarView(book: book, selectedSection: $selectedSection, bridge: bridge)
                         .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
                 } detail: {
-                    EditorCenterView(
-                        section: selectedSection,
-                        bridge: bridge,
-                        book: book,
-                        onOpenCharacter: { character in
-                            focusedCharacter = character
-                            characterFocusRequestID = UUID()
-                            setInspectorPresented(true)
-                        },
-                        onOpenSettings: openSettings
-                    )
+                    Group {
+                        if isShowingPageMap {
+                            Color.clear
+                        } else {
+                            EditorCenterView(
+                                section: selectedSection,
+                                bridge: bridge,
+                                book: book,
+                                onOpenCharacter: { character in
+                                    focusedCharacter = character
+                                    characterFocusRequestID = UUID()
+                                    setInspectorPresented(true)
+                                },
+                                onOpenSettings: openSettings,
+                                onOpenMatchedSetting: { target in
+                                    focusedCharacter = nil
+                                    settingsDestination = nil
+                                    matchedSettingTarget = target
+                                    matchedSettingRequestID = UUID()
+                                    setInspectorPresented(true)
+                                }
+                            )
+                        }
+                    }
                     .frame(minWidth: Layout.minimumEditorWidth, minHeight: Layout.minimumEditorHeight)
                     .toolbar { workspaceToolbar }
                 }
@@ -117,31 +133,40 @@ struct EditorWorkspaceView: View {
             }
 
             if showInspector {
-                Divider()
-                WorkspaceInspectorView(
-                    book: book,
-                    currentSection: selectedSection,
-                    focusedCharacter: focusedCharacter,
-                    focusRequestID: characterFocusRequestID,
-                    settingsDestination: settingsDestination,
-                    settingsRequestID: settingsRequestID,
-                    planningRecordReference: planningRecordReference,
-                    planningRecordRequestID: planningRecordRequestID,
-                    onSelectSection: { section in
-                        bridge.flushPendingSave()
-                        selectedSection = section
-                    },
-                    onOpenStoryTag: { tag in
-                        guard let section = BookStructure.orderedSections(in: book).first(where: { $0.id == tag.sectionID }) else { return }
-                        bridge.flushPendingSave()
-                        let offset = tag.resolvedOffset(in: String(section.content.characters))
-                        bridge.requestSelect(sectionID: section.id, range: NSRange(location: offset, length: 0))
-                        selectedSection = section
-                    },
-                    onOpenOutlineItem: openOutlineItem
-                )
-                .workspaceFloatingPanel()
-                .frame(width: Layout.inspectorWidth)
+                HStack(spacing: 0) {
+                    Divider()
+                    WorkspaceInspectorView(
+                        book: book,
+                        currentSection: selectedSection,
+                        focusedCharacter: focusedCharacter,
+                        focusRequestID: characterFocusRequestID,
+                        settingsDestination: settingsDestination,
+                        settingsRequestID: settingsRequestID,
+                        matchedSettingTarget: matchedSettingTarget,
+                        matchedSettingRequestID: matchedSettingRequestID,
+                        onMatchedSettingHandled: { requestID in
+                            guard matchedSettingRequestID == requestID else { return }
+                            matchedSettingTarget = nil
+                        },
+                        planningRecordReference: planningRecordReference,
+                        planningRecordRequestID: planningRecordRequestID,
+                        onSelectSection: { section in
+                            bridge.flushPendingSave()
+                            selectedSection = section
+                        },
+                        onOpenStoryTag: { tag in
+                            guard let section = BookStructure.orderedSections(in: book).first(where: { $0.id == tag.sectionID }) else { return }
+                            bridge.flushPendingSave()
+                            let offset = tag.resolvedOffset(in: String(section.content.characters))
+                            bridge.requestSelect(sectionID: section.id, range: NSRange(location: offset, length: 0))
+                            selectedSection = section
+                        },
+                        onOpenOutlineItem: openOutlineItem
+                    )
+                    .workspaceFloatingPanel()
+                    .frame(width: Layout.inspectorWidth)
+                }
+                .transition(.move(edge: .trailing))
             }
         }
         .navigationTitle("")
@@ -183,11 +208,9 @@ struct EditorWorkspaceView: View {
     @ToolbarContentBuilder
     private var workspaceToolbar: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
-            Button { showingCommandPalette = true } label: { Label("指令", systemImage: "command") }
-                .help("開啟指令面板 (⌘K)")
-                .keyboardShortcut("k", modifiers: .command)
             Menu {
                 Button { showingCommandPalette = true } label: { Label("指令面板", systemImage: "command") }
+                    .keyboardShortcut("k", modifiers: .command)
                 Button {
                     if let section = selectedSection {
                         let content = ExportManager.exportSectionToTXT(section: section)
@@ -206,6 +229,10 @@ struct EditorWorkspaceView: View {
                 )
             }
             .help(isShowingPlanningWorkspace ? "回到文本編輯" : "開啟大綱工作區")
+            Button(action: togglePageMap) {
+                Label("頁面地圖", systemImage: "map")
+            }
+            .help(isShowingPageMap ? "返回正文" : "開啟頁面地圖")
             Button { setInspectorPresented(!showInspector) } label: {
                 Label("設定集", systemImage: "sidebar.right")
             }
@@ -215,6 +242,15 @@ struct EditorWorkspaceView: View {
 
     private func toggleSidebar() {
         columnVisibility = (columnVisibility == .detailOnly) ? .automatic : .detailOnly
+    }
+
+    private func togglePageMap() {
+        if isShowingPageMap {
+            isShowingPageMap = false
+        } else {
+            bridge.flushPendingSave()
+            isShowingPageMap = true
+        }
     }
 
     private func showPlanningWorkspace() {
@@ -283,12 +319,12 @@ struct EditorWorkspaceView: View {
     }
 
     private func setInspectorPresented(_ presented: Bool) {
-        // 右欄切換會改變中央 NSTextView 的可用寬度。先結束文字輸入並
-        // 關閉動畫，避免輸入法組字與文字配置在同一個 layout pass 中重排。
+        // 右欄切換會改變中央 NSTextView 的可用寬度，先結束文字輸入再滑入／滑出。
         NSApp.keyWindow?.makeFirstResponder(nil)
-        var transaction = Transaction()
-        transaction.animation = nil
-        withTransaction(transaction) {
+        if !presented {
+            matchedSettingTarget = nil
+        }
+        withAnimation {
             showInspector = presented
         }
     }
@@ -871,13 +907,18 @@ struct EditorCenterView: View {
     let book: Book
     let onOpenCharacter: (Character) -> Void
     let onOpenSettings: (EditorSettingsDestination) -> Void
+    let onOpenMatchedSetting: (EditorSettingsTarget) -> Void
     @Environment(\.modelContext) private var modelContext
     @Environment(StoryPlanningStore.self) private var planningStore
+    @Environment(V5SettingsStore.self) private var settingsStore
+    @Environment(AbilityProgressStore.self) private var abilityStore
     @State private var liveWordCount: Int = 0
     @State private var cursorIsHeading: Bool = false
     @State private var saveState: EditorSaveState = .saved
     @State private var isContentLoading = false
     @State private var selectedText = ""
+    @State private var isSelectionGestureInProgress = false
+    @State private var lastRoutedSelection: String?
     @AppStorage("sailune.hasShownInlineAutosaveHint") private var hasShownInlineAutosaveHint = false
     @AppStorage("sailune.showCharacterSelectionInfo") private var showCharacterSelectionInfo = true
     @State private var showingInlineAutosaveHint = false
@@ -886,10 +927,8 @@ struct EditorCenterView: View {
     @FocusState private var titleFieldFocused: Bool
     @Query(sort: \Character.sortOrder) private var allCharacters: [Character]
     @Query(sort: \CharacterAlias.createdAt) private var allAliases: [CharacterAlias]
-
-    private var selectedCharacterMatch: Character? {
-        characterMatch(for: selectedText)
-    }
+    @Query(sort: \Item.updatedAt, order: .reverse) private var allItems: [Item]
+    @Query(sort: \CharacterAbility.createdAt) private var allAbilities: [CharacterAbility]
 
     private func characterMatch(for text: String) -> Character? {
         let name = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -907,6 +946,41 @@ struct EditorCenterView: View {
         }
         guard matchesByID.count == 1 else { return nil }
         return matchesByID.values.first
+    }
+
+    private func settingTarget(for selection: String) -> EditorSettingsTarget? {
+        let bookCharacters = allCharacters.filter { $0.book?.id == book.id }
+        let bookCharacterIDs = Set(bookCharacters.map(\.id))
+        var candidates = bookCharacters.map { character in
+            let aliases = allAliases
+                .filter { $0.character?.id == character.id }
+                .map(\.name)
+            return EditorSettingsNameCandidate(
+                target: .character(character.id),
+                names: [character.realName] + aliases
+            )
+        }
+
+        candidates += allItems
+            .filter { $0.book?.id == book.id }
+            .map { EditorSettingsNameCandidate(target: .item($0.id), names: [$0.name]) }
+
+        candidates += allAbilities.compactMap { ability in
+            let belongsToBook = abilityStore.bookLinks.contains {
+                $0.abilityID == ability.id && $0.bookID == book.id
+            } || ability.character.map { bookCharacterIDs.contains($0.id) } == true
+            guard belongsToBook else { return nil }
+            return EditorSettingsNameCandidate(target: .ability(ability.id), names: [ability.name])
+        }
+
+        candidates += settingsStore.powers(for: book.id)
+            .map { EditorSettingsNameCandidate(target: .power($0.id), names: [$0.name]) }
+        candidates += settingsStore.places(for: book.id)
+            .map { EditorSettingsNameCandidate(target: .place($0.id), names: [$0.name]) }
+        candidates += settingsStore.worldTerms(for: book.id)
+            .map { EditorSettingsNameCandidate(target: .worldTerm($0.id), names: [$0.name]) }
+
+        return EditorSettingsMatcher.uniqueMatch(for: selection, candidates: candidates)
     }
 
     private func characterReference(from text: String) -> CharacterReference? {
@@ -989,50 +1063,62 @@ struct EditorCenterView: View {
                 .padding(.horizontal, 24)
                 .padding(.vertical, 16)
                 Divider()
-                HStack(spacing: 8) {
+                HStack(alignment: .center, spacing: 8) {
                     Label(cursorIsHeading ? "幕標題" : "內文", systemImage: cursorIsHeading ? "textformat.size" : "text.alignleft")
                         .font(.caption).foregroundStyle(.secondary).labelStyle(.titleAndIcon)
-                    Spacer()
-                    Button { bridge.requestToggleHeading() } label: {
-                        Label("標題", systemImage: "textformat.size").labelStyle(.titleAndIcon)
-                    }
-                    .buttonStyle(.borderless)
-                    .help("將游標所在段落設為幕標題 / 內文 (⌘2)")
-                    .keyboardShortcut("2", modifiers: .command)
-                    Button {
-                        activeAnnotation = planningStore.ensureAnnotation(sectionID: section.id, bookID: book.id)
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "note.text")
-                            if let annotation = planningStore.annotation(sectionID: section.id),
-                               !annotation.plannedOutline.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                Circle().fill(.green.opacity(0.55)).frame(width: 5, height: 5)
+                        .fixedSize(horizontal: true, vertical: false)
+                    Spacer(minLength: 8)
+                    GeometryReader { viewport in
+                        ScrollView(.horizontal) {
+                            HStack(spacing: 8) {
+                                Button { bridge.requestToggleHeading() } label: {
+                                    Label("標題", systemImage: "textformat.size").labelStyle(.titleAndIcon)
+                                }
+                                .buttonStyle(.borderless)
+                                .help("將游標所在段落設為幕標題 / 內文 (⌘2)")
+                                .keyboardShortcut("2", modifiers: .command)
+                                Button {
+                                    activeAnnotation = planningStore.ensureAnnotation(sectionID: section.id, bookID: book.id)
+                                } label: {
+                                    HStack(spacing: 4) {
+                                        Image(systemName: "note.text")
+                                        if let annotation = planningStore.annotation(sectionID: section.id),
+                                           !annotation.plannedOutline.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                            Circle().fill(.green.opacity(0.55)).frame(width: 5, height: 5)
+                                        }
+                                        if let annotation = planningStore.annotation(sectionID: section.id),
+                                           !annotation.revisionNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                            Circle().fill(.orange.opacity(0.65)).frame(width: 5, height: 5)
+                                        }
+                                    }
+                                }
+                                .buttonStyle(.borderless)
+                                .help("預定大綱與修改註記")
+                                .popover(item: $activeAnnotation) { annotation in
+                                    SectionAnnotationsPopover(annotation: annotation)
+                                }
+                                StoryTagMarkerLegendView()
                             }
-                            if let annotation = planningStore.annotation(sectionID: section.id),
-                               !annotation.revisionNote.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                                Circle().fill(.orange.opacity(0.65)).frame(width: 5, height: 5)
-                            }
+                            .frame(
+                                minWidth: viewport.size.width,
+                                minHeight: viewport.size.height,
+                                alignment: .trailing
+                            )
                         }
+                        .scrollIndicators(.hidden)
                     }
-                    .buttonStyle(.borderless)
-                    .help("預定大綱與修改註記")
-                    .popover(item: $activeAnnotation) { annotation in
-                        SectionAnnotationsPopover(annotation: annotation)
-                    }
-                    Toggle("反白角色時顯示資訊", isOn: $showCharacterSelectionInfo)
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 24)
+                    .layoutPriority(1)
+                    Toggle("反白顯示設定集", isOn: $showCharacterSelectionInfo)
                         .toggleStyle(.switch)
                         .font(.caption)
+                        .fixedSize()
                 }
                 .padding(.horizontal, 24)
                 .padding(.vertical, 8)
                 .background(Color.appBackground)
                 Divider()
-                if showCharacterSelectionInfo, let character = selectedCharacterMatch {
-                    CharacterSelectionInfoBar(character: character) {
-                        onOpenCharacter(character)
-                    }
-                    Divider()
-                }
                 ZStack(alignment: .topLeading) {
                     RichEditorView(
                         section: section,
@@ -1043,6 +1129,7 @@ struct EditorCenterView: View {
                         onEditorFocus: { showingInlineAutosaveHint = false },
                         onLoadingChange: { isContentLoading = $0 },
                         onSelectionTextChange: { selectedText = $0 },
+                        onSelectionGestureChange: { isSelectionGestureInProgress = $0 },
                         onOpenSelectedText: { text in
                             guard let character = characterMatch(for: text) else { return false }
                             onOpenCharacter(character)
@@ -1193,6 +1280,32 @@ struct EditorCenterView: View {
             saveState = .saved
             selectedText = ""
         }
+        .task(id: "\(showCharacterSelectionInfo)|\(isSelectionGestureInProgress)|\(selectedText)") {
+            guard showCharacterSelectionInfo else {
+                lastRoutedSelection = nil
+                return
+            }
+            guard !isSelectionGestureInProgress else { return }
+            let selection = selectedText
+            guard !selection.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                lastRoutedSelection = nil
+                return
+            }
+            do {
+                try await Task.sleep(nanoseconds: 120_000_000)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            guard !isSelectionGestureInProgress else { return }
+            guard let target = settingTarget(for: selection) else {
+                lastRoutedSelection = nil
+                return
+            }
+            guard selection != lastRoutedSelection else { return }
+            lastRoutedSelection = selection
+            onOpenMatchedSetting(target)
+        }
     }
 
     private func sectionIndex(for section: Section, in book: Book) -> Int {
@@ -1246,28 +1359,20 @@ private struct SectionAnnotationsPopover: View {
     }
 }
 
-private struct CharacterSelectionInfoBar: View {
-    let character: Character
-    let onInspect: () -> Void
-
+private struct StoryTagMarkerLegendView: View {
     var body: some View {
-        HStack(spacing: 10) {
-            Image(systemName: "person.text.rectangle")
-                .foregroundStyle(Color.accentColor)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(character.realName.isEmpty ? "未命名角色" : character.realName)
-                    .font(.subheadline.weight(.semibold))
-                Text("已辨識反白的角色名稱")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+        HStack(spacing: 8) {
+            ForEach(StoryTagMarkerDefinition.allCases) { definition in
+                HStack(spacing: 3) {
+                    Circle()
+                        .fill(Color(nsColor: definition.color))
+                        .frame(width: 7, height: 7)
+                    Text(definition.title)
+                        .font(.caption2)
+                        .foregroundStyle(.secondary)
+                        .fixedSize()
+                }
             }
-            Spacer()
-            Button("在側欄查看", action: onInspect)
-                .buttonStyle(.bordered)
-                .controlSize(.small)
         }
-        .padding(.horizontal, 24)
-        .padding(.vertical, 8)
-        .background(Color.accentColor.opacity(0.08))
     }
 }
