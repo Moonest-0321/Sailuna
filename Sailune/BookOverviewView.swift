@@ -160,32 +160,18 @@ struct BookOverviewView: View {
     @State private var isEditingBackground = false
 
     var body: some View {
-        Group {
-            if isEditingBackground {
-                VStack(spacing: 0) {
-                    HStack {
-                        Button("返回書籍總覽", systemImage: "chevron.left") {
-                            isEditingBackground = false
-                        }
-                        .buttonStyle(.borderless)
-                        Spacer()
-                    }
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 12)
-                    Divider()
-                    ScrollView {
-                        BookBackgroundView(book: book)
-                            .frame(maxWidth: 900, alignment: .leading)
-                            .padding(24)
-                            .frame(maxWidth: .infinity)
-                    }
-                }
-            } else {
+        GeometryReader { proxy in
+            ZStack {
                 HSplitView {
                     BookInfoPanel(book: book, onOpenBackground: { isEditingBackground = true })
                         .frame(minWidth: 300, idealWidth: 350, maxWidth: 450)
                     VolumeSectionTreeView(book: book, onSelectSection: openEditor)
                         .frame(minWidth: 300, idealWidth: 400)
+                }
+
+                if isEditingBackground {
+                    backgroundOverlay(in: proxy.size)
+                        .zIndex(1)
                 }
             }
         }
@@ -203,6 +189,54 @@ struct BookOverviewView: View {
             sectionToOpen = section
         }
     }
+
+    @ViewBuilder
+    private func backgroundOverlay(in availableSize: CGSize) -> some View {
+        let modalWidth = max(320, min(900, availableSize.width - 48))
+        let modalHeight = max(360, min(760, availableSize.height - 48))
+
+        ZStack {
+            Color.black.opacity(0.28)
+                .ignoresSafeArea()
+                .contentShape(Rectangle())
+                .onTapGesture { isEditingBackground = false }
+
+            VStack(spacing: 0) {
+                HStack {
+                    Text("故事背景")
+                        .font(.title3.weight(.semibold))
+                    Spacer()
+                    Button {
+                        isEditingBackground = false
+                    } label: {
+                        Image(systemName: "xmark")
+                            .frame(width: 28, height: 28)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("關閉故事背景")
+                    .accessibilityLabel("關閉故事背景")
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 14)
+
+                Divider()
+
+                ScrollView {
+                    BookBackgroundView(book: book)
+                        .padding(20)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .frame(width: modalWidth, height: modalHeight)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(Color.secondary.opacity(0.22), lineWidth: 1)
+            }
+            .shadow(color: .black.opacity(0.22), radius: 24, y: 10)
+        }
+    }
 }
 
 // MARK: - 左側：書本基本資訊面板
@@ -212,53 +246,49 @@ struct BookInfoPanel: View {
     @Environment(StoryPlanningStore.self) private var planningStore
     @State private var showingCoverImporter = false
     @State private var hasCustomCover = false
+    @State private var coverOperationError: String?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("基本資訊").font(.headline).foregroundStyle(.secondary)
+                HStack(alignment: .top, spacing: 14) {
+                    BookCoverArtwork(book: book)
+                        .frame(width: 112, height: 158)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .contentShape(Rectangle())
+                        .contextMenu {
+                            Button("更換封面…", systemImage: "photo") {
+                                showingCoverImporter = true
+                            }
+                            if hasCustomCover {
+                                Divider()
+                                Button(role: .destructive) {
+                                    removeCover()
+                                } label: {
+                                    Label("移除封面", systemImage: "trash")
+                                }
+                            }
+                        }
+                        .accessibilityLabel("書籍封面")
+                        .accessibilityHint("按右鍵可更換封面")
+
                     VStack(alignment: .leading, spacing: 8) {
                         Text("書名").font(.subheadline).foregroundStyle(.secondary)
                         TextField("書名", text: Binding(
                             get: { book.title },
                             set: { book.title = $0; book.updatedAt = Date() }
-                        )).textFieldStyle(.roundedBorder)
+                        ))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                         Text("作者").font(.subheadline).foregroundStyle(.secondary)
                         TextField("作者", text: Binding(
                             get: { book.author },
                             set: { book.author = $0; book.updatedAt = Date() }
-                        )).textFieldStyle(.roundedBorder)
+                        ))
+                        .textFieldStyle(.roundedBorder)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                }
-                Divider()
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("封面").font(.headline).foregroundStyle(.secondary)
-                    HStack(alignment: .top, spacing: 14) {
-                        BookCoverArtwork(book: book)
-                            .frame(width: 84, height: 118)
-                            .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(hasCustomCover ? "已使用自訂封面" : "目前使用預設封面")
-                                .font(.subheadline)
-                            Text("建議使用直式圖片；未選擇時會自動顯示預設封面。")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            HStack {
-                                Button("選擇圖片", systemImage: "photo") {
-                                    showingCoverImporter = true
-                                }
-                                if hasCustomCover {
-                                    Button(role: .destructive) {
-                                        removeCover()
-                                    } label: {
-                                        Label("移除", systemImage: "trash")
-                                    }
-                                }
-                            }
-                        }
-                    }
+                    .frame(minWidth: 120, maxWidth: .infinity, alignment: .leading)
                 }
                 Divider()
                 VStack(alignment: .leading, spacing: 8) {
@@ -306,6 +336,14 @@ struct BookInfoPanel: View {
         }
         .background(Color.appBackground)
         .onAppear { hasCustomCover = BookCoverStore.hasCover(for: book) }
+        .alert("無法更新封面", isPresented: Binding(
+            get: { coverOperationError != nil },
+            set: { if !$0 { coverOperationError = nil } }
+        )) {
+            Button("好", role: .cancel) { coverOperationError = nil }
+        } message: {
+            Text(coverOperationError ?? "")
+        }
         .fileImporter(
             isPresented: $showingCoverImporter,
             allowedContentTypes: [.image],
@@ -340,13 +378,16 @@ struct BookInfoPanel: View {
         defer {
             if hasAccess { url.stopAccessingSecurityScopedResource() }
         }
-        guard let image = NSImage(contentsOf: url) else { return }
+        guard let image = NSImage(contentsOf: url) else {
+            coverOperationError = "無法讀取這張圖片；目前封面沒有變更。"
+            return
+        }
         do {
             try BookCoverStore.save(image: image, for: book)
             hasCustomCover = true
             book.updatedAt = Date()
         } catch {
-            print("❌ 封面儲存失敗：\(error.localizedDescription)")
+            coverOperationError = "封面沒有變更。\n\n\(error.localizedDescription)"
         }
     }
 
@@ -356,7 +397,7 @@ struct BookInfoPanel: View {
             hasCustomCover = false
             book.updatedAt = Date()
         } catch {
-            print("❌ 封面移除失敗：\(error.localizedDescription)")
+            coverOperationError = "封面沒有變更。\n\n\(error.localizedDescription)"
         }
     }
 
@@ -385,23 +426,27 @@ struct VolumeSectionTreeView: View {
     @State private var dropTargetSectionID: UUID? = nil
     @State private var dropTargetVolumeEnd: Bool = false
     @State private var dropTargetSectionEndVolumeID: UUID? = nil
+    @State private var exportRequest: SailuneExportRequest?
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 Text("目錄").font(.headline).foregroundStyle(.secondary)
                 Spacer()
-                Button {
-                    let content = ExportManager.exportBookToTXT(book: book)
-                    ExportManager.presentSavePanel(for: book, defaultName: book.title, fileType: "txt", content: content)
+                Menu {
+                    Button {
+                        let content = ExportManager.exportBookToTXT(book: book)
+                        exportRequest = ExportManager.textExportRequest(defaultName: book.title, content: content)
+                    } label: {
+                        Label("匯出 TXT", systemImage: "doc.text")
+                    }
+                    Button { exportRequest = EpubExporter.exportRequest(book: book) } label: {
+                        Label("匯出 EPUB", systemImage: "book.closed")
+                    }
                 } label: {
-                    Label("匯出 TXT", systemImage: "square.and.arrow.up")
+                    Label("匯出", systemImage: "square.and.arrow.up")
                 }
-                .buttonStyle(.borderless).help("匯出整本書為 TXT")
-                Button { EpubExporter.exportBook(book: book) } label: {
-                    Label("匯出 EPUB", systemImage: "book.closed")
-                }
-                .buttonStyle(.borderless).help("匯出整本書為 EPUB")
+                .help("選擇 TXT 或 EPUB 後匯出整本書")
                 Button { addVolume() } label: {
                     Label("新增卷", systemImage: "folder.badge.plus").labelStyle(.iconOnly)
                 }
@@ -440,6 +485,7 @@ struct VolumeSectionTreeView: View {
                 .padding(10)
             }
         }
+        .sailuneFileExporter(request: $exportRequest)
     }
 
     private var emptyStateView: some View {

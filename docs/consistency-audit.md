@@ -18,7 +18,9 @@
 
 ### 匯出目的地不再依賴開發者帳號
 
-TXT 與 EPUB 現均使用 `NSSavePanel`；取消不寫檔，覆寫由系統確認，寫入失敗顯示警告，成功後在 Finder 選取成品。
+TXT 與 EPUB 現均使用 SwiftUI `fileExporter` 與共用 `FileDocument`；取消不寫檔，覆寫由系統確認，寫入失敗顯示警告，成功後在 Finder 選取成品。產品匯出路徑不再直接建立 `NSSavePanel`。
+Debug 與 Release App target 均設定 `ENABLE_USER_SELECTED_FILES = readwrite`；實際 Debug 簽章包含 `com.apple.security.files.user-selected.read-write`，避免系統輸出面板因 sandbox entitlement 不足而停止。
+EPUB 匯出會使用畫面目前顯示的封面：優先直接讀取書籍 UUID 對應的有效 PNG，否則產生同色彩與首字的預設封面；兩者皆嵌入 `OEBPS/cover.png` 並以 OPF `cover-image` 宣告。獨立封面檔缺失或損壞不會阻斷正文匯出。
 
 ### 跨 store 一致性、刪除與備份
 

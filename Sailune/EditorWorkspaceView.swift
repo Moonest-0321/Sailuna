@@ -58,6 +58,7 @@ struct EditorWorkspaceView: View {
     @State private var isShowingPlanningWorkspace = false
     @State private var hasLoadedPlanningWorkspace = false
     @State private var writingColumnVisibility: NavigationSplitViewVisibility = .automatic
+    @State private var exportRequest: SailuneExportRequest?
 
     private var neighboringSections: (previous: Section?, next: Section?) {
         let sections = BookStructure.orderedSections(in: book)
@@ -177,6 +178,7 @@ struct EditorWorkspaceView: View {
         }
         .onAppear { keyboardMonitor.start() }
         .onDisappear { keyboardMonitor.stop() }
+        .sailuneFileExporter(request: $exportRequest)
     }
 
     @ToolbarContentBuilder
@@ -190,13 +192,13 @@ struct EditorWorkspaceView: View {
                 Button {
                     if let section = selectedSection {
                         let content = ExportManager.exportSectionToTXT(section: section)
-                        ExportManager.presentSavePanel(for: book, defaultName: section.title, fileType: "txt", content: content)
+                        exportRequest = ExportManager.textExportRequest(defaultName: section.title, content: content)
                     } else {
                         let content = ExportManager.exportBookToTXT(book: book)
-                        ExportManager.presentSavePanel(for: book, defaultName: book.title, fileType: "txt", content: content)
+                        exportRequest = ExportManager.textExportRequest(defaultName: book.title, content: content)
                     }
                 } label: { Label("匯出 TXT", systemImage: "doc.text") }
-                Button { EpubExporter.exportBook(book: book) } label: { Label("匯出 EPUB", systemImage: "book.closed") }
+                Button { exportRequest = EpubExporter.exportRequest(book: book) } label: { Label("匯出 EPUB", systemImage: "book.closed") }
             } label: { Label("更多", systemImage: "ellipsis.circle") }
             Button(action: isShowingPlanningWorkspace ? returnToWriting : showPlanningWorkspace) {
                 Label(

@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import AppKit
 import UniformTypeIdentifiers
+import Combine
 
 // MARK: - 主畫面：網格書櫃
 struct ContentView: View {
@@ -846,6 +847,7 @@ struct BookCardView: View {
 // MARK: - 書籍封面
 struct BookCoverArtwork: View {
     let book: Book
+    @State private var coverRevision = 0
 
     private var firstCharacter: String {
         let trimmed = book.title.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -853,6 +855,7 @@ struct BookCoverArtwork: View {
     }
 
     var body: some View {
+        let _ = coverRevision
         Group {
             if let image = BookCoverStore.image(for: book) {
                 Image(nsImage: image)
@@ -869,17 +872,17 @@ struct BookCoverArtwork: View {
             }
         }
         .clipped()
+        .onReceive(NotificationCenter.default.publisher(for: BookCoverStore.didChange)) { notification in
+            guard let changedID = notification.object as? NSUUID,
+                  changedID.uuidString == book.id.uuidString else {
+                return
+            }
+            coverRevision &+= 1
+        }
     }
 
     private var defaultColor: Color {
-        var hash = 0
-        for character in book.title.unicodeScalars {
-            hash = Int(character.value) &+ (hash << 5) &- hash
-        }
-        let red = Double((hash >> 16) & 0xFF) / 255.0 * 0.3 + 0.7
-        let green = Double((hash >> 8) & 0xFF) / 255.0 * 0.3 + 0.7
-        let blue = Double(hash & 0xFF) / 255.0 * 0.3 + 0.7
-        return Color(red: red, green: green, blue: blue)
+        Color(nsColor: BookCoverStore.defaultColor(for: book))
     }
 }
 

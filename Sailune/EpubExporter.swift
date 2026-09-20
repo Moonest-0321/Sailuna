@@ -1,26 +1,25 @@
 import Foundation
 import AppKit
 import SwiftData
+import UniformTypeIdentifiers
 
 // MARK: - EPUB 匯出器（自含：組裝 + stored-only zip + 直存）
 // 設計：epub 規範只要求 mimetype 必須 stored 且為第一個 entry；其餘 entry 允許 stored。
 //       故全部用 stored（不壓縮），無需壓縮演算法，zip 正確性完全可控，零外部依賴。
 enum EpubExporter {
 
-    // MARK: 對外：一鍵匯出整本書為 EPUB
-    @MainActor
-    static func exportBook(book: Book) {
-        let epubData = buildEpub(book: book)
-        ExportManager.presentSavePanel(
-            defaultFileName: sanitize(book.title) + ".epub",
-            fileType: "epub",
-            data: epubData
+    static func exportRequest(book: Book) -> SailuneExportRequest {
+        SailuneExportRequest(
+            document: SailuneExportDocument(data: buildEpub(book: book)),
+            contentType: .epub,
+            defaultFilename: sanitize(book.title) + ".epub"
         )
     }
 
     // MARK: - 組裝 EPUB（回傳 zip 的 Data）
     private static func buildEpub(book: Book) -> Data {
         let sortedVolumes = book.volumes.sorted { $0.sortOrder < $1.sortOrder }
+        let coverImageData = BookCoverStore.displayedCoverPNGData(for: book)
 
         // 建立 volume / section 的 flat 清單（id / 檔名 / 標題 / xhtml 內容）
         struct VolEntry { let id: String; let file: String; let title: String; let xhtml: String; let sections: [SecEntry] }
@@ -63,13 +62,21 @@ enum EpubExporter {
         .cover { text-align: center; margin-top: 28%; }
         .cover .title { font-size: 2.6em; font-weight: bold; }
         .cover .author { font-size: 1.2em; margin-top: 1em; color: #555; }
+        .cover-image-page { margin: 0; padding: 0; text-align: center; }
+        .cover-image-page img { max-width: 100%; max-height: 100vh; width: auto; height: auto; object-fit: contain; }
         .vol-title { text-align: center; margin-top: 30%; font-size: 2em; }
         .sec-title { page-break-before: always; }
         """
 
-        // cover.xhtml（純文字排版封面）
-        let cover = wrapXHTML(title: book.title, body:
-            "<div class=\"cover\"><div class=\"title\">\(escape(book.title))</div><div class=\"author\">\(escape(book.author))</div></div>")
+        // cover.xhtml：輸出畫面實際使用的封面（自訂圖或程式產生的預設封面）。
+        // 只有在圖片生成異常時才保留文字排版作最後 fallback。
+        let coverBody: String
+        if coverImageData != nil {
+            coverBody = "<div class=\"cover-image-page\"><img src=\"cover.png\" alt=\"\(escape(book.title))\"/></div>"
+        } else {
+            coverBody = "<div class=\"cover\"><div class=\"title\">\(escape(book.title))</div><div class=\"author\">\(escape(book.author))</div></div>"
+        }
+        let cover = wrapXHTML(title: book.title, body: coverBody)
 
         // nav.xhtml（EPUB3 導覽文件）
         var navOL = "<li><a href=\"cover.xhtml\">封面</a></li>\n"
@@ -98,6 +105,9 @@ enum EpubExporter {
             <item id="css" href="style.css" media-type="text/css"/>
             <item id="cover" href="cover.xhtml" media-type="application/xhtml+xml"/>
         """
+        if coverImageData != nil {
+            manifest += "\n    <item id=\"cover-image\" href=\"cover.png\" media-type=\"image/png\" properties=\"cover-image\"/>"
+        }
         var spine = """
             <itemref idref="cover"/>
             <itemref idref="nav"/>
@@ -119,6 +129,7 @@ enum EpubExporter {
             <dc:language>zh</dc:language>
             <dc:creator>\(escape(book.author))</dc:creator>
             <meta property="dcterms:modified">\(modified)</meta>
+        \(coverImageData == nil ? "" : "    <meta name=\"cover\" content=\"cover-image\"/>")
           </metadata>
           <manifest>
         \(manifest)
@@ -137,6 +148,9 @@ enum EpubExporter {
         zip.addEntry("OEBPS/nav.xhtml", Data(nav.utf8))
         zip.addEntry("OEBPS/style.css", Data(css.utf8))
         zip.addEntry("OEBPS/cover.xhtml", Data(cover.utf8))
+        if let coverImageData {
+            zip.addEntry("OEBPS/cover.png", coverImageData)
+        }
         for v in volumes {
             zip.addEntry("OEBPS/\(v.file)", Data(v.xhtml.utf8))
             for s in v.sections {

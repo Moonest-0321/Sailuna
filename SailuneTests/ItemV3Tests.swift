@@ -2,6 +2,7 @@ import XCTest
 import SwiftData
 import AppKit
 import SQLite3
+import UniformTypeIdentifiers
 @testable import Sailune
 
 private final class UndoGroupingProbe: NSObject, NSTextViewDelegate {
@@ -19,6 +20,121 @@ private final class UndoGroupingProbe: NSObject, NSTextViewDelegate {
 
 @MainActor
 final class ItemV3Tests: XCTestCase {
+    func testSwiftUIExportRequestsPreserveTXTAndEPUBPayloadsAndNames() throws {
+        let textRequest = ExportManager.textExportRequest(
+            defaultName: "測試/書名",
+            content: "匯出內容"
+        )
+        XCTAssertEqual(textRequest.defaultFilename, "測試_書名.txt")
+        XCTAssertEqual(textRequest.contentType, .plainText)
+        XCTAssertEqual(String(data: textRequest.document.data, encoding: .utf8), "匯出內容")
+
+        let book = Book(title: "EPUB 測試", author: "作者")
+        let epubRequest = EpubExporter.exportRequest(book: book)
+        XCTAssertEqual(epubRequest.defaultFilename, "EPUB 測試.epub")
+        XCTAssertEqual(epubRequest.contentType, .epub)
+        XCTAssertEqual(Array(epubRequest.document.data.prefix(2)), [0x50, 0x4B])
+    }
+
+    func testDebugAndReleaseAllowWritingUserSelectedExportFiles() throws {
+        let testFileURL = URL(fileURLWithPath: #filePath)
+        let projectFileURL = testFileURL
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Sailune.xcodeproj/project.pbxproj")
+        let project = try String(contentsOf: projectFileURL, encoding: .utf8)
+        let targetConfigurations = project.components(separatedBy: "ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;")
+        XCTAssertGreaterThanOrEqual(targetConfigurations.count, 3)
+        for configuration in targetConfigurations.dropFirst().prefix(2) {
+            XCTAssertTrue(
+                configuration.contains("ENABLE_USER_SELECTED_FILES = readwrite;"),
+                "Debug and Release app targets must include user-selected file read/write entitlement."
+            )
+        }
+    }
+
+    func testEpubUsesDisplayedDefaultCoverAndLatestCustomCover() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SailuneEpubCoverTest-\(UUID().uuidString)", isDirectory: true)
+        let book = Book(title: "封面 EPUB 測試", author: "作者")
+        defer {
+            BookCoverStore.setDirectoryOverrideForTesting(nil)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        BookCoverStore.setDirectoryOverrideForTesting(directory)
+
+        let defaultCover = try XCTUnwrap(BookCoverStore.displayedCoverPNGData(for: book))
+        let fallbackEpub = EpubExporter.exportRequest(book: book).document.data
+        XCTAssertTrue(fallbackEpub.containsUTF8("properties=\"cover-image\""))
+        XCTAssertTrue(fallbackEpub.containsUTF8("OEBPS/cover.png"))
+        XCTAssertTrue(fallbackEpub.containsUTF8("<img src=\"cover.png\" alt=\"封面 EPUB 測試\"/>"))
+        XCTAssertNotNil(fallbackEpub.range(of: defaultCover))
+
+        let red = NSColor(calibratedRed: 1, green: 0, blue: 0, alpha: 1)
+        let blue = NSColor(calibratedRed: 0, green: 0, blue: 1, alpha: 1)
+        try BookCoverStore.save(image: testCoverImage(color: red), for: book)
+        let firstPNG = try XCTUnwrap(BookCoverStore.pngData(for: book))
+        let firstEpub = EpubExporter.exportRequest(book: book).document.data
+        XCTAssertTrue(firstEpub.containsUTF8("href=\"cover.png\" media-type=\"image/png\" properties=\"cover-image\""))
+        XCTAssertTrue(firstEpub.containsUTF8("<img src=\"cover.png\" alt=\"封面 EPUB 測試\"/>"))
+        XCTAssertNotNil(firstEpub.range(of: firstPNG))
+
+        try BookCoverStore.save(image: testCoverImage(color: blue), for: book)
+        let replacementPNG = try XCTUnwrap(BookCoverStore.pngData(for: book))
+        let replacementEpub = EpubExporter.exportRequest(book: book).document.data
+        XCTAssertNotEqual(firstPNG, replacementPNG)
+        XCTAssertNil(replacementEpub.range(of: firstPNG))
+        XCTAssertNotNil(replacementEpub.range(of: replacementPNG))
+
+        try BookCoverStore.removeCover(for: book)
+        let removedCoverEpub = EpubExporter.exportRequest(book: book).document.data
+        XCTAssertTrue(removedCoverEpub.containsUTF8("properties=\"cover-image\""))
+        XCTAssertTrue(removedCoverEpub.containsUTF8("OEBPS/cover.png"))
+        XCTAssertNotNil(removedCoverEpub.range(of: defaultCover))
+    }
+
+    func testBookCoverStoreReplacesCachedCoverAndRemovesItInAnIsolatedDirectory() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SailuneCoverTest-\(UUID().uuidString)", isDirectory: true)
+        let book = Book(title: "封面測試", author: "作者")
+        var changedBookIDs: [UUID] = []
+        let observer = NotificationCenter.default.addObserver(
+            forName: BookCoverStore.didChange,
+            object: nil,
+            queue: nil
+        ) { notification in
+            if let changedID = notification.object as? NSUUID,
+               let uuid = UUID(uuidString: changedID.uuidString) {
+                changedBookIDs.append(uuid)
+            }
+        }
+        defer {
+            NotificationCenter.default.removeObserver(observer)
+            BookCoverStore.setDirectoryOverrideForTesting(nil)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        BookCoverStore.setDirectoryOverrideForTesting(directory)
+
+        let firstCover = testCoverImage(color: .systemRed)
+        let replacementCover = testCoverImage(color: .systemBlue)
+        try BookCoverStore.save(image: firstCover, for: book)
+        let displayedFirstCover = try XCTUnwrap(BookCoverStore.image(for: book))
+
+        try BookCoverStore.save(image: replacementCover, for: book)
+        let displayedReplacementCover = try XCTUnwrap(BookCoverStore.image(for: book))
+
+        XCTAssertTrue(BookCoverStore.hasCover(for: book))
+        XCTAssertTrue(displayedFirstCover === firstCover)
+        XCTAssertTrue(displayedReplacementCover === replacementCover)
+        XCTAssertFalse(displayedReplacementCover === firstCover)
+
+        try BookCoverStore.removeCover(for: book)
+
+        XCTAssertFalse(BookCoverStore.hasCover(for: book))
+        XCTAssertNil(BookCoverStore.image(for: book))
+        XCTAssertEqual(changedBookIDs, [book.id, book.id, book.id])
+    }
+
     func testBookStatusDefaultsToDraftAndSupportsAllStatusesWithoutChangingV5Schema() {
         let book = Book(title: "測試書", author: "作者")
 
@@ -29,6 +145,26 @@ final class ItemV3Tests: XCTestCase {
         book.status = .completed
         XCTAssertEqual(book.status, .completed)
     }
+
+    private func testCoverImage(color: NSColor) -> NSImage {
+        let bitmap = NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: 1,
+            pixelsHigh: 1,
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        )!
+        bitmap.setColor(color, atX: 0, y: 0)
+        let image = NSImage(size: NSSize(width: 1, height: 1))
+        image.addRepresentation(bitmap)
+        return image
+    }
+
 
     func testTextViewDelegateUndoRegistrationJoinsTheSameEditingStep() {
         let window = NSWindow(
@@ -1029,5 +1165,11 @@ final class ItemV3Tests: XCTestCase {
     func testTimelineExcerptCountsEmojiAsVisibleCharacters() {
         let value = String(repeating: "🌙", count: 31)
         XCTAssertEqual(TimelineCardProjection.normalizedExcerpt(value).count, 30)
+    }
+}
+
+private extension Data {
+    func containsUTF8(_ text: String) -> Bool {
+        range(of: Data(text.utf8)) != nil
     }
 }

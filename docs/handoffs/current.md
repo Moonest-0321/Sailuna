@@ -2,9 +2,9 @@
 
 > 整體狀態：active
 >
-> 目前階段：V6 首頁完成
+> 目前階段：V6.1 EPUB 自訂封面實檔驗證中
 >
-> 唯一下一步：下一個產品工作需另建工作單。
+> 唯一下一步：取得使用者實際匯出的 EPUB 與失敗畫面，檢查封面資源／OPF／XHTML並確認閱讀器是否快取同一書籍識別碼。
 >
 > 2026-09-18 V5.6 實作：已修正固定匯出路徑、加入六 store／封面完整備份與啟動前安全還原、補齊 AbilityProgress／ItemCopy／V5 settings reconcile、集中產品刪除入口，並讓關鍵儲存失敗可見且 rollback／reload。
 >
@@ -17,6 +17,58 @@
 > 2026-09-18 23:04 編輯器崩潰修正：目前 binary 可在開啟右側「設定集」時重現 AppKit `Update Constraints in Window` 無限重排，最後由 `NSApplication _crashOnException` 形成 `EXC_BREAKPOINT`；不是 store 或作者資料錯誤。已停用系統 `.inspector`，改為工作區內固定 300pt 的第三欄，並為中央編輯區、工作區與設定種類 segmented picker 加入可收斂的尺寸／水平捲動約束。Xcode Debug build 成功，實際作者介面已完成開啟、關閉、再次開啟設定集的冒煙驗證，未再崩潰且未修改作者資料。
 >
 > 2026-09-18 文件整理：新增 `docs/spec-power-v5.5.md`，並同步資料模型、功能盤點、測試基線及 settings V10 遷移說明。V5.0「不連接角色／物品／能力等」保留為第一版歷史邊界，後續 V5.2～V5.6 增量能力分開描述。
+
+## V6.1 EPUB 自訂封面（需求確認中）
+
+- 使用者要求 EPUB 匯出套用書籍目前使用的封面。現況是 `BookCoverStore` 保存 UUID 對應 PNG，但 EPUB 只建立書名／作者文字封面且未宣告 OPF `cover-image`。
+- 建議有自訂封面時嵌入 `OEBPS/cover.png`、在 manifest 宣告 `properties="cover-image"`，並由 `cover.xhtml` 等比例完整顯示；沒有或無法讀取圖片時保留文字封面，不能因此阻止正文匯出。
+- 使用者於 2026-09-20 回覆「是的」，R 已批准。UI 提案為：有圖片時封面頁只顯示等比例置中的同一張 PNG，並由 OPF 封面縮圖引用；沒有圖片時維持書名／作者文字封面，目錄結構不變。U 等待批准，尚未修改功能程式、EPUB 格式或作者資料。
+- 使用者回覆「繼續」，U 已批准。I 提案為：`BookCoverStore` 提供最新 PNG data；`EpubExporter` 有圖時加入 `cover.png`、OPF `cover-image` 與圖片 XHTML，無圖時維持文字 fallback；以隔離封面驗證新增、更換、移除及 EPUB ZIP／manifest。等待批准，尚未修改功能程式。
+- 使用者回覆「確認」，I 已批准並完成。`BookCoverStore` 現直接提供經驗證的最新 PNG data；EPUB 有圖時加入 `OEBPS/cover.png`、OPF `cover-image`／相容 metadata 與等比例圖片封面頁，無圖或移除後維持文字封面。
+- 新增隔離 EPUB 封面測試，覆蓋無封面、首次設定、更換與移除，並確認更換後只嵌入最新 PNG。frontend parse、diff check、專項與完整 145 項 XCTest 通過；未使用正式作者資料。
+- 使用者回報實際閱讀器仍未成功顯示封面，因此上述自動測試不足以證明產品結果，工作重新進入實檔驗證。W3C EPUB 3.3 規格確認 `properties="cover-image"` 是正式封面識別方式；下一步必須檢查使用者實際輸出的 EPUB，並區分檔案未嵌入與閱讀器對固定 `dc:identifier` 的舊封面快取，未取得證據前不再宣稱完成。
+- 使用者提供 `/Users/hsuchengyu/Downloads/孤鷹群舞.epub` 後已解包證實檔內沒有 `cover.png` 或 `cover-image`；書籍 UUID `58D81B57-3063-4803-8E54-A37220B423C1` 在 Covers 目錄也沒有自訂 PNG。畫面使用的是程式依書名產生的首字預設封面，而先前匯出只涵蓋自訂圖片，這是實際根因。
+- 已新增畫面封面 PNG 輸出：有自訂圖片時直接使用最新 PNG，否則以和 `BookCoverArtwork` 共用的書名雜湊色彩產生 1200 × 1800 首字封面；EPUB 兩者都寫入 `OEBPS/cover.png` 並宣告 OPF `cover-image`。移除自訂圖片後回復預設封面。frontend parse、diff check、主機 EPUB 專項測試通過；下一步只需使用者用新建置重新輸出《孤鷹群舞》作實檔驗收。
+
+## V6.1 書籍總覽介面更新（已完成；追加修正需求確認中）
+
+### 第二輪校正（需求確認中，尚未實作）
+
+- 使用者澄清書名／作者不應套用刻意的短欄寬；欄位應從封面右側一路使用至左側資訊面板分割線前的可用空間。目前程式仍有 180 pt 最大寬度，預計在批准後移除並改為剩餘空間響應式排版。
+- 使用者要求「故事背景」改成目前總覽上方的畫面中央彈窗，不再以整頁內容取代總覽。提案會沿用既有 `BookBackgroundView` 與儲存流程，並納入空白遮罩取消及點擊攔截。
+- 使用者第一張 Xcode 截圖顯示同步建立 `NSSavePanel()` 時觸發 `AppKitBreakInDebugger / EXC_BREAKPOINT`；初步判定與 SwiftUI Menu 事件重入有關。後續第二張截圖證實延後至下一個主事件週期仍在 `NSSavePanel()` 初始化崩潰，因此該判斷不足，不能只改呼叫時機。
+- 使用者於 2026-09-20 回覆「繼續」，R 已批准。UI 提案為：書名／作者直接取得封面右側全部剩餘寬度；故事背景以有遮罩、可外點關閉、內容可捲動的中央 overlay 呈現；匯出選單外觀不變，選定格式並結束選單事件後才顯示原生存檔面板。U 等待批准，功能程式尚未修改。
+- 使用者再次回覆「繼續」，U 已批准。I 提案限於：移除欄位 180 pt 上限與推離 Spacer、以父容器尺寸約束的中央 overlay 取代整頁故事背景、由共用 `ExportManager` 延後至下一個主事件週期才建立 `NSSavePanel`。預計執行 parse、專項／完整 XCTest、diff check、Debug build及隔離 UI 冒煙；等待批准，尚未修改功能程式。
+- 使用者第三次回覆「繼續」後曾完成延後 `NSSavePanel` 的版本，但使用者實際在 Xcode 偵錯執行仍重現同一 breakpoint；此版本不再視為完成。
+- 最終已移除產品 TXT／EPUB 匯出的 `NSSavePanel`／`runModal` 路徑，改為共用 `SailuneExportDocument`、`SailuneExportRequest` 與 SwiftUI `fileExporter` modifier；書籍總覽與編輯器的 TXT／EPUB 入口均已切換。
+- frontend parse、diff check、新增 request payload／檔名／UTType 與 entitlement 專項測試，以及主機環境完整 144 項 XCTest 通過。以 `/private/tmp/sailune-v61-fileexporter-smoke` 隔離 store 實際確認總覽 TXT、編輯器 TXT 及編輯器 EPUB 系統輸出面板可開啟／取消，副檔名正確。正式作者資料未使用。
+- 使用者提供完整 `bt` 後，根因確定為 `REPORT_APP_ENTITLEMENTS_INSUFFICIENT`：Debug target 的 `ENABLE_USER_SELECTED_FILES` 是 `readonly`，而 Release 已是 `readwrite`。已把 Debug 改為 `readwrite` 並新增 Debug／Release 專案設定回歸測試。`xcodebuild -showBuildSettings` 與實際簽署 Debug App 的 codesign entitlements 均確認 `com.apple.security.files.user-selected.read-write = true`。
+- 本輪 R／U／I 均已批准並完成；作者資料未修改。
+
+- 使用者已確認需求：把書籍總覽左側面板的封面移到左上角；在封面按右鍵更換圖片；成功更換需立即同步顯示於目前總覽與開始頁書櫃；書名／作者右移並縮短欄寬；簡介與故事背景上移。
+- 已讀取 `BookOverviewView`、`ContentView` 與 `BookCoverStore`。封面目前由獨立 `BookCoverStore` 以書籍 UUID 存檔，總覽與書櫃均經 `BookCoverArtwork` 讀取，預期不用 schema 或儲存格式變更即可共用新封面。
+- 已以實際 App 檢視目前總覽：左側 450 pt 面板依序呈現書名／作者、封面與常駐按鈕、簡介、故事背景、統計。UI 提案將封面與書名／作者併為頂部列，封面右鍵選單保留「更換封面…」及已有自訂封面時的「移除封面」；使用者已確認。
+- 實作計畫：只修改 `BookOverviewView.swift` 的資訊面板與封面操作／錯誤呈現，沿用 `BookCoverStore` 格式；補上隔離暫存目錄的替換／快取／移除回歸測試，並執行 parse、專項／完整 XCTest、diff check、Debug build 與隔離資料人工冒煙。無 schema、遷移、備份格式、書櫃卡版面或 EPUB 封面改動。
+- 已完成 `BookOverviewView` 頂部封面／書名作者列、封面右鍵更換／移除及可見錯誤提示；簡介與故事背景上移。封面覆蓋後藉 `book.updatedAt` 使總覽與書櫃使用相同的新快取圖。
+- 新增隔離目錄封面回歸測試，確認覆蓋會立即替換快取、移除回到預設；三檔 frontend parse、diff check、封面專項與完整 142 項 XCTest、無簽章 Debug build 通過。
+- 以 `/private/tmp` 最新 build 實際確認一般與 300 pt 最小資訊面板的版面，以及預設封面右鍵「更換封面…」選單；未選圖片、覆蓋或移除作者資料。
+
+### 追加修正（尚未實作）
+
+- 使用者回報更換／刪除封面後，書櫃未即時同步；查核確認 `BookCoverArtwork` 沒有訂閱明確封面變更狀態，可能持有舊快取直到 View 重建。追加範圍會建立可觀測的封面 revision，讓總覽與書櫃同步更新。
+- 同時要求放大總覽封面、書名／作者欄靠近資訊面板右側分割線、主視窗有更大初始尺寸，並將總覽目錄的 TXT／EPUB 兩個按鈕收斂為單一「匯出」選單後再選格式與自選輸出位置。
+- 使用者已確認採用封面 112 × 158 pt、視窗 1,280 × 820，且匯出整合只限書籍總覽；編輯器現有「更多」選單維持。
+- UI 提案：封面仍在左上，書名／作者欄靠右側分割線；右鍵更換／移除後總覽與書櫃同步重繪；目錄工具列採單一「匯出」選單，選 TXT 或 EPUB 後以原生存檔面板自選檔名與目的地。尚未修改程式、作者資料或封面。
+- 使用者已確認 UI。實作計畫是：在封面儲存層於成功寫入／移除後發送 UUID 變更通知，所有 `BookCoverArtwork` 訂閱後立即重繪；放大封面並右對齊資訊欄；`WindowGroup.defaultSize(1280×820)`；總覽兩個匯出按鈕改一個 `Menu`。新增通知回歸測試與隔離 UI 冒煙。尚未修改程式、作者資料或封面。
+
+## 書籍刪除後重開復現（診斷完成，未實作修正）
+
+- 已確認首頁刪除會經 `CrossStoreDeletionCoordinator` 明確刪除主 store 書籍與相關模型，並同步 `context.save()`；不是單純從 `@Query` 畫面移除。
+- 實機有兩套不同的 `Sailune-v5.store`：App Sandbox container 現有 3 本，非沙盒 Application Support 舊位置現有 1 本。交替啟動不同簽章／沙盒狀態的建置會切換書庫，形成「刪除後復現」的主要風險。
+- 兩個位置都沒有 pending restore，可排除本次由排程備份還原覆蓋刪除。
+- 現有測試只在同一個 in-memory container 驗證刪除，沒有以檔案 store 釋放／重開驗證。
+- 另有舊 V2／V3 import 邊界：只要舊 store 存在且目標書庫為空，下次啟動可再匯入整批舊書。本機實際位置目前只見舊 V4，不是此次直接來源，但實作時應一併修正。
+- 本輪僅唯讀檢查程式、測試與本機 store 位置；沒有修改、刪除或搬移任何作者資料。
 
 ## V6 首頁響應式搜尋修正（完成）
 

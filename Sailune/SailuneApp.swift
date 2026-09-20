@@ -302,6 +302,7 @@ struct SailuneApp: App {
                 DatabaseStartupFailureView(message: message)
             }
         }
+        .defaultSize(width: 1_280, height: 820)
     }
 }
 

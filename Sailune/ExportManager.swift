@@ -1,9 +1,78 @@
 import Foundation
 import SwiftData
+import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
-// 注意：舊版的 TextFileDocument 已刪除——它需要 import SwiftUI 且無人使用，是死碼。
+struct SailuneExportDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.plainText, .epub, .data] }
+
+    let data: Data
+
+    init(data: Data) {
+        self.data = data
+    }
+
+    init(configuration: ReadConfiguration) throws {
+        data = configuration.file.regularFileContents ?? Data()
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
+    }
+}
+
+struct SailuneExportRequest: Identifiable {
+    let id = UUID()
+    let document: SailuneExportDocument
+    let contentType: UTType
+    let defaultFilename: String
+}
+
+private struct SailuneFileExporterModifier: ViewModifier {
+    @Binding var request: SailuneExportRequest?
+    @State private var errorMessage: String?
+
+    func body(content: Content) -> some View {
+        content
+            .fileExporter(
+                isPresented: Binding(
+                    get: { request != nil },
+                    set: { if !$0 { request = nil } }
+                ),
+                document: request?.document,
+                contentType: request?.contentType ?? .data,
+                defaultFilename: request?.defaultFilename
+            ) { result in
+                request = nil
+                switch result {
+                case .success(let url):
+                    NSWorkspace.shared.selectFile(
+                        url.path,
+                        inFileViewerRootedAtPath: url.deletingLastPathComponent().path
+                    )
+                case .failure(let error):
+                    if (error as NSError).code != NSUserCancelledError {
+                        errorMessage = error.localizedDescription
+                    }
+                }
+            }
+            .alert("匯出失敗", isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { if !$0 { errorMessage = nil } }
+            )) {
+                Button("好", role: .cancel) { errorMessage = nil }
+            } message: {
+                Text(errorMessage ?? "未知錯誤")
+            }
+    }
+}
+
+extension View {
+    func sailuneFileExporter(request: Binding<SailuneExportRequest?>) -> some View {
+        modifier(SailuneFileExporterModifier(request: request))
+    }
+}
 
 struct ExportManager {
 
@@ -79,47 +148,17 @@ struct ExportManager {
         return result
     }
 
-    // MARK: - 存檔
-    @MainActor
-    static func presentSavePanel(for book: Book, defaultName: String, fileType: String, content: String) {
+    static func textExportRequest(defaultName: String, content: String) -> SailuneExportRequest {
         let cleanName = sanitizeFileName(defaultName)
-        let fileName = cleanName.lowercased().hasSuffix(".\(fileType.lowercased())")
+        let fileType = "txt"
+        let fileName = cleanName.lowercased().hasSuffix(".\(fileType)")
             ? cleanName
             : "\(cleanName).\(fileType)"
-        guard let data = content.data(using: .utf8) else {
-            presentError(message: "無法將文字轉換為 UTF-8。")
-            return
-        }
-        presentSavePanel(defaultFileName: fileName, fileType: fileType, data: data)
-    }
-
-    @MainActor
-    static func presentSavePanel(defaultFileName: String, fileType: String, data: Data) {
-        let panel = NSSavePanel()
-        panel.title = "匯出 \(fileType.uppercased())"
-        panel.nameFieldStringValue = defaultFileName
-        if let contentType = UTType(filenameExtension: fileType) {
-            panel.allowedContentTypes = [contentType]
-        }
-        panel.canCreateDirectories = true
-        panel.isExtensionHidden = false
-        guard panel.runModal() == .OK, let url = panel.url else { return }
-        do {
-            try data.write(to: url, options: .atomic)
-            NSWorkspace.shared.selectFile(url.path, inFileViewerRootedAtPath: url.deletingLastPathComponent().path)
-        } catch {
-            presentError(message: error.localizedDescription)
-        }
-    }
-
-    @MainActor
-    private static func presentError(message: String) {
-        let alert = NSAlert()
-        alert.alertStyle = .warning
-        alert.messageText = "匯出失敗"
-        alert.informativeText = message
-        alert.addButton(withTitle: "好")
-        alert.runModal()
+        return SailuneExportRequest(
+            document: SailuneExportDocument(data: Data(content.utf8)),
+            contentType: .plainText,
+            defaultFilename: fileName
+        )
     }
 
     private static func sanitizeFileName(_ name: String) -> String {
