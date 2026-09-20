@@ -171,7 +171,7 @@ enum EditorSaveState: Equatable {
     }
 }
 
-// MARK: - 中文輸入法組字樣式
+// MARK: - 中文輸入法組字樣式（用於短文字欄位）
 final class CompositionUnderlineLayoutManager: NSLayoutManager {
     weak var editorTextView: NSTextView?
 
@@ -211,7 +211,7 @@ class CompositionAwareTextView: NSTextView {
         }
         let range = NSRange(location: 0, length: marked.length)
         if range.length > 0 {
-            // 關閉輸入法的預設底線，改由 CompositionUnderlineLayoutManager 依字形底部繪製。
+            // 短文字欄位沿用既有組字底線繪製方式。
             marked.removeAttribute(.underlineStyle, range: range)
             marked.removeAttribute(.underlineColor, range: range)
             marked.removeAttribute(.backgroundColor, range: range)
@@ -222,7 +222,7 @@ class CompositionAwareTextView: NSTextView {
 }
 
 // MARK: - 自訂 NSTextView 子類
-final class SailuneTextView: CompositionAwareTextView {
+final class SailuneTextView: NSTextView {
     weak var coordinator: RichEditorView.Coordinator?
     override var acceptsFirstResponder: Bool { true }
     override init(frame frameRect: NSRect, textContainer container: NSTextContainer?) {
@@ -641,7 +641,7 @@ struct RichEditorView: NSViewRepresentable {
     }
     private func makeScrollViewAndTextView() -> (NSScrollView, SailuneTextView) {
         let textStorage = NSTextStorage()
-        let layoutManager = CompositionUnderlineLayoutManager()
+        let layoutManager = NSLayoutManager()
         layoutManager.allowsNonContiguousLayout = true
         let textContainer = NSTextContainer(size: NSSize(width: 800, height: CGFloat.greatestFiniteMagnitude))
         textContainer.widthTracksTextView = true
@@ -651,7 +651,6 @@ struct RichEditorView: NSViewRepresentable {
             frame: NSRect(x: 0, y: 0, width: 800, height: 600),
             textContainer: textContainer
         )
-        layoutManager.editorTextView = textView
         textView.isEditable = true
         textView.isSelectable = true
         textView.allowsUndo = true

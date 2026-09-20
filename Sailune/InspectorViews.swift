@@ -478,6 +478,18 @@ enum InspectorRoute: Hashable {
 }
 
 // MARK: - 1. 設定集根視圖
+private enum InspectorCategorySelection: Hashable, Identifiable {
+    case setting(SidebarSettingKey)
+    case simpleOutline
+
+    var id: String {
+        switch self {
+        case .setting(let key): "setting-\(key.rawValue)"
+        case .simpleOutline: "simple-outline"
+        }
+    }
+}
+
 struct InspectorRootView: View {
     let book: Book
     let currentSection: Section?
@@ -492,7 +504,9 @@ struct InspectorRootView: View {
     let planningRecordRequestID: UUID
     let onSelectSection: ((Section) -> Void)?
     let onOpenStoryTag: ((StoryTag) -> Void)?
-    @State private var selectedTab: SidebarSettingKey = .character
+    let onOpenOutlineItem: ((OutlineItem, OutlineItemAnchor) -> Void)?
+    @State private var selectedTab: InspectorCategorySelection = .setting(.character)
+    @State private var outlineTab: SailuneOutlineTab = .narrative
     @State private var showingSidebarSettings = false
     @State private var route: InspectorRoute = .list
     @Environment(V5SettingsStore.self) private var settingsStore
@@ -503,7 +517,7 @@ struct InspectorRootView: View {
     @Query(sort: \Item.updatedAt, order: .reverse) private var allItems: [Item]
     @Query(sort: \CharacterAbility.createdAt) private var allAbilities: [CharacterAbility]
 
-    init(book: Book, currentSection: Section? = nil, focusedCharacter: Character? = nil, focusRequestID: UUID = UUID(), settingsDestination: EditorSettingsDestination? = nil, settingsRequestID: UUID = UUID(), matchedSettingTarget: EditorSettingsTarget? = nil, matchedSettingRequestID: UUID = UUID(), onMatchedSettingHandled: ((UUID) -> Void)? = nil, planningRecordReference: PlanningRecordSourceReference? = nil, planningRecordRequestID: UUID = UUID(), onSelectSection: ((Section) -> Void)? = nil, onOpenStoryTag: ((StoryTag) -> Void)? = nil) {
+    init(book: Book, currentSection: Section? = nil, focusedCharacter: Character? = nil, focusRequestID: UUID = UUID(), settingsDestination: EditorSettingsDestination? = nil, settingsRequestID: UUID = UUID(), matchedSettingTarget: EditorSettingsTarget? = nil, matchedSettingRequestID: UUID = UUID(), onMatchedSettingHandled: ((UUID) -> Void)? = nil, planningRecordReference: PlanningRecordSourceReference? = nil, planningRecordRequestID: UUID = UUID(), onSelectSection: ((Section) -> Void)? = nil, onOpenStoryTag: ((StoryTag) -> Void)? = nil, onOpenOutlineItem: ((OutlineItem, OutlineItemAnchor) -> Void)? = nil) {
         self.book = book
         self.currentSection = currentSection
         self.focusedCharacter = focusedCharacter
@@ -517,6 +531,7 @@ struct InspectorRootView: View {
         self.planningRecordRequestID = planningRecordRequestID
         self.onSelectSection = onSelectSection
         self.onOpenStoryTag = onOpenStoryTag
+        self.onOpenOutlineItem = onOpenOutlineItem
     }
 
     var body: some View {
@@ -525,31 +540,22 @@ struct InspectorRootView: View {
                 WritingReferenceSummaryView(book: book, section: currentSection)
             }
             if route == .list {
-                Group {
-                    if visibleSidebarKeys.isEmpty {
-                        HStack {
-                            Text("目前沒有顯示中的設定集").foregroundStyle(.secondary)
-                            Spacer()
-                            Button("管理設定集") { showingSidebarSettings = true }
-                        }
-                    } else {
-                        HStack(spacing: 8) {
-                            ScrollView(.horizontal) {
-                                Picker("設定種類", selection: $selectedTab) {
-                                    ForEach(visibleSidebarKeys) { key in
-                                        Text(key.title).tag(key)
-                                    }
-                                }
-                                .pickerStyle(.segmented)
+                HStack(spacing: 8) {
+                    ScrollView(.horizontal) {
+                        Picker("", selection: $selectedTab) {
+                            ForEach(visibleSidebarKeys) { key in
+                                Text(key.title).tag(InspectorCategorySelection.setting(key))
                             }
-                            .scrollIndicators(.hidden)
-                            Button { showingSidebarSettings = true } label: {
-                                Image(systemName: "slider.horizontal.3")
-                            }
-                            .buttonStyle(.borderless)
-                            .help("管理設定集顯示")
+                            Text("簡易版大綱").tag(InspectorCategorySelection.simpleOutline)
                         }
+                        .pickerStyle(.segmented)
                     }
+                    .scrollIndicators(.hidden)
+                    Button { showingSidebarSettings = true } label: {
+                        Image(systemName: "slider.horizontal.3")
+                    }
+                    .buttonStyle(.borderless)
+                    .help("管理設定集顯示")
                 }
                 .padding(.horizontal)
                 .padding(.vertical, 8)
@@ -559,7 +565,14 @@ struct InspectorRootView: View {
 
             switch route {
             case .list:
-                if visibleSidebarKeys.isEmpty {
+                if selectedTab == .simpleOutline {
+                    SimpleOutlineInspectorView(
+                        book: book,
+                        onOpenOutlineItem: onOpenOutlineItem,
+                        onSelectSection: onSelectSection,
+                        outlineTab: $outlineTab
+                    )
+                } else if visibleSidebarKeys.isEmpty {
                     ContentUnavailableView("尚未顯示設定集", systemImage: "sidebar.right", description: Text("使用上方的管理設定集重新加入項目。"))
                 } else if activeSidebarKey == .character {
                     CharacterListContainerView(
@@ -637,10 +650,11 @@ struct InspectorRootView: View {
         }
         .task {
             settingsStore.ensureDefaults(for: book.id)
-            selectedTab = activeSidebarKey
+            selectedTab = .setting(activeSidebarKey)
         }
         .onChange(of: visibleSidebarKeys) { _, keys in
-            selectedTab = SidebarSettingCatalog.resolvedSelection(selectedTab, visibleKeys: keys)
+            guard case .setting(let key) = selectedTab else { return }
+            selectedTab = .setting(SidebarSettingCatalog.resolvedSelection(key, visibleKeys: keys))
         }
         .onAppear { showFocusedCharacter() }
         .onChange(of: focusedCharacter?.id) { _, _ in showFocusedCharacter() }
@@ -660,12 +674,18 @@ struct InspectorRootView: View {
     }
 
     private var activeSidebarKey: SidebarSettingKey {
-        SidebarSettingCatalog.resolvedSelection(selectedTab, visibleKeys: visibleSidebarKeys)
+        let key: SidebarSettingKey
+        if case .setting(let selectedKey) = selectedTab {
+            key = selectedKey
+        } else {
+            key = .character
+        }
+        return SidebarSettingCatalog.resolvedSelection(key, visibleKeys: visibleSidebarKeys)
     }
 
     private func showFocusedCharacter() {
         guard let focusedCharacter else { return }
-        selectedTab = .character
+        selectedTab = .setting(.character)
         navigate(to: .detail(focusedCharacter))
     }
 
@@ -674,9 +694,9 @@ struct InspectorRootView: View {
         route = .list
         switch settingsDestination {
         case .item:
-            selectedTab = .item
+            selectedTab = .setting(.item)
         case .ability:
-            selectedTab = .ability
+            selectedTab = .setting(.ability)
         }
     }
 
@@ -692,7 +712,7 @@ struct InspectorRootView: View {
         case .place: targetKey = .place
         case .worldTerm: targetKey = .worldTerm
         }
-        selectedTab = visibleSidebarKeys.contains(targetKey) ? targetKey : activeSidebarKey
+        selectedTab = .setting(visibleSidebarKeys.contains(targetKey) ? targetKey : activeSidebarKey)
 
         switch matchedSettingTarget {
         case .character(let id):
@@ -729,53 +749,53 @@ struct InspectorRootView: View {
             case .appearance:
                 if let source = try modelContext.fetch(FetchDescriptor<CharacterAppearance>()).first(where: { $0.id == reference.id }),
                    let character = source.character {
-                    selectedTab = .character
+                    selectedTab = .setting(.character)
                     navigate(to: .detail(character))
                 }
             case .psychology:
                 if let source = try modelContext.fetch(FetchDescriptor<CharacterPsychology>()).first(where: { $0.id == reference.id }),
                    let character = source.character {
-                    selectedTab = .character
+                    selectedTab = .setting(.character)
                     navigate(to: .detail(character))
                 }
             case .characterItemHistory:
                 if let owner = try modelContext.fetch(FetchDescriptor<CharacterItem>()).first(where: {
                     $0.history.contains { $0.id == reference.id }
                 }), let character = owner.character {
-                    selectedTab = .character
+                    selectedTab = .setting(.character)
                     navigate(to: .detail(character))
                 }
             case .itemHistory:
                 if let item = try modelContext.fetch(FetchDescriptor<Item>()).first(where: {
                     $0.histories.contains { $0.id == reference.id }
                 }) {
-                    selectedTab = .item
+                    selectedTab = .setting(.item)
                     navigate(to: .itemDetail(item, nil))
                 }
             case .itemCopyHistory:
                 if let history = copyStore.histories.first(where: { $0.id == reference.id }),
                    let copy = copyStore.copies.first(where: { $0.id == history.copyID }),
                    let item = try modelContext.fetch(FetchDescriptor<Item>()).first(where: { $0.id == copy.itemID }) {
-                    selectedTab = .item
+                    selectedTab = .setting(.item)
                     navigate(to: .itemCopyDetail(item, copy, nil))
                 }
             case .relationshipHistory:
                 if let relationship = try modelContext.fetch(FetchDescriptor<CharacterRelationship>()).first(where: {
                     $0.history.contains { $0.id == reference.id }
                 }), let character = relationship.sourceCharacter {
-                    selectedTab = .character
+                    selectedTab = .setting(.character)
                     navigate(to: .detail(character))
                 }
             case .abilityHistory:
                 if let history = abilityStore.histories.first(where: { $0.id == reference.id }),
                    let connection = abilityStore.connections.first(where: { $0.id == history.connectionID }),
                    let ability = try modelContext.fetch(FetchDescriptor<CharacterAbility>()).first(where: { $0.id == connection.abilityID }) {
-                    selectedTab = .ability
+                    selectedTab = .setting(.ability)
                     navigate(to: .abilityDetail(ability))
                 } else if let ability = try modelContext.fetch(FetchDescriptor<CharacterAbility>()).first(where: {
                     $0.history.contains { $0.id == reference.id }
                 }) {
-                    selectedTab = .ability
+                    selectedTab = .setting(.ability)
                     navigate(to: .abilityDetail(ability))
                 }
             }
@@ -799,7 +819,6 @@ struct InspectorRootView: View {
         }
     }
 }
-
 private struct ItemListContainerView: View {
     let book: Book
     let currentSection: Section?

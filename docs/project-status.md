@@ -45,6 +45,8 @@
 ## 建議下一步
 
 - 2026-09-21：編輯器「頁面地圖」空白入口 R／U／I 均已批准並完成程式實作：按鈕置於「大綱」與「設定集」之間，點擊只取代中央正文區為空白，工具列與左右側欄保留；同一按鈕再次點擊返回正文。Frontend parse、`git diff --check` 與 macOS Debug build 通過；隔離 UI 冒煙待驗收，未新增資料模型或修改 store。
+- 2026-09-21：右側設定種類列依使用者指定，將「簡易版大綱」納入設定種類，移除「設定集／大綱」外層橫欄及「設定種類」字樣；簡易大綱原有子頁籤與正文跳轉保留。受影響 parse、diff check 與 macOS Debug build 通過，隔離 UI 驗收待完成。
+- 2026-09-21：正文中文輸入改用原生 `NSTextView`／`NSLayoutManager` 組字呈現，避免自訂移除原生組字底線後以 marked range 手動畫線；Inspector 短文字欄位維持原狀。更新編輯器規格；frontend parse、完整 macOS XCTest 與 diff check 通過，原生注音 Enter 確認仍待隔離 UI 驗收。
 - 2026-09-21：V6.2 編輯器工具列按原要求排列，並將右側設定集欄改為滑入／滑出；滑動開合待 macOS Debug build 與隔離資料 UI 驗收，並同步驗收工具列及角色名稱逐字元選取行為。
 - 2026-09-20：修正書籍總覽及編輯器側欄的卷／節拖曳重排卡住與完全無法開始問題。清單列結構固定、拖曳 payload 自帶來源、透明 drop overlay 改為背景接收層；放開時先結束拖放 UI 狀態，下一個主執行緒週期才以無動畫 transaction 更新排序。待使用者新建置驗收實際拖放。
 - 2026-09-20：使用者確認卡住時藍色插入線不消失，因此移除自訂 `DropDelegate`、hover binding 與插入線，改用 SwiftUI 型別化 `.draggable`／`.dropDestination`；完整 Debug build 通過，待新建置實機驗收。

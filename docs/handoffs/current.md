@@ -2,9 +2,9 @@
 
 > 整體狀態：active
 >
-> 目前階段：V6.2 頁面地圖空白入口實作與驗證
+> 目前階段：V6.2 正文中文輸入法修正與 UI 驗證
 >
-> 唯一下一步：以隔離書籍完成頁面地圖 UI 冒煙，驗證保留工具列與左右側欄、按同一按鈕返回正文。
+> 唯一下一步：以隔離書籍及原生注音確認組字底線在 Enter 確認候選字後消失；再驗收右側分類列與頁面地圖。
 
 ## 2026-09-21 V6.2 頁面地圖空白入口（R／U／I approved；實作完成，待 UI 驗收）
 
@@ -15,6 +15,23 @@
 - 受影響 Swift frontend parse、`git diff --check` 及 macOS Debug build 均通過；build 使用 `/private/tmp/sailune-v62-toolbar-build`。
 - 隔離資料 UI 冒煙尚未執行；未人工確認空白中央區、工具列／左右欄保留及正文返回。沒有修改 schema 或 store。
 - 下一步：以隔離書籍實際操作新按鈕，確認進入與返回及保存狀態。
+
+## 2026-09-21 V6.2 右側設定種類列 UI 精簡（實作完成，待 UI 驗收）
+
+- 使用者明確要求將「簡易版大綱」移入設定種類、移除「設定集／大綱」橫欄，並移除「設定種類」字樣。
+- 這是具體、小型的現有 UI 結構調整，依 AGENTS.md 的明確修正例外略過 R／U／I；只重排既有右側入口，未新增資料或其他視覺調整。
+- `WorkspaceInspectorView` 不再呈現外層「設定集／大綱」分段列；原簡易大綱現為設定種類 Picker 的「簡易版大綱」選項，原敘事大綱／時間軸內容與點選項目正文跳轉保留。Picker 不再帶「設定種類」標籤。
+- `InspectorViews.swift`／`TimelineViews.swift` frontend parse、`git diff --check` 與 macOS Debug build（`/private/tmp/sailune-v62-settings-outline-build`）通過。
+- 隔離資料 UI 冒煙待完成；未修改 schema 或 store。下一步與頁面地圖一併驗收右側分類列及進入／返回。
+
+## 2026-09-21 V6.2 正文中文輸入法組字底線（程式修改完成，待 UI 驗收）
+
+- 使用者要求正文中文編輯依 Apple 原生輸入方式，按 Enter 確認候選字後不殘留組字底線。
+- 根因位於正文專用組字覆寫：刪除輸入法 marked text 的原生 underline 屬性，再由自訂 layout manager 依標記範圍手動畫線。正文現改用標準 `NSTextView`／`NSLayoutManager` 流程，角色連結、選字及焦點覆寫保留；Inspector 短文字欄位原樣保留。
+- 更新 `docs/spec-editor.md` 記錄組字底線只在組字期間顯示，Enter 確認後解除標記。
+- 受影響 frontend parse、`git diff --check` 與完整 macOS XCTest 通過（`/private/tmp/sailune-ime-test`）。
+- 探索性無視窗 XCTest 未能建立 AppKit 的 marked-text 狀態，已移除，不當作通過；須使用真正的 macOS 注音輸入法做 UI 驗收。
+- 下一步：以隔離書籍確認注音組字與 Enter 確認；並合併驗收本次右欄分類列及頁面地圖。
 
 ## 2026-09-20 V6.2 編輯頁面 UI 更新
 

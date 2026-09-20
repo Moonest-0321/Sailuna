@@ -8,15 +8,7 @@ private func sailuneDisplayName(_ character: Character) -> String {
     return name.isEmpty ? "角色·\(character.id.uuidString.prefix(4))" : name
 }
 
-// MARK: - 右欄頂端分段
-
-private enum SailuneInspectorTab: String, CaseIterable, Identifiable {
-    case settings = "設定集"
-    case outline = "大綱"
-    var id: String { rawValue }
-}
-
-private enum SailuneOutlineTab: String, CaseIterable, Identifiable {
+enum SailuneOutlineTab: String, CaseIterable, Identifiable {
     case narrative = "敘事大綱"
     case timeline = "時間軸"
     var id: String { rawValue }
@@ -43,55 +35,35 @@ struct WorkspaceInspectorView: View {
     var onSelectSection: ((Section) -> Void)? = nil
     var onOpenStoryTag: ((StoryTag) -> Void)? = nil
     var onOpenOutlineItem: ((OutlineItem, OutlineItemAnchor) -> Void)? = nil
-    @State private var tab: SailuneInspectorTab = .settings
-    @State private var outlineTab: SailuneOutlineTab = .narrative
+    var body: some View {
+        InspectorRootView(
+            book: book,
+            currentSection: currentSection,
+            focusedCharacter: focusedCharacter,
+            focusRequestID: focusRequestID,
+            settingsDestination: settingsDestination,
+            settingsRequestID: settingsRequestID,
+            matchedSettingTarget: matchedSettingTarget,
+            matchedSettingRequestID: matchedSettingRequestID,
+            onMatchedSettingHandled: onMatchedSettingHandled,
+            planningRecordReference: planningRecordReference,
+            planningRecordRequestID: planningRecordRequestID,
+            onSelectSection: onSelectSection,
+            onOpenStoryTag: onOpenStoryTag,
+            onOpenOutlineItem: onOpenOutlineItem
+        )
+        .background(Color.workspacePanelBackground)
+    }
+}
+
+@MainActor
+struct SimpleOutlineInspectorView: View {
+    let book: Book
+    var onOpenOutlineItem: ((OutlineItem, OutlineItemAnchor) -> Void)?
+    var onSelectSection: ((Section) -> Void)?
+    @Binding var outlineTab: SailuneOutlineTab
 
     var body: some View {
-        VStack(spacing: 0) {
-            Picker("", selection: $tab) {
-                ForEach(SailuneInspectorTab.allCases) { t in
-                    Text(t.rawValue).tag(t)
-                }
-            }
-            .pickerStyle(.segmented)
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(Color.workspacePanelBackground)
-            Divider()
-            switch tab {
-            case .settings:
-                InspectorRootView(
-                    book: book,
-                    currentSection: currentSection,
-                    focusedCharacter: focusedCharacter,
-                    focusRequestID: focusRequestID,
-                    settingsDestination: settingsDestination,
-                    settingsRequestID: settingsRequestID,
-                    matchedSettingTarget: matchedSettingTarget,
-                    matchedSettingRequestID: matchedSettingRequestID,
-                    onMatchedSettingHandled: onMatchedSettingHandled,
-                    planningRecordReference: planningRecordReference,
-                    planningRecordRequestID: planningRecordRequestID,
-                    onSelectSection: onSelectSection,
-                    onOpenStoryTag: onOpenStoryTag
-                )
-            case .outline:
-                outlineWorkspace
-            }
-        }
-        .background(Color.workspacePanelBackground)
-        .onAppear { showFocusedCharacter() }
-        .onChange(of: focusedCharacter?.id) { _, _ in showFocusedCharacter() }
-        .onChange(of: focusRequestID) { _, _ in showFocusedCharacter() }
-        .onChange(of: matchedSettingRequestID) { _, _ in tab = .settings }
-    }
-
-    private func showFocusedCharacter() {
-        guard focusedCharacter != nil else { return }
-        tab = .settings
-    }
-
-    private var outlineWorkspace: some View {
         VStack(spacing: 0) {
             Picker("大綱種類", selection: $outlineTab) {
                 ForEach(SailuneOutlineTab.allCases) { outlineTab in
