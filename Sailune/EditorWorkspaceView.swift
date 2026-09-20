@@ -1,6 +1,5 @@
 import SwiftUI
 import SwiftData
-import UniformTypeIdentifiers
 import AppKit
 
 private final class EditorKeyboardMonitor {
@@ -416,18 +415,19 @@ struct EditorSidebarView: View {
     let book: Book
     @Binding var selectedSection: Section?
     let bridge: EditorBridge
+    private let dragCoordinateSpace = "editor-outline-drag"
     @Environment(\.modelContext) private var modelContext
     @Environment(StoryPlanningStore.self) private var planningStore
 
-    @State private var draggingKind: DragKind? = nil
-    @State private var dropTargetSectionID: UUID? = nil
-    @State private var dropTargetSectionEndVolumeID: UUID? = nil
     @State private var collapsedVolumeIDs: Set<UUID> = []
     @State private var renamingID: UUID? = nil
     @State private var renameBuffer: String = ""
     @FocusState private var renameFocused: Bool
     @State private var deleteTarget: DeleteTarget? = nil
     @State private var undoTarget: DeleteTarget? = nil
+    @State private var draggingKind: DragKind?
+    @State private var outlineRowFrames: [OutlineRowID: CGRect] = [:]
+    @State private var outlineDropTarget: OutlineDropTarget?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -449,29 +449,33 @@ struct EditorSidebarView: View {
             .padding(.vertical, 8)
             .background(Color.workspacePanelBackground)
             Divider()
-            List {
-                ForEach(book.volumes.sorted(by: { $0.sortOrder < $1.sortOrder }), id: \.id) { volume in
-                    volumeRow(for: volume)
-                    if !collapsedVolumeIDs.contains(volume.id) {
-                        if volume.sections.isEmpty {
-                            VStack(alignment: .leading, spacing: 6) {
-                                Text("這一卷還沒有節").font(.caption).foregroundStyle(.secondary)
-                                Button("新增第一節", systemImage: "plus") { addSection(to: volume) }
-                                    .buttonStyle(.borderedProminent)
-                            }
-                            .padding(.leading, 38).padding(.vertical, 8)
-                        } else {
-                            ForEach(volume.sections.sorted(by: { $0.sortOrder < $1.sortOrder }), id: \.id) { section in
-                                sectionRow(for: section, in: volume)
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(book.volumes.sorted(by: { $0.sortOrder < $1.sortOrder }), id: \.id) { volume in
+                        volumeRow(for: volume)
+                        Divider()
+                        if !collapsedVolumeIDs.contains(volume.id) {
+                            if volume.sections.isEmpty {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Text("這一卷還沒有節").font(.caption).foregroundStyle(.secondary)
+                                    Button("新增第一節", systemImage: "plus") { addSection(to: volume) }
+                                        .buttonStyle(.borderedProminent)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.leading, 50).padding(.vertical, 8)
+                                Divider()
+                            } else {
+                                ForEach(volume.sections.sorted(by: { $0.sortOrder < $1.sortOrder }), id: \.id) { section in
+                                    sectionRow(for: section, in: volume)
+                                    Divider()
+                                }
                             }
                         }
-                        if draggingSectionInSameVolume(volume.id) { sectionEndZone(for: volume) }
                     }
                 }
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
             .background(Color.workspacePanelBackground)
+            .coordinateSpace(name: dragCoordinateSpace)
         }
         .background(Color.workspacePanelBackground)
         .alert("確認刪除",
@@ -555,7 +559,9 @@ struct EditorSidebarView: View {
             .buttonStyle(.plain) // 使用 plain 避免破壞 List 的選取背景色
                 .help("在此卷新增節")
         }
+        .padding(.horizontal, 12)
         .padding(.vertical, 2)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .contextMenu {
             Button { addSection(to: volume) } label: { Label("新增節", systemImage: "doc.badge.plus") }
@@ -571,11 +577,7 @@ struct EditorSidebarView: View {
         HStack(spacing: 6) {
             Image(systemName: "line.3.horizontal").font(.system(size: 9, weight: .bold)).foregroundStyle(.tertiary)
                 .frame(width: 24, height: 22).contentShape(Rectangle())
-                .onDrag {
-                    clearDragState()
-                    draggingKind = .section(section.id, volumeID: volume.id)
-                    return NSItemProvider(object: NSString(string: section.id.uuidString))
-                }
+                .highPriorityGesture(outlineDragGesture(for: .section(section.id, volumeID: volume.id)))
             Image(systemName: "doc.text").foregroundStyle(.secondary).frame(width: 14)
                 .onTapGesture {
                     commitCurrentRename()
@@ -616,14 +618,15 @@ struct EditorSidebarView: View {
                     selectedSection = section
                 }
         }
-        .padding(.leading, 8).padding(.vertical, 3)
+        .padding(.leading, 20).padding(.trailing, 12).padding(.vertical, 3)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .onDrop(of: [UTType.plainText], delegate: SectionDropDelegate(
-            targetID: section.id, targetVolumeID: volume.id, draggingKind: $draggingKind, highlightID: $dropTargetSectionID,
-            onMove: { draggedID in moveSection(in: volume, draggedID: draggedID, before: section.id) }
-        ))
-        .listRowBackground(selectedSection?.id == section.id ? Color.accentColor.opacity(0.2) : Color.clear)
-        .overlay(alignment: .top) { DropIndicator(active: dropTargetSectionID == section.id) }
+        .outlineGestureRow(
+            id: .section(section.id, volumeID: volume.id),
+            coordinateSpace: dragCoordinateSpace,
+            dropTarget: outlineDropTarget,
+            rowFrames: $outlineRowFrames
+        )
+        .background(selectedSection?.id == section.id ? Color.accentColor.opacity(0.2) : Color.clear)
         .contextMenu {
             Button { startRenaming(id: section.id, currentName: section.title) } label: { Label("重新命名", systemImage: "pencil") }
             Button {
@@ -633,15 +636,6 @@ struct EditorSidebarView: View {
             Divider()
             Button(role: .destructive) { deleteTarget = .section(section) } label: { Label("刪除節", systemImage: "trash") }
         }
-    }
-
-    @ViewBuilder
-    private func sectionEndZone(for volume: Volume) -> some View {
-        DropEndZone(active: dropTargetSectionEndVolumeID == volume.id, label: "放到本卷末尾")
-            .onDrop(of: [UTType.plainText], delegate: SectionEndDropDelegate(
-                targetVolumeID: volume.id, draggingKind: $draggingKind, highlightVolumeID: $dropTargetSectionEndVolumeID,
-                onMoveToEnd: { draggedID in moveSectionToEnd(in: volume, draggedID: draggedID) }
-            ))
     }
 
     @ViewBuilder
@@ -719,28 +713,63 @@ struct EditorSidebarView: View {
     }
 
     // MARK: 拖曳重排
-    private func moveSection(in targetVolume: Volume, draggedID: UUID, before targetID: UUID) {
+    private func outlineDragGesture(for kind: DragKind) -> some Gesture {
+        DragGesture(minimumDistance: 1, coordinateSpace: .named(dragCoordinateSpace))
+            .onChanged { value in
+                if draggingKind != kind { draggingKind = kind }
+                let nextTarget = dropTarget(for: kind, y: value.location.y)
+                if outlineDropTarget != nextTarget { outlineDropTarget = nextTarget }
+            }
+            .onEnded { _ in
+                finishOutlineDrag()
+            }
+    }
+
+    private func dropTarget(for kind: DragKind, y: CGFloat) -> OutlineDropTarget? {
+        guard case .section(let draggedID, let sourceVolumeID) = kind else { return nil }
+        for (rowID, frame) in outlineRowFrames where y >= frame.minY && y <= frame.maxY {
+            guard case .section(let targetID, let targetVolumeID) = rowID,
+                  sourceVolumeID == targetVolumeID,
+                  draggedID != targetID else { continue }
+            return OutlineDropTarget(rowID: rowID, side: y < frame.midY ? .before : .after)
+        }
+        return nil
+    }
+
+    private func finishOutlineDrag() {
+        let kind = draggingKind
+        let target = outlineDropTarget
+        draggingKind = nil
+        outlineDropTarget = nil
+        guard case .section(let draggedID, let volumeID) = kind,
+              let target,
+              case .section(let targetID, let targetVolumeID) = target.rowID,
+              volumeID == targetVolumeID,
+              let volume = book.volumes.first(where: { $0.id == volumeID }) else { return }
+
+        DispatchQueue.main.async {
+            var transaction = Transaction()
+            transaction.animation = nil
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                moveSection(in: volume, draggedID: draggedID, relativeTo: targetID, side: target.side)
+            }
+        }
+    }
+
+    private func moveSection(in targetVolume: Volume, draggedID: UUID, relativeTo targetID: UUID, side: DropInsertionSide) {
         guard draggedID != targetID else { return }
         var sections = targetVolume.sections.sorted { $0.sortOrder < $1.sortOrder }
+        let originalIDs = sections.map(\.id)
         guard let from = sections.firstIndex(where: { $0.id == draggedID }) else { return }
         let item = sections.remove(at: from)
         guard let to = sections.firstIndex(where: { $0.id == targetID }) else { return }
-        sections.insert(item, at: to)
-        for (index, section) in sections.enumerated() { section.sortOrder = index }
-    }
-    private func moveSectionToEnd(in targetVolume: Volume, draggedID: UUID) {
-        var sections = targetVolume.sections.sorted { $0.sortOrder < $1.sortOrder }
-        guard let from = sections.firstIndex(where: { $0.id == draggedID }) else { return }
-        let item = sections.remove(at: from); sections.append(item)
-        for (index, section) in sections.enumerated() { section.sortOrder = index }
-    }
-
-    // MARK: 拖曳狀態
-    private func clearDragState() {
-        draggingKind = nil; dropTargetSectionID = nil; dropTargetSectionEndVolumeID = nil
-    }
-    private func draggingSectionInSameVolume(_ vid: UUID) -> Bool {
-        if case .section(_, let v) = draggingKind, v == vid { return true }; return false
+        sections.insert(item, at: side == .before ? to : to + 1)
+        guard sections.map(\.id) != originalIDs else { return }
+        for (index, section) in sections.enumerated() where section.sortOrder != index {
+            section.sortOrder = index
+        }
+        book.updatedAt = Date()
     }
 
     // MARK: 刪除與 Fallback

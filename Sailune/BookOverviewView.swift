@@ -8,136 +8,64 @@ import AppKit
 enum DragKind: Equatable {
     case volume(UUID)
     case section(UUID, volumeID: UUID)
-    var id: UUID {
-        switch self {
-        case .volume(let id): return id
-        case .section(let id, _): return id
-        }
-    }
 }
 
-// MARK: - 拖曳插入指示線
-struct DropIndicator: View {
-    let active: Bool
-    var body: some View {
-        if active {
-            RoundedRectangle(cornerRadius: 1.5)
-                .fill(Color.accentColor)
-                .frame(height: 3)
-                .padding(.horizontal, 4)
-                .transition(.opacity)
-        }
-    }
+enum OutlineRowID: Hashable {
+    case volume(UUID)
+    case section(UUID, volumeID: UUID)
 }
 
-// MARK: - 末尾 drop 區
-struct DropEndZone: View {
-    let active: Bool
-    let label: String
-    var body: some View {
-        ZStack {
-            if active {
-                RoundedRectangle(cornerRadius: 6)
-                    .strokeBorder(Color.accentColor.opacity(0.5),
-                                  style: StrokeStyle(lineWidth: 1, dash: [4]))
-                    .background(Color.accentColor.opacity(0.06))
-                Text(label).font(.caption2).foregroundStyle(.secondary)
+enum DropInsertionSide: Equatable {
+    case before
+    case after
+}
+
+struct OutlineDropTarget: Equatable {
+    let rowID: OutlineRowID
+    let side: DropInsertionSide
+}
+
+private struct OutlineGestureRowModifier: ViewModifier {
+    let rowID: OutlineRowID
+    let coordinateSpace: String
+    let dropTarget: OutlineDropTarget?
+    @Binding var rowFrames: [OutlineRowID: CGRect]
+
+    func body(content: Content) -> some View {
+        content
+            .onGeometryChange(for: CGRect.self) { geometry in
+                geometry.frame(in: .named(coordinateSpace))
+            } action: { frame in
+                if rowFrames[rowID] != frame {
+                    rowFrames[rowID] = frame
+                }
             }
-        }
-        .frame(height: 28)
-        .frame(maxWidth: .infinity)
-        .contentShape(Rectangle())
-        .clipped()
-        .overlay(alignment: .top) {
-            if active {
-                RoundedRectangle(cornerRadius: 1.5).fill(Color.accentColor).frame(height: 3).padding(.horizontal, 4)
+            .onDisappear { rowFrames.removeValue(forKey: rowID) }
+            .overlay(alignment: dropTarget?.side == .after ? .bottom : .top) {
+                if dropTarget?.rowID == rowID {
+                    RoundedRectangle(cornerRadius: 1.5)
+                        .fill(Color.accentColor)
+                        .frame(height: 3)
+                        .padding(.horizontal, 4)
+                        .allowsHitTesting(false)
+                }
             }
-        }
     }
 }
 
-// MARK: - Drop Delegates
-struct VolumeDropDelegate: DropDelegate {
-    let targetID: UUID
-    @Binding var draggingKind: DragKind?
-    @Binding var highlightID: UUID?
-    let onMove: (UUID) -> Void
-    func validateDrop(info: DropInfo) -> Bool {
-        guard info.hasItemsConforming(to: [.plainText]) else { return false }
-        if case .volume(let did) = draggingKind { return did != targetID }
-        return false
-    }
-    func dropEntered(info: DropInfo) { if validateDrop(info: info) { highlightID = targetID } }
-    func dropExited(info: DropInfo) { if highlightID == targetID { highlightID = nil } }
-    func performDrop(info: DropInfo) -> Bool {
-        highlightID = nil
-        guard case .volume(let did) = draggingKind, validateDrop(info: info) else { return false }
-        onMove(did)
-        draggingKind = nil
-        return true
-    }
-}
-
-struct SectionDropDelegate: DropDelegate {
-    let targetID: UUID
-    let targetVolumeID: UUID
-    @Binding var draggingKind: DragKind?
-    @Binding var highlightID: UUID?
-    let onMove: (UUID) -> Void
-    func validateDrop(info: DropInfo) -> Bool {
-        guard info.hasItemsConforming(to: [.plainText]) else { return false }
-        if case .section(let did, let vid) = draggingKind { return vid == targetVolumeID && did != targetID }
-        return false
-    }
-    func dropEntered(info: DropInfo) { if validateDrop(info: info) { highlightID = targetID } }
-    func dropExited(info: DropInfo) { if highlightID == targetID { highlightID = nil } }
-    func performDrop(info: DropInfo) -> Bool {
-        highlightID = nil
-        guard case .section(let did, _) = draggingKind, validateDrop(info: info) else { return false }
-        onMove(did)
-        draggingKind = nil
-        return true
-    }
-}
-
-struct VolumeEndDropDelegate: DropDelegate {
-    @Binding var draggingKind: DragKind?
-    @Binding var isHighlighted: Bool
-    let onMoveToEnd: (UUID) -> Void
-    func validateDrop(info: DropInfo) -> Bool {
-        guard info.hasItemsConforming(to: [.plainText]) else { return false }
-        if case .volume = draggingKind { return true }
-        return false
-    }
-    func dropEntered(info: DropInfo) { if validateDrop(info: info) { isHighlighted = true } }
-    func dropExited(info: DropInfo) { isHighlighted = false }
-    func performDrop(info: DropInfo) -> Bool {
-        isHighlighted = false
-        guard case .volume(let did) = draggingKind, validateDrop(info: info) else { return false }
-        onMoveToEnd(did)
-        draggingKind = nil
-        return true
-    }
-}
-
-struct SectionEndDropDelegate: DropDelegate {
-    let targetVolumeID: UUID
-    @Binding var draggingKind: DragKind?
-    @Binding var highlightVolumeID: UUID?
-    let onMoveToEnd: (UUID) -> Void
-    func validateDrop(info: DropInfo) -> Bool {
-        guard info.hasItemsConforming(to: [.plainText]) else { return false }
-        if case .section(_, let vid) = draggingKind { return vid == targetVolumeID }
-        return false
-    }
-    func dropEntered(info: DropInfo) { if validateDrop(info: info) { highlightVolumeID = targetVolumeID } }
-    func dropExited(info: DropInfo) { if highlightVolumeID == targetVolumeID { highlightVolumeID = nil } }
-    func performDrop(info: DropInfo) -> Bool {
-        highlightVolumeID = nil
-        guard case .section(let did, _) = draggingKind, validateDrop(info: info) else { return false }
-        onMoveToEnd(did)
-        draggingKind = nil
-        return true
+extension View {
+    func outlineGestureRow(
+        id: OutlineRowID,
+        coordinateSpace: String,
+        dropTarget: OutlineDropTarget?,
+        rowFrames: Binding<[OutlineRowID: CGRect]>
+    ) -> some View {
+        modifier(OutlineGestureRowModifier(
+            rowID: id,
+            coordinateSpace: coordinateSpace,
+            dropTarget: dropTarget,
+            rowFrames: rowFrames
+        ))
     }
 }
 
@@ -412,6 +340,7 @@ struct BookInfoPanel: View {
 struct VolumeSectionTreeView: View {
     let book: Book
     var onSelectSection: ((Section) -> Void)? = nil
+    private let dragCoordinateSpace = "book-overview-outline-drag"
 
     @Environment(\.modelContext) private var modelContext
     @State private var renamingID: UUID? = nil
@@ -420,12 +349,10 @@ struct VolumeSectionTreeView: View {
     @State private var collapsedVolumeIDs: Set<UUID> = []
     @State private var deleteTarget: DeleteTarget? = nil
     @State private var undoTarget: DeleteTarget? = nil
+    @State private var draggingKind: DragKind?
+    @State private var outlineRowFrames: [OutlineRowID: CGRect] = [:]
+    @State private var outlineDropTarget: OutlineDropTarget?
 
-    @State private var draggingKind: DragKind? = nil
-    @State private var dropTargetVolumeID: UUID? = nil
-    @State private var dropTargetSectionID: UUID? = nil
-    @State private var dropTargetVolumeEnd: Bool = false
-    @State private var dropTargetSectionEndVolumeID: UUID? = nil
     @State private var exportRequest: SailuneExportRequest?
 
     var body: some View {
@@ -500,30 +427,33 @@ struct VolumeSectionTreeView: View {
     }
 
     private var listView: some View {
-        List {
-            ForEach(book.volumes.sorted(by: { $0.sortOrder < $1.sortOrder }), id: \.id) { volume in
-                volumeRow(for: volume)
-                if !collapsedVolumeIDs.contains(volume.id) {
-                    if volume.sections.isEmpty {
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text("這一卷還沒有節").font(.subheadline).foregroundStyle(.secondary)
-                            Button("新增第一節", systemImage: "plus") { addSection(to: volume) }
-                                .buttonStyle(.borderedProminent)
-                        }
-                        .padding(.leading, 42).padding(.vertical, 10)
-                    } else {
-                        ForEach(volume.sections.sorted(by: { $0.sortOrder < $1.sortOrder }), id: \.id) { section in
-                            sectionRow(for: section, in: volume)
+        ScrollView {
+            LazyVStack(spacing: 0) {
+                ForEach(book.volumes.sorted(by: { $0.sortOrder < $1.sortOrder }), id: \.id) { volume in
+                    volumeRow(for: volume)
+                    Divider()
+                    if !collapsedVolumeIDs.contains(volume.id) {
+                        if volume.sections.isEmpty {
+                            VStack(alignment: .leading, spacing: 6) {
+                                Text("這一卷還沒有節").font(.subheadline).foregroundStyle(.secondary)
+                                Button("新增第一節", systemImage: "plus") { addSection(to: volume) }
+                                    .buttonStyle(.borderedProminent)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.leading, 54).padding(.vertical, 10)
+                            Divider()
+                        } else {
+                            ForEach(volume.sections.sorted(by: { $0.sortOrder < $1.sortOrder }), id: \.id) { section in
+                                sectionRow(for: section, in: volume)
+                                Divider()
+                            }
                         }
                     }
-                    if draggingSectionInSameVolume(volume.id) { sectionEndZone(for: volume) }
                 }
             }
-            if draggingVolume() { volumeEndZone }
         }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
         .background(Color.appBackground)
+        .coordinateSpace(name: dragCoordinateSpace)
     }
     
     // MARK: 輔助函數：計算節次序號
@@ -540,11 +470,7 @@ struct VolumeSectionTreeView: View {
     private func volumeRow(for volume: Volume) -> some View {
         HStack(spacing: 6) {
             dragHandle
-                .onDrag {
-                    clearDragState()
-                    draggingKind = .volume(volume.id)
-                    return NSItemProvider(object: NSString(string: volume.id.uuidString))
-                }
+                .highPriorityGesture(outlineDragGesture(for: .volume(volume.id)))
             Image(systemName: collapsedVolumeIDs.contains(volume.id) ? "chevron.right" : "chevron.down")
                 .font(.caption).foregroundStyle(.secondary).frame(width: 14)
                 .contentShape(Rectangle())
@@ -577,19 +503,22 @@ struct VolumeSectionTreeView: View {
                     toggleVolume(volume.id)
                 }
         }
+        .padding(.horizontal, 12)
         .padding(.vertical, 2)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
-        .onDrop(of: [UTType.plainText], delegate: VolumeDropDelegate(
-            targetID: volume.id, draggingKind: $draggingKind, highlightID: $dropTargetVolumeID,
-            onMove: { draggedID in moveVolume(draggedID: draggedID, before: volume.id) }
-        ))
+        .outlineGestureRow(
+            id: .volume(volume.id),
+            coordinateSpace: dragCoordinateSpace,
+            dropTarget: outlineDropTarget,
+            rowFrames: $outlineRowFrames
+        )
         .contextMenu {
             Button { addSection(to: volume) } label: { Label("新增節", systemImage: "doc.badge.plus") }
             Button { addVolume() } label: { Label("新增卷", systemImage: "folder.badge.plus") }
             Divider()
             Button(role: .destructive) { deleteTarget = .volume(volume) } label: { Label("刪除卷", systemImage: "trash") }
         }
-        .overlay(alignment: .top) { DropIndicator(active: dropTargetVolumeID == volume.id) }
     }
 
     // MARK: 節的列
@@ -599,11 +528,7 @@ struct VolumeSectionTreeView: View {
         
         HStack(spacing: 6) {
             dragHandle
-                .onDrag {
-                    clearDragState()
-                    draggingKind = .section(section.id, volumeID: volume.id)
-                    return NSItemProvider(object: NSString(string: section.id.uuidString))
-                }
+                .highPriorityGesture(outlineDragGesture(for: .section(section.id, volumeID: volume.id)))
             Image(systemName: "doc.text").foregroundStyle(.secondary).frame(width: 14)
                 .contentShape(Rectangle())
                 .onTapGesture { onSelectSection?(section) }
@@ -638,11 +563,14 @@ struct VolumeSectionTreeView: View {
                     onSelectSection?(section)
                 }
         }
-        .padding(.leading, 8).padding(.vertical, 2)
-        .onDrop(of: [UTType.plainText], delegate: SectionDropDelegate(
-            targetID: section.id, targetVolumeID: volume.id, draggingKind: $draggingKind, highlightID: $dropTargetSectionID,
-            onMove: { draggedID in moveSection(in: volume, draggedID: draggedID, before: section.id) }
-        ))
+        .padding(.leading, 20).padding(.trailing, 12).padding(.vertical, 2)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .outlineGestureRow(
+            id: .section(section.id, volumeID: volume.id),
+            coordinateSpace: dragCoordinateSpace,
+            dropTarget: outlineDropTarget,
+            rowFrames: $outlineRowFrames
+        )
         .contextMenu {
             Button { startRenaming(id: section.id, currentName: section.title) } label: { Label("重新命名", systemImage: "pencil") }
             Button {
@@ -652,25 +580,6 @@ struct VolumeSectionTreeView: View {
             Divider()
             Button(role: .destructive) { deleteTarget = .section(section) } label: { Label("刪除節", systemImage: "trash") }
         }
-        .overlay(alignment: .top) { DropIndicator(active: dropTargetSectionID == section.id) }
-    }
-
-    // MARK: 末尾 drop 區
-    @ViewBuilder
-    private func sectionEndZone(for volume: Volume) -> some View {
-        DropEndZone(active: dropTargetSectionEndVolumeID == volume.id, label: "放到本卷末尾")
-            .onDrop(of: [UTType.plainText], delegate: SectionEndDropDelegate(
-                targetVolumeID: volume.id, draggingKind: $draggingKind, highlightVolumeID: $dropTargetSectionEndVolumeID,
-                onMoveToEnd: { draggedID in moveSectionToEnd(in: volume, draggedID: draggedID) }
-            ))
-    }
-
-    private var volumeEndZone: some View {
-        DropEndZone(active: dropTargetVolumeEnd, label: "放到所有卷之後")
-            .onDrop(of: [UTType.plainText], delegate: VolumeEndDropDelegate(
-                draggingKind: $draggingKind, isHighlighted: $dropTargetVolumeEnd,
-                onMoveToEnd: { draggedID in moveVolumeToEnd(draggedID: draggedID) }
-            ))
     }
 
     // MARK: 拖曳把手
@@ -742,55 +651,85 @@ struct VolumeSectionTreeView: View {
         onSelectSection?(newSection)
     }
 
-    private func moveVolume(draggedID: UUID, before targetID: UUID) {
-        guard draggedID != targetID else { return }
-        var arr = book.volumes.sorted { $0.sortOrder < $1.sortOrder }
-        guard let from = arr.firstIndex(where: { $0.id == draggedID }) else { return }
-        let item = arr.remove(at: from)
-        guard let to = arr.firstIndex(where: { $0.id == targetID }) else { return }
-        arr.insert(item, at: to)
-        for (i, v) in arr.enumerated() { v.sortOrder = i }
-        book.updatedAt = Date()
-    }
-    private func moveSection(in volume: Volume, draggedID: UUID, before targetID: UUID) {
-        guard draggedID != targetID else { return }
-        var arr = volume.sections.sorted { $0.sortOrder < $1.sortOrder }
-        guard let from = arr.firstIndex(where: { $0.id == draggedID }) else { return }
-        let item = arr.remove(at: from)
-        guard let to = arr.firstIndex(where: { $0.id == targetID }) else { return }
-        arr.insert(item, at: to)
-        for (i, s) in arr.enumerated() { s.sortOrder = i }
-        book.updatedAt = Date()
-    }
-    private func moveVolumeToEnd(draggedID: UUID) {
-        var arr = book.volumes.sorted { $0.sortOrder < $1.sortOrder }
-        guard let from = arr.firstIndex(where: { $0.id == draggedID }) else { return }
-        let item = arr.remove(at: from); arr.append(item)
-        for (i, v) in arr.enumerated() { v.sortOrder = i }
-        book.updatedAt = Date()
-    }
-    private func moveSectionToEnd(in volume: Volume, draggedID: UUID) {
-        var arr = volume.sections.sorted { $0.sortOrder < $1.sortOrder }
-        guard let from = arr.firstIndex(where: { $0.id == draggedID }) else { return }
-        let item = arr.remove(at: from); arr.append(item)
-        for (i, s) in arr.enumerated() { s.sortOrder = i }
-        book.updatedAt = Date()
+    private func outlineDragGesture(for kind: DragKind) -> some Gesture {
+        DragGesture(minimumDistance: 1, coordinateSpace: .named(dragCoordinateSpace))
+            .onChanged { value in
+                if draggingKind != kind { draggingKind = kind }
+                let nextTarget = dropTarget(for: kind, y: value.location.y)
+                if outlineDropTarget != nextTarget { outlineDropTarget = nextTarget }
+            }
+            .onEnded { _ in
+                finishOutlineDrag()
+            }
     }
 
-    private func clearDragState() {
+    private func dropTarget(for kind: DragKind, y: CGFloat) -> OutlineDropTarget? {
+        for (rowID, frame) in outlineRowFrames where y >= frame.minY && y <= frame.maxY {
+            let isAccepted: Bool
+            switch (kind, rowID) {
+            case (.volume(let draggedID), .volume(let targetID)):
+                isAccepted = draggedID != targetID
+            case (.section(let draggedID, let sourceVolumeID), .section(let targetID, let targetVolumeID)):
+                isAccepted = sourceVolumeID == targetVolumeID && draggedID != targetID
+            default:
+                isAccepted = false
+            }
+            if isAccepted {
+                return OutlineDropTarget(rowID: rowID, side: y < frame.midY ? .before : .after)
+            }
+        }
+        return nil
+    }
+
+    private func finishOutlineDrag() {
+        let kind = draggingKind
+        let target = outlineDropTarget
         draggingKind = nil
-        dropTargetVolumeID = nil
-        dropTargetSectionID = nil
-        dropTargetVolumeEnd = false
-        dropTargetSectionEndVolumeID = nil
+        outlineDropTarget = nil
+        guard let kind, let target else { return }
+
+        DispatchQueue.main.async {
+            var transaction = Transaction()
+            transaction.animation = nil
+            transaction.disablesAnimations = true
+            withTransaction(transaction) {
+                switch (kind, target.rowID) {
+                case (.volume(let draggedID), .volume(let targetID)):
+                    moveVolume(draggedID: draggedID, relativeTo: targetID, side: target.side)
+                case (.section(let draggedID, let volumeID), .section(let targetID, let targetVolumeID))
+                    where volumeID == targetVolumeID:
+                    guard let volume = book.volumes.first(where: { $0.id == volumeID }) else { return }
+                    moveSection(in: volume, draggedID: draggedID, relativeTo: targetID, side: target.side)
+                default:
+                    break
+                }
+            }
+        }
     }
-    private func draggingVolume() -> Bool {
-        if case .volume = draggingKind { return true }
-        return false
+
+    private func moveVolume(draggedID: UUID, relativeTo targetID: UUID, side: DropInsertionSide) {
+        guard draggedID != targetID else { return }
+        var arr = book.volumes.sorted { $0.sortOrder < $1.sortOrder }
+        let originalIDs = arr.map(\.id)
+        guard let from = arr.firstIndex(where: { $0.id == draggedID }) else { return }
+        let item = arr.remove(at: from)
+        guard let to = arr.firstIndex(where: { $0.id == targetID }) else { return }
+        arr.insert(item, at: side == .before ? to : to + 1)
+        guard arr.map(\.id) != originalIDs else { return }
+        for (i, v) in arr.enumerated() where v.sortOrder != i { v.sortOrder = i }
+        book.updatedAt = Date()
     }
-    private func draggingSectionInSameVolume(_ vid: UUID) -> Bool {
-        if case .section(_, let v) = draggingKind, v == vid { return true }
-        return false
+    private func moveSection(in volume: Volume, draggedID: UUID, relativeTo targetID: UUID, side: DropInsertionSide) {
+        guard draggedID != targetID else { return }
+        var arr = volume.sections.sorted { $0.sortOrder < $1.sortOrder }
+        let originalIDs = arr.map(\.id)
+        guard let from = arr.firstIndex(where: { $0.id == draggedID }) else { return }
+        let item = arr.remove(at: from)
+        guard let to = arr.firstIndex(where: { $0.id == targetID }) else { return }
+        arr.insert(item, at: side == .before ? to : to + 1)
+        guard arr.map(\.id) != originalIDs else { return }
+        for (i, s) in arr.enumerated() where s.sortOrder != i { s.sortOrder = i }
+        book.updatedAt = Date()
     }
 
     private func performDelete(_ target: DeleteTarget) {

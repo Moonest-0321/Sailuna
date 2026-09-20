@@ -2,9 +2,25 @@
 
 > 整體狀態：active
 >
-> 目前階段：V6.1 EPUB 自訂封面實檔驗證中
+> 目前階段：書籍目錄拖曳重排穩定性修正中
 >
-> 唯一下一步：取得使用者實際匯出的 EPUB 與失敗畫面，檢查封面資源／OPF／XHTML並確認閱讀器是否快取同一書籍識別碼。
+> 唯一下一步：請使用者在新建置驗收總覽與編輯器側欄的同卷節次拖放；封面新建置實檔驗收仍待使用者執行。
+
+## 2026-09-20 書籍目錄拖曳重排
+
+- 使用者直接要求讓拖曳順暢且不要卡住；程式搜尋確認拖曳入口是書籍總覽目錄和編輯器側欄節次排序。
+- 根因風險：dragging state 會在 `List` 中條件式新增末尾 drop rows；`performDrop` 直接在原生拖曳回呼內同步更新一批 SwiftData sortOrder，造成清單正在拖曳時改變結構／重排。
+- 第一版曾使用含 hover indicator 的 `OutlineRowDropModifier`，後因使用者實測藍線殘留而被最終型別化拖放實作取代；List rows 始終不在拖曳期間新增／刪除。
+- 拖曳識別資料改隨 `NSItemProvider` 傳遞，取消拖曳不會留下父層 drag state；取得 payload 後才在主執行緒套用排序，且只更新實際位移項目。
+- 「完全不能拖曳」的直接原因已定位：drop surface 被改成透明 overlay 後覆蓋拖曳把手，來源 `onDrag` 無法開始。現已移回背景層，payload 改用原生 `NSString` item provider，接收端以 `loadObject` 讀取。
+- 後續「放開後卡頓」定位為 drop 結束狀態和 SwiftData 排序在同一個主執行緒 pass 內競爭：現先清除列內插入狀態，下一個 pass 才在停用動畫的 transaction 內重排，避免 `List` 在 AppKit 結束 drag session 前重建列。
+- 使用者實測藍色線持續亮著且全介面無法操作，確認自訂 delegate 本身仍卡在 hover 狀態。最終修正已刪除整套 `DropDelegate`／hover binding／藍線，來源與接收改用 SwiftUI `String` 型別化 `.draggable`／`.dropDestination`，drop closure 返回後再排程無動畫資料更新。
+- 型別化原生拖放仍被使用者確認會短暫鎖住，因此上述方案也已被取代。現行最終實作不進入原生 drag session：把手是 `DragGesture`，列 frame 經 preference 收集，目標上／下半顯示自訂藍線；手勢結束先清狀態，下一個 pass 才重排。程式內已無任何原生 drag/drop API。
+- 純手勢第一版被使用者回報完全無法拖曳；原因風險是 `List` 列選取攔截一般 gesture，且 hosting row 可能隔離 preference。已改為把手 `highPriorityGesture(minimumDistance: 1)`，並以每列 `onGeometryChange` 直接寫入 frame map，不再依賴跨 List row 的 PreferenceKey。
+- 使用者確認第二卷多個節也無法拖曳，因此排除同卷目標不足。確定的實作缺口是 macOS `List` 的 AppKit `NSTableView`／獨立 hosting row 仍會攔截列內 `DragGesture`，而 `highPriorityGesture` 無法跨 AppKit 事件邊界解決；named coordinate space 也不應跨 hosting rows 做命中。
+- 最終修正將書籍總覽與編輯器側欄的目錄改為 `ScrollView`＋`LazyVStack`，使拖曳把手、列 frame 與命中座標都在同一 SwiftUI 視圖樹。只允許同卷排序的規則維持不變。
+- 驗證：Swift parse、主機 Debug build、完整 145 項 XCTest 與 `git diff --check` 通過。另以 SQLite `.backup` 建立 `/private/tmp/sailune-drag-ui-smoke.*` 隔離快照啟動新建置；編輯器側欄與書籍總覽均實際完成同卷前移，總覽亦驗證末列下半放置。正式 store 未被寫入。
+- 本次只修改 `Sailune/BookOverviewView.swift`、`Sailune/EditorWorkspaceView.swift` 及工作文件；未改 schema、封面、正文或正式使用者 store。
 >
 > 2026-09-18 V5.6 實作：已修正固定匯出路徑、加入六 store／封面完整備份與啟動前安全還原、補齊 AbilityProgress／ItemCopy／V5 settings reconcile、集中產品刪除入口，並讓關鍵儲存失敗可見且 rollback／reload。
 >

@@ -44,6 +44,12 @@
 
 ## 建議下一步
 
+- 2026-09-20：修正書籍總覽及編輯器側欄的卷／節拖曳重排卡住與完全無法開始問題。清單列結構固定、拖曳 payload 自帶來源、透明 drop overlay 改為背景接收層；放開時先結束拖放 UI 狀態，下一個主執行緒週期才以無動畫 transaction 更新排序。待使用者新建置驗收實際拖放。
+- 2026-09-20：使用者確認卡住時藍色插入線不消失，因此移除自訂 `DropDelegate`、hover binding 與插入線，改用 SwiftUI 型別化 `.draggable`／`.dropDestination`；完整 Debug build 通過，待新建置實機驗收。
+- 2026-09-20：型別化原生拖放仍短暫鎖住後，卷／節排序改為純 SwiftUI `DragGesture`＋列 frame preference，不再進入 AppKit drag session；保留藍色前／後位置線，手勢結束後才無動畫排序。完整 Debug build 通過，待新建置實機驗收。
+- 2026-09-20：純手勢版補強為把手高優先級手勢，列位置由 `onGeometryChange` 直接回寫，避免 macOS List 攔截手勢或隔離 PreferenceKey；Debug build 通過。
+- 2026-09-20：使用者確認多節的第二卷仍無法拖曳，因此目錄最終由 AppKit-backed `List` 改為 `ScrollView`＋`LazyVStack`，使純 SwiftUI 拖曳與列命中共用同一視圖樹。隔離 SQLite 快照已實際驗證總覽、編輯器側欄同卷前移及總覽末尾放置；主機 Debug build 與完整 145 項 XCTest 通過。
+
 - 2026-09-14：完成 V5.1 地點與世界條目階段 A：settings 升級至 V4，補上自由文字欄位、列表搜尋、詳細編輯與每書隔離測試；完整 106 項 XCTest 與 Debug 測試建置通過，正式作者資料未用於測試。
 - 2026-09-18：完成 V5.5 正式規格與文件一致性整理；保留 V5.0 不建立跨模組連接的歷史邊界，並將 V5.2～V5.6 的後續連接能力與 settings V10 遷移現況同步到長期文件。
 - 2026-09-18：完成 V5.6 資料可靠性實作：自選 TXT／EPUB 路徑、六 store／封面完整備份與安全還原、集中刪除、跨 store reconcile 及儲存錯誤回報；完整 140 項 XCTest 與 Debug／Release build 通過。

@@ -2,9 +2,52 @@
 
 > 整體狀態：active
 >
-> 目前階段：V6.1 EPUB 畫面封面修正完成，待使用者實檔驗收
+> 目前階段：書籍目錄拖曳重排穩定性修正中
 >
-> 單一下一步：請使用者以新建置重新匯出《孤鷹群舞》，確認閱讀器顯示與 Sailune 畫面相同的封面。
+> 單一下一步：請使用者以新建置驗收書籍總覽與編輯器側欄的同卷節次重排。
+
+## 書籍目錄拖曳重排穩定性
+
+> 狀態：active
+>
+> 階段：implementation_verification
+>
+> 更新時間：2026-09-20（Asia/Taipei）
+
+### 目標與範圍
+
+- 使用者要求修正拖曳功能，避免操作時介面卡住。
+- 範圍限於書籍總覽與編輯器側欄的卷／節目錄重排；本程式目前的拖曳入口均為這兩處。
+- 驗收條件：拖曳期間清單列結構保持固定；上半列／下半列明確代表插入前／後；拖到最後一列下半可移至末尾；放開後排序更新；未實際移動項目不寫排序值；取消拖曳後沒有殘留插入提示。
+- 非目標：不改書籍資料模型、卷節關係、排序持久格式、封面與正文拖曳／匯入。
+
+### 批准與實作理由
+
+| 關卡 | 狀態 | 說明 |
+|---|---|---|
+| R：需求 | approved | 使用者直接要求修正既有拖曳卡住問題，範圍限定目錄重排。 |
+| U：UI | not_applicable | 保留原有拖曳把手、列版面與藍色插入線；放置點以目標列上半／下半判定前後位置。 |
+| I：實作 | approved | 使用者直接授權調整；依目前程式中拖曳時動態插列及 performDrop 內同步改排序的風險採固定列結構、延後提交及最少排序欄位更新。 |
+
+### 實作與驗證
+
+- 早期方案曾改用型別化列式 drop modifier，並移除自訂 hover 狀態與插入線；後續因系統 drag session 仍會鎖住界面而取代。
+- 拖曳期間不再插入末尾 drop row；每列上半／下半分別代表前／後，所以末列下半能放到末尾，目錄不必在拖曳期間改變 row count。
+- 早期原生拖放方案曾將卷／節類型與 UUID 放入 payload；目前純手勢方案改由視圖私有 `draggingKind` 追蹤，手勢結束時先清狀態，下一個主執行緒週期再排序。
+- 僅更新實際位移區段中 `sortOrder` 改變的模型，避免在系統拖放回呼中逐列觸發 SwiftData／List 重建。
+- 找到「完全不能拖曳」的直接回歸原因：整列 drop surface 曾以透明 overlay 放在內容上方，攔截了拖曳把手的滑鼠事件。已改回背景接收層，並以 `NSItemProvider(object: NSString)` 傳遞原生文字 payload。
+- 使用者回報放開後會卡頓：接收端原本在同一個主執行緒 pass 先改排序、再清除列內插入狀態，會讓 `List` 在 AppKit 尚未結束 drag session 時重建來源／目標列。現改為第一個 pass 只清除插入線，下一個 pass 才以停用動畫的 SwiftUI transaction 套用最少排序更新。
+- 使用者再次確認卡住時藍色插入線持續亮著，證明自訂 `DropDelegate` 的 hover binding 沒有結束而非單純排序耗時。已移除 `DropDelegate`、`onDrop`、手動 hover state 與藍色插入線，改用 `String` 的 `.draggable`／`.dropDestination`；放置 closure 回傳後才無動畫重排，不再存在可殘留的拖放 UI state。
+- 使用者實測型別化系統拖放仍會短暫鎖住，且希望保留位置提示。最終方案已完全退出 macOS／AppKit 原生拖放工作階段：把手使用 `DragGesture`，各列以 preference 回報同一座標空間中的 frame，游標落在列上／下半時顯示藍色線；`onEnded` 先同步清除拖曳／目標狀態，再於下一個 pass 無動畫更新排序。程式搜尋確認兩個拖曳畫面已無 `.draggable`、`.dropDestination`、`onDrag`、`onDrop` 或 `DropDelegate`。
+- 使用者回報純手勢版完全拖不動。檢查後修正兩個 macOS `List` 整合點：把手改用 `highPriorityGesture`，避免列選取先攔截；列 frame 不再透過可能被 `List` hosting row 隔離的 `PreferenceKey` 傳遞，改用 `onGeometryChange` 直接回寫共用 frame map。最小拖動距離由 3 降至 1 pt。
+- 使用者進一步確認第二卷的多個節也完全無法拖曳，排除「同卷無合法目標」。根因是 macOS `List` 由 AppKit `NSTableView` 與獨立 hosting rows 承載，列內的純 SwiftUI `DragGesture` 即使使用 `highPriorityGesture` 仍無法穩定取得指標事件，且 named coordinate space 不適合跨 hosting row 命中。
+- 總覽與編輯器側欄已改用 `ScrollView`＋`LazyVStack`；拖曳把手、列 frame 與 named coordinate space 現在位於同一 SwiftUI 視圖樹。保留只能同卷排序、上／下半插入、末列下半移至末尾，不改 schema 或卷節關係。
+- 驗證：兩個 Swift 檔 `swiftc -frontend -parse` 通過；主機 Debug build 與完整 145 項 XCTest 通過；`git diff --check` 通過。建置命令使用 `/private/tmp/sailune-drag-scroll-derived-host`，測試使用 `/private/tmp/sailune-drag-scroll-tests`。
+- UI 冒煙使用 `/private/tmp/sailune-drag-ui-smoke.*` 的 SQLite 一致性快照，未寫入正式 store。編輯器側欄已實際將第 2 節移到第 1 節前；書籍總覽已實際前移節次，並將第 1 節拖到末列下半移回卷末，節次編號均立即更新。
+
+## 待驗收：V6.1 EPUB 畫面封面
+
+- 封面匯出修正已完成，唯一待辦是以新建置重新匯出《孤鷹群舞》並在目標閱讀器確認封面顯示。
 
 ## V6.1 EPUB 使用書籍封面
 
