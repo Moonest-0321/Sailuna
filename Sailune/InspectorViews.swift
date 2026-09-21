@@ -116,6 +116,34 @@ struct InspectorSectionNameMatcher {
     }
 }
 
+enum CharacterDetailPreviewOrdering {
+    static func latest<Value>(
+        in values: [Value],
+        updatedAt: (Value) -> Date,
+        id: (Value) -> UUID
+    ) -> Value? {
+        values.max { lhs, rhs in
+            let lhsDate = updatedAt(lhs)
+            let rhsDate = updatedAt(rhs)
+            if lhsDate != rhsDate { return lhsDate < rhsDate }
+            return id(lhs).uuidString < id(rhs).uuidString
+        }
+    }
+
+    static func last<Value>(
+        in values: [Value],
+        sortOrder: (Value) -> Double,
+        id: (Value) -> UUID
+    ) -> Value? {
+        values.max { lhs, rhs in
+            let lhsOrder = sortOrder(lhs)
+            let rhsOrder = sortOrder(rhs)
+            if lhsOrder != rhsOrder { return lhsOrder < rhsOrder }
+            return id(lhs).uuidString < id(rhs).uuidString
+        }
+    }
+}
+
 struct InspectorLinkedItemsRow: View {
     let title: String
     let entries: [InspectorLinkedEntry]
@@ -1974,12 +2002,16 @@ struct CharacterDetailView: View {
     let onOpenAbility: (CharacterAbility) -> Void
     let onSelectSection: ((Section) -> Void)?
     @Environment(\.modelContext) private var modelContext
+    @Environment(AbilityProgressStore.self) private var abilityStore
+    @Environment(ItemCopyStore.self) private var copyStore
     @Query private var allProfiles: [CharacterProfile]
     @Query private var allAliases: [CharacterAlias]
     @Query private var allAbilities: [CharacterAbility]
+    @Query private var allNodes: [Node]
     @Query private var allAppearances: [CharacterAppearance]
     @Query private var allPsychologies: [CharacterPsychology]
     @Query private var allCharacterItems: [CharacterItem]
+    @Query private var allItems: [Item]
     @Query private var allRelationships: [CharacterRelationship]
     @Query private var allEvents: [Event]
     @State private var realNameBeforeEditing = ""
@@ -1992,12 +2024,34 @@ struct CharacterDetailView: View {
     }
 
     private var aliases: [CharacterAlias] { allAliases.filter { $0.character?.id == character.id } }
-    private var abilities: [CharacterAbility] { allAbilities.filter { $0.character?.id == character.id } }
     private var appearances: [CharacterAppearance] { allAppearances.filter { $0.character?.id == character.id } }
     private var psychologies: [CharacterPsychology] { allPsychologies.filter { $0.character?.id == character.id } }
-    private var characterItems: [CharacterItem] { allCharacterItems.filter { $0.character?.id == character.id } }
     private var relationships: [CharacterRelationship] { allRelationships.filter { $0.sourceCharacter?.id == character.id } }
-    private var events: [Event] { allEvents.filter { $0.characters.contains { $0.id == character.id } } }
+    private var abilityConnections: [CharacterAbilityConnection] {
+        abilityStore.connections.filter { $0.characterID == character.id }
+    }
+    private var itemHoldings: [ItemCopyHolding] {
+        copyStore.holdings.filter { $0.characterID == character.id }
+    }
+    private var timelineEntries: [CharacterTimelineProjection] {
+        CharacterTimelineProjectionBuilder.build(
+            characterID: character.id,
+            abilities: allAbilities,
+            abilityConnections: abilityStore.connections,
+            abilityHistories: abilityStore.histories,
+            abilityLevels: abilityStore.levels,
+            nodes: allNodes,
+            appearances: allAppearances,
+            psychologies: allPsychologies,
+            characterItems: allCharacterItems,
+            itemCopies: copyStore.copies,
+            copyHoldings: copyStore.holdings,
+            copyHistories: copyStore.histories,
+            items: allItems,
+            relationships: allRelationships,
+            events: allEvents
+        )
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -2043,11 +2097,11 @@ struct CharacterDetailView: View {
 
                     CharacterReferenceSectionsView(character: character, book: book, onSelectSection: onSelectSection)
 
-                    detailSection("摘要", systemImage: "text.quote", summary: "角色重點") {
+                    staticDetailSection("摘要", systemImage: "text.quote") {
                         CharacterSummarySectionView(character: character)
                     }
 
-                    detailSection("基本資訊", systemImage: "person.text.rectangle", summary: basicInfoSummary) {
+                    detailSection("基本資訊", systemImage: "person.text.rectangle", preview: basicInfoSummary) {
                         labeledField("UID") {
                             Text(String(format: "%06d", character.sortOrder + 1))
                                 .foregroundStyle(.secondary)
@@ -2090,29 +2144,29 @@ struct CharacterDetailView: View {
                         textEditorField("私人備註 / 非血緣關係", text: $character.notes)
                     }
 
-                    detailSection("別名", systemImage: "person.badge.key", summary: compactSummary(aliases.map(\.name))) {
+                    detailSection("別名", systemImage: "person.badge.key", preview: latestAliasPreview) {
                         CharacterAliasSectionView(character: character) { alias, oldName, newName in
                             commitAliasNameChange(alias, from: oldName, to: newName)
                         }
                     }
 
-                    detailSection("能力", systemImage: "sparkles", summary: compactSummary(abilities.map(\.name))) {
+                    detailSection("能力", systemImage: "sparkles", preview: latestAbilityPreview) {
                         CharacterAbilitySectionView(character: character, book: book, onOpenAbility: onOpenAbility)
                     }
 
-                    detailSection("外觀", systemImage: "person.crop.rectangle", summary: countSummary(appearances.count)) {
+                    detailSection("外觀", systemImage: "person.crop.rectangle", preview: latestAppearancePreview) {
                         CharacterAppearanceSectionView(character: character, book: book)
                     }
 
-                    detailSection("心理", systemImage: "brain.head.profile", summary: countSummary(psychologies.count)) {
+                    detailSection("心理", systemImage: "brain.head.profile", preview: latestPsychologyPreview) {
                         CharacterPsychologySectionView(character: character, book: book)
                     }
 
-                    detailSection("物品", systemImage: "shippingbox", summary: compactSummary(characterItems.compactMap { $0.item?.name })) {
+                    detailSection("物品", systemImage: "shippingbox", preview: latestItemPreview) {
                         CharacterItemSectionView(character: character, book: book, onOpenItem: onOpenItem)
                     }
 
-                    detailSection("關係", systemImage: "point.3.connected.trianglepath.dotted", summary: compactSummary(relationships.compactMap { $0.targetCharacter?.realName })) {
+                    detailSection("關係", systemImage: "point.3.connected.trianglepath.dotted", preview: latestRelationshipPreview) {
                         Button(action: onShowGraph) {
                             Label("開啟關係網", systemImage: "point.3.connected.trianglepath.dotted")
                                 .frame(maxWidth: .infinity)
@@ -2120,7 +2174,7 @@ struct CharacterDetailView: View {
                         .buttonStyle(.bordered)
                     }
 
-                    detailSection("事件", systemImage: "calendar.badge.clock", summary: compactSummary(events.map(\.title))) {
+                    detailSection("事件", systemImage: "calendar.badge.clock", preview: latestEventPreview) {
                         CharacterEventSectionView(character: character, book: book)
                     }
                 }
@@ -2262,8 +2316,12 @@ struct CharacterDetailView: View {
     }
 
     @ViewBuilder
-    private func detailSection<Content: View>(_ title: String, systemImage: String, summary: String, @ViewBuilder content: @escaping () -> Content) -> some View {
-        CollapsibleDetailSection(title: title, systemImage: systemImage, summary: summary, characterID: character.id, content: content)
+    private func detailSection<Content: View>(_ title: String, systemImage: String, preview: String, @ViewBuilder content: @escaping () -> Content) -> some View {
+        CollapsibleDetailSection(title: title, systemImage: systemImage, preview: preview, characterID: character.id, content: content)
+    }
+
+    private func staticDetailSection<Content: View>(_ title: String, systemImage: String, @ViewBuilder content: @escaping () -> Content) -> some View {
+        StaticCharacterDetailSection(title: title, systemImage: systemImage, content: content)
     }
 
     private var basicInfoSummary: String {
@@ -2273,14 +2331,85 @@ struct CharacterDetailView: View {
         return values.isEmpty ? "尚未填寫" : values.prefix(2).joined(separator: "・")
     }
 
-    private func compactSummary(_ values: [String]) -> String {
-        let names = values.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
-        guard !names.isEmpty else { return "尚無" }
-        let visible = names.prefix(2).joined(separator: "、")
-        return names.count > 2 ? "\(visible) 等 \(names.count) 項" : visible
+    private var latestAliasPreview: String {
+        guard let alias = CharacterDetailPreviewOrdering.latest(
+            in: aliases,
+            updatedAt: { $0.updatedAt },
+            id: { $0.id }
+        ) else { return "尚無" }
+        return nonempty(alias.name, fallback: "未命名別名")
     }
 
-    private func countSummary(_ count: Int) -> String { count == 0 ? "尚無" : "\(count) 項" }
+    private var latestAbilityPreview: String {
+        guard let connection = CharacterDetailPreviewOrdering.latest(
+            in: abilityConnections,
+            updatedAt: { $0.updatedAt },
+            id: { $0.id }
+        ) else { return "尚無" }
+        let ability = allAbilities.first { $0.id == connection.abilityID }
+        let abilityName = nonempty(ability?.name, fallback: "未命名能力")
+        let levelName = connection.currentLevelID.flatMap { levelID in
+            abilityStore.levels.first { $0.id == levelID }?.name
+        }
+        return "\(abilityName)・\(nonempty(levelName, fallback: "未設定"))"
+    }
+
+    private var latestAppearancePreview: String {
+        guard let appearance = CharacterDetailPreviewOrdering.latest(
+            in: appearances,
+            updatedAt: { $0.updatedAt },
+            id: { $0.id }
+        ) else { return "尚無" }
+        let kind = appearance.kind == .outfit ? "服裝" : "身體特徵"
+        return "\(kind)・\(nonempty(appearance.descriptionText, fallback: "未填寫"))"
+    }
+
+    private var latestPsychologyPreview: String {
+        guard let psychology = CharacterDetailPreviewOrdering.latest(
+            in: psychologies,
+            updatedAt: { $0.updatedAt },
+            id: { $0.id }
+        ) else { return "尚無" }
+        let kind: String
+        switch psychology.kind {
+        case .personality: kind = "性格"
+        case .value: kind = "價值觀"
+        case .motivation: kind = "動機"
+        }
+        return "\(kind)・\(nonempty(psychology.content, fallback: "未填寫"))"
+    }
+
+    private var latestItemPreview: String {
+        guard let holding = CharacterDetailPreviewOrdering.latest(
+            in: itemHoldings,
+            updatedAt: { $0.updatedAt },
+            id: { $0.id }
+        ),
+        let copy = copyStore.copies.first(where: { $0.id == holding.copyID }),
+        let item = allItems.first(where: { $0.id == copy.itemID && $0.book?.id == book.id }) else { return "尚無" }
+        return copy.displayName(for: item)
+    }
+
+    private var latestRelationshipPreview: String {
+        guard let relationship = CharacterDetailPreviewOrdering.latest(
+            in: relationships,
+            updatedAt: { $0.updatedAt },
+            id: { $0.id }
+        ) else { return "尚無" }
+        let target = nonempty(relationship.targetCharacter?.realName, fallback: "未知角色")
+        return "\(target)・\(nonempty(relationship.type, fallback: "未設定"))"
+    }
+
+    private var latestEventPreview: String {
+        guard let entry = timelineEntries.last else { return "尚無" }
+        return "\(entry.source)・\(entry.title)"
+    }
+
+    private func nonempty(_ value: String?, fallback: String) -> String {
+        guard let value else { return fallback }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? fallback : trimmed
+    }
 
     private func emptyState(_ title: String, detail: String) -> some View {
         VStack(alignment: .leading, spacing: 3) {
@@ -2421,17 +2550,36 @@ private struct CharacterReferenceSectionsView: View {
     }
 }
 
+private struct StaticCharacterDetailSection<Content: View>: View {
+    let title: String
+    let systemImage: String
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Label(title, systemImage: systemImage)
+                .font(.headline)
+            content()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .background(Color(nsColor: .controlBackgroundColor))
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.secondary.opacity(0.12)))
+    }
+}
+
 private struct CollapsibleDetailSection<Content: View>: View {
     let title: String
     let systemImage: String
-    let summary: String
+    let preview: String
     @ViewBuilder let content: () -> Content
     @AppStorage private var isCollapsed: Bool
 
-    init(title: String, systemImage: String, summary: String, characterID: UUID, @ViewBuilder content: @escaping () -> Content) {
+    init(title: String, systemImage: String, preview: String, characterID: UUID, @ViewBuilder content: @escaping () -> Content) {
         self.title = title
         self.systemImage = systemImage
-        self.summary = summary
+        self.preview = preview
         self.content = content
         _isCollapsed = AppStorage(
             wrappedValue: true,
@@ -2441,25 +2589,32 @@ private struct CollapsibleDetailSection<Content: View>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
-            HStack {
-                Label(title, systemImage: systemImage)
-                    .font(.headline)
-                Spacer()
-                if isCollapsed {
-                    Text(summary)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-                Button { isCollapsed.toggle() } label: {
+            Button { isCollapsed.toggle() } label: {
+                HStack(spacing: 10) {
+                    Image(systemName: systemImage)
+                        .font(.title3)
+                        .foregroundStyle(Color.accentColor)
+                        .frame(width: 30, height: 30)
+                        .background(Color.accentColor.opacity(0.1), in: RoundedRectangle(cornerRadius: 7))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title)
+                            .font(.headline)
+                            .foregroundStyle(.primary)
+                        Text(preview)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                            .truncationMode(.tail)
+                    }
+                    Spacer(minLength: 8)
                     Image(systemName: isCollapsed ? "chevron.down" : "chevron.up")
-                        .frame(width: 32, height: 32)
-                        .contentShape(Rectangle())
+                        .foregroundStyle(.secondary)
+                        .frame(width: 24, height: 30)
                 }
-                .buttonStyle(.plain)
-                .help(isCollapsed ? "展開\(title)" : "收合\(title)")
+                .contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .help(isCollapsed ? "展開\(title)" : "收合\(title)")
             if !isCollapsed {
                 content()
             }

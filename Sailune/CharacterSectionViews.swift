@@ -335,7 +335,14 @@ private struct CharacterAbilityTimelineEditor: View {
                         .font(.caption.weight(.medium))
                         .foregroundStyle(changeLabel(at: index) == "上升" ? .green : changeLabel(at: index) == "下降" ? .orange : .secondary)
                         .frame(width: 34, alignment: .leading)
-                    CharacterNodePicker(book: book, node: Binding(get: { entry.nodeID.flatMap { id in allNodes.first { $0.id == id } } }, set: { entry.nodeID = $0?.id; abilityStore.save() }), sourceReference: .init(kind: .abilityHistory, id: entry.id))
+                    CharacterTimelinePlacementEditor(
+                        book: book,
+                        node: Binding(
+                            get: { entry.nodeID.flatMap { id in allNodes.first { $0.id == id } } },
+                            set: { entry.nodeID = $0?.id; entry.updatedAt = Date(); abilityStore.save() }
+                        ),
+                        onChange: { entry.updatedAt = Date(); abilityStore.save() }
+                    )
                     Button(role: .destructive) { abilityStore.deleteHistory(entry) } label: { Image(systemName: "trash") }.buttonStyle(.plain)
                 }
             }
@@ -411,7 +418,9 @@ private struct AppearanceRow: View {
                 .textFieldStyle(.roundedBorder)
             HStack {
                 Text("時間定位").font(.caption).foregroundStyle(.secondary)
-                CharacterNodePicker(book: book, node: $appearance.node, sourceReference: .init(kind: .appearance, id: appearance.id))
+                CharacterTimelinePlacementEditor(book: book, node: $appearance.node) {
+                    appearance.updatedAt = Date()
+                }
             }
         }
     }
@@ -476,7 +485,9 @@ private struct PsychologyRow: View {
                 Text("時間定位")
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                CharacterNodePicker(book: book, node: $psychology.node, sourceReference: .init(kind: .psychology, id: psychology.id))
+                CharacterTimelinePlacementEditor(book: book, node: $psychology.node) {
+                    psychology.updatedAt = Date()
+                }
                     .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -654,31 +665,186 @@ private struct RelationshipRow: View {
     }
 }
 
+struct CharacterTimelineProjection: Identifiable {
+    let id: String
+    let source: String
+    let title: String
+    let node: Node?
+    let sortOrder: Int
+
+    var locationLabel: String {
+        var parts: [String] = []
+        if let node {
+            var date = ""
+            if node.year > 0 { date += "\(node.year)年" }
+            if let month = node.month { date += "\(month)月" }
+            if let day = node.day { date += "\(day)日" }
+            if !date.isEmpty { parts.append(date) }
+            if let volume = node.section?.volume {
+                parts.append(volume.title.isEmpty ? "未命名卷" : volume.title)
+            }
+            if let section = node.section {
+                parts.append(section.title.isEmpty ? "未命名節" : section.title)
+            }
+        }
+        return parts.isEmpty ? "未定位" : parts.joined(separator: "・")
+    }
+}
+
+enum CharacterTimelineProjectionBuilder {
+    static func build(
+        characterID: UUID,
+        abilities: [CharacterAbility],
+        abilityConnections: [CharacterAbilityConnection],
+        abilityHistories: [CharacterAbilityHistory],
+        abilityLevels: [AbilityLevel],
+        nodes: [Node],
+        appearances: [CharacterAppearance],
+        psychologies: [CharacterPsychology],
+        characterItems: [CharacterItem],
+        itemCopies: [ItemCopy],
+        copyHoldings: [ItemCopyHolding],
+        copyHistories: [ItemCopyHistory],
+        items: [Item],
+        relationships: [CharacterRelationship],
+        events: [Event]
+    ) -> [CharacterTimelineProjection] {
+        let abilityByID = Dictionary(uniqueKeysWithValues: abilities.map { ($0.id, $0) })
+        let levelByID = Dictionary(uniqueKeysWithValues: abilityLevels.map { ($0.id, $0) })
+        let nodeByID = Dictionary(uniqueKeysWithValues: nodes.map { ($0.id, $0) })
+        let itemByID = Dictionary(uniqueKeysWithValues: items.map { ($0.id, $0) })
+        let copyByID = Dictionary(uniqueKeysWithValues: itemCopies.map { ($0.id, $0) })
+        var result: [CharacterTimelineProjection] = []
+
+        for connection in abilityConnections where connection.characterID == characterID {
+            let abilityName = normalized(abilityByID[connection.abilityID]?.name, fallback: "未命名能力")
+            for history in abilityHistories where history.connectionID == connection.id {
+                let levelName = UUID(uuidString: history.content).flatMap { levelByID[$0]?.name }
+                    ?? normalized(history.content, fallback: "未設定")
+                result.append(.init(id: "ability-\(history.id)", source: "能力", title: "\(abilityName)・\(levelName)", node: history.nodeID.flatMap { nodeByID[$0] }, sortOrder: history.sortOrder))
+            }
+        }
+        for appearance in appearances where appearance.character?.id == characterID {
+            let type = appearance.kind == .outfit ? "服裝" : "身體特徵"
+            result.append(.init(id: "appearance-\(appearance.id)", source: "外觀", title: "\(type)・\(normalized(appearance.descriptionText, fallback: "未填寫"))", node: appearance.node, sortOrder: 0))
+        }
+        for psychology in psychologies where psychology.character?.id == characterID {
+            let type: String
+            switch psychology.kind { case .personality: type = "性格"; case .value: type = "價值觀"; case .motivation: type = "動機" }
+            result.append(.init(id: "psychology-\(psychology.id)", source: "心理", title: "\(type)・\(normalized(psychology.content, fallback: "未填寫"))", node: psychology.node, sortOrder: 0))
+        }
+        for characterItem in characterItems where characterItem.character?.id == characterID {
+            let itemName = normalized(characterItem.item?.name, fallback: "未命名物品")
+            for history in characterItem.history {
+                result.append(.init(id: "character-item-\(history.id)", source: "物品", title: "\(itemName)・\(normalized(history.content, fallback: "未填寫"))", node: history.node, sortOrder: history.sortOrder))
+            }
+        }
+        let heldCopyIDs = Set(copyHoldings.filter { $0.characterID == characterID }.map(\.copyID))
+        for history in copyHistories where heldCopyIDs.contains(history.copyID) || history.relatedCharacterIDs.contains(characterID) {
+            guard let copy = copyByID[history.copyID], let item = itemByID[copy.itemID] else { continue }
+            result.append(.init(id: "copy-\(history.id)", source: "物品", title: "\(copy.displayName(for: item))・\(normalized(history.content, fallback: "未填寫"))", node: history.nodeID.flatMap { nodeByID[$0] }, sortOrder: history.sortOrder))
+        }
+        for relationship in relationships where relationship.sourceCharacter?.id == characterID || relationship.targetCharacter?.id == characterID {
+            let other = relationship.sourceCharacter?.id == characterID ? relationship.targetCharacter : relationship.sourceCharacter
+            for history in relationship.history {
+                result.append(.init(id: "relationship-\(history.id)", source: "關係", title: "\(normalized(other?.realName, fallback: "未知角色"))・\(normalized(history.type, fallback: "未設定"))", node: history.node, sortOrder: history.sortOrder))
+            }
+        }
+        for event in events where event.characters.contains(where: { $0.id == characterID }) {
+            result.append(.init(id: "event-\(event.id)", source: "事件", title: normalized(event.title, fallback: "未命名事件"), node: event.node, sortOrder: Int(event.sortOrder)))
+        }
+        return result.filter { $0.node != nil }.sorted { lhs, rhs in
+            let lhsDate = lhs.node.map { ($0.year, $0.month ?? 0, $0.day ?? 0) } ?? (Int.max, Int.max, Int.max)
+            let rhsDate = rhs.node.map { ($0.year, $0.month ?? 0, $0.day ?? 0) } ?? (Int.max, Int.max, Int.max)
+            if lhsDate.0 != rhsDate.0 { return lhsDate.0 < rhsDate.0 }
+            if lhsDate.1 != rhsDate.1 { return lhsDate.1 < rhsDate.1 }
+            if lhsDate.2 != rhsDate.2 { return lhsDate.2 < rhsDate.2 }
+            if lhs.node?.section?.volume?.sortOrder != rhs.node?.section?.volume?.sortOrder {
+                return (lhs.node?.section?.volume?.sortOrder ?? Int.max) < (rhs.node?.section?.volume?.sortOrder ?? Int.max)
+            }
+            if lhs.node?.section?.sortOrder != rhs.node?.section?.sortOrder {
+                return (lhs.node?.section?.sortOrder ?? Int.max) < (rhs.node?.section?.sortOrder ?? Int.max)
+            }
+            if lhs.sortOrder != rhs.sortOrder { return lhs.sortOrder < rhs.sortOrder }
+            return lhs.id < rhs.id
+        }
+    }
+
+    private static func normalized(_ value: String?, fallback: String) -> String {
+        let text = value?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return text.isEmpty ? fallback : text
+    }
+}
+
 struct CharacterEventSectionView: View {
     let character: Character
     let book: Book
     @Environment(\.modelContext) private var modelContext
     @Environment(StoryPlanningStore.self) private var planningStore
+    @Environment(AbilityProgressStore.self) private var abilityStore
+    @Environment(ItemCopyStore.self) private var copyStore
     @Query(sort: \Event.sortOrder) private var allEvents: [Event]
     @Query(sort: \Character.sortOrder) private var allCharacters: [Character]
+    @Query private var allAbilities: [CharacterAbility]
+    @Query private var allNodes: [Node]
+    @Query private var allAppearances: [CharacterAppearance]
+    @Query private var allPsychologies: [CharacterPsychology]
+    @Query private var allCharacterItems: [CharacterItem]
+    @Query private var allItems: [Item]
+    @Query private var allRelationships: [CharacterRelationship]
     @State private var deletionErrorMessage: String?
 
     private var events: [Event] {
-        allEvents.filter { event in event.characters.contains { $0.id == character.id } }
+        allEvents.filter { event in
+            event.node != nil && event.characters.contains { $0.id == character.id }
+        }
     }
     private var bookCharacters: [Character] {
         allCharacters.filter { $0.book?.id == book.id }
     }
+    private var timelineEntries: [CharacterTimelineProjection] {
+        CharacterTimelineProjectionBuilder.build(
+            characterID: character.id,
+            abilities: allAbilities,
+            abilityConnections: abilityStore.connections,
+            abilityHistories: abilityStore.histories,
+            abilityLevels: abilityStore.levels,
+            nodes: allNodes,
+            appearances: allAppearances,
+            psychologies: allPsychologies,
+            characterItems: allCharacterItems,
+            itemCopies: copyStore.copies,
+            copyHoldings: copyStore.holdings,
+            copyHistories: copyStore.histories,
+            items: allItems,
+            relationships: allRelationships,
+            events: allEvents
+        )
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if events.isEmpty {
+            if timelineEntries.isEmpty {
                 CharacterSectionEmptyState(title: "尚無事件", detail: "")
             } else {
-                ForEach(events) { event in
-                    CharacterEventRow(event: event, character: character, book: book, allCharacters: bookCharacters) {
-                        deleteEvent(event)
+                ForEach(timelineEntries) { entry in
+                    HStack(alignment: .top, spacing: 8) {
+                        Text(entry.source)
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 34, alignment: .leading)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(entry.title).lineLimit(2)
+                            Text(entry.locationLabel).font(.caption2).foregroundStyle(.secondary)
+                        }
                     }
+                    .padding(.vertical, 3)
+                }
+            }
+            if !events.isEmpty {
+                Divider()
+                ForEach(events) { event in
+                    CharacterEventRow(event: event, character: character, book: book, allCharacters: bookCharacters) { deleteEvent(event) }
                 }
             }
             Button(action: addEvent) {
@@ -696,8 +862,14 @@ struct CharacterEventSectionView: View {
 
     private func addEvent() {
         let event = Event(title: "新事件")
+        let node = Node(year: 0)
+        node.timeline = book.timelines.first(where: \.isPrimary) ?? book.timelines.first
+        node.era = book.currentEra
+        node.sortOrder = (node.timeline?.nodes.map(\.sortOrder).max() ?? -1) + 1
         event.characters = [character]
+        event.node = node
         event.sortOrder = (allEvents.map(\.sortOrder).max() ?? -1) + 1
+        modelContext.insert(node)
         modelContext.insert(event)
     }
 
@@ -744,7 +916,7 @@ private struct CharacterEventRow: View {
                 .textFieldStyle(.roundedBorder)
                 .lineLimit(2...4)
             HStack {
-                CharacterNodePicker(book: book, node: $event.node)
+                CharacterTimelinePlacementEditor(book: book, node: $event.node)
                 Menu {
                     ForEach(availableCharacters) { candidate in
                         Button(candidate.realName.isEmpty ? "未命名角色" : candidate.realName) {

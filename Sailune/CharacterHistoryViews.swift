@@ -1,6 +1,192 @@
 import SwiftUI
 import SwiftData
 
+struct CharacterTimelinePlacementEditor: View {
+    let book: Book
+    @Binding var node: Node?
+    var onChange: () -> Void = {}
+    @Environment(\.modelContext) private var modelContext
+    @Query(sort: \Timeline.sortOrder) private var allTimelines: [Timeline]
+    @State private var hasDetachedExistingNode = false
+    @State private var showingNarrativeEditor = false
+    @State private var showingTimelineEditor = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Button("敘事版本") {
+                showingNarrativeEditor = true
+            }
+            Button("時間序版本") {
+                showingTimelineEditor = true
+            }
+        }
+        .sheet(isPresented: $showingNarrativeEditor) {
+            CharacterNarrativePlacementSheet(book: book, existingSection: node?.section) { section in
+                editableNode().section = section
+                onChange()
+            }
+        }
+        .sheet(isPresented: $showingTimelineEditor) {
+            CharacterTimelineDateSheet(book: book, existingNode: node) { era, year, month, day in
+                let value = editableNode()
+                value.era = era
+                value.year = year
+                value.month = month
+                value.day = day
+                onChange()
+            }
+        }
+    }
+
+    private func editableNode() -> Node {
+        if let existing = node, !hasDetachedExistingNode {
+            let detached = Node(year: existing.year, month: existing.month, day: existing.day)
+            detached.timeline = existing.timeline
+            detached.era = existing.era
+            detached.section = existing.section
+            detached.isVisible = existing.isVisible
+            detached.sortOrder = existing.sortOrder
+            modelContext.insert(detached)
+            node = detached
+            hasDetachedExistingNode = true
+            return detached
+        }
+        if let node { return node }
+        let created = Node(year: 0)
+        created.timeline = allTimelines.first { $0.book?.id == book.id && $0.isPrimary }
+            ?? allTimelines.first { $0.book?.id == book.id }
+        created.era = book.currentEra
+        created.sortOrder = (created.timeline?.nodes.map(\.sortOrder).max() ?? -1) + 1
+        modelContext.insert(created)
+        node = created
+        hasDetachedExistingNode = true
+        return created
+    }
+}
+
+private struct CharacterNarrativePlacementSheet: View {
+    let book: Book
+    let existingSection: Section?
+    let onSave: (Section?) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @Query(sort: \Section.sortOrder) private var allSections: [Section]
+    @State private var selectedVolumeID: UUID?
+    @State private var selectedSectionID: UUID?
+
+    init(book: Book, existingSection: Section?, onSave: @escaping (Section?) -> Void) {
+        self.book = book
+        self.existingSection = existingSection
+        self.onSave = onSave
+        _selectedVolumeID = State(initialValue: existingSection?.volume?.id)
+        _selectedSectionID = State(initialValue: existingSection?.id)
+    }
+
+    private var volumes: [Volume] { book.volumes.sorted { $0.sortOrder < $1.sortOrder } }
+    private var sections: [Section] {
+        guard let selectedVolumeID else { return [] }
+        return allSections.filter { $0.volume?.id == selectedVolumeID }.sorted { $0.sortOrder < $1.sortOrder }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("敘事版本").font(.headline)
+            Form {
+                Picker("卷", selection: $selectedVolumeID) {
+                    Text("無卷").tag(Optional<UUID>.none)
+                    ForEach(volumes) { volume in
+                        Text(volume.title.isEmpty ? "未命名卷" : volume.title).tag(Optional(volume.id))
+                    }
+                }
+                Picker("節", selection: $selectedSectionID) {
+                    Text("無節").tag(Optional<UUID>.none)
+                    ForEach(sections) { section in
+                        Text(section.title.isEmpty ? "未命名節" : section.title).tag(Optional(section.id))
+                    }
+                }
+                .disabled(selectedVolumeID == nil)
+            }
+            HStack {
+                Button("取消") { dismiss() }
+                Spacer()
+                Button("儲存") {
+                    onSave(selectedSectionID.flatMap { id in sections.first { $0.id == id } })
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 380, height: 230)
+        .onChange(of: selectedVolumeID) {
+            if !sections.contains(where: { $0.id == selectedSectionID }) { selectedSectionID = nil }
+        }
+    }
+}
+
+private struct CharacterTimelineDateSheet: View {
+    let book: Book
+    let existingNode: Node?
+    let onSave: (Era?, Int, Int?, Int?) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @Query(sort: \Era.startOrdinal) private var allEras: [Era]
+    @State private var selectedEraID: UUID?
+    @State private var yearText: String
+    @State private var monthText: String
+    @State private var dayText: String
+
+    init(book: Book, existingNode: Node?, onSave: @escaping (Era?, Int, Int?, Int?) -> Void) {
+        self.book = book
+        self.existingNode = existingNode
+        self.onSave = onSave
+        _selectedEraID = State(initialValue: existingNode?.era?.id ?? book.currentEra?.id)
+        _yearText = State(initialValue: existingNode?.year == 0 ? "" : existingNode.map { String($0.year) } ?? "")
+        _monthText = State(initialValue: existingNode?.month.map(String.init) ?? "")
+        _dayText = State(initialValue: existingNode?.day.map(String.init) ?? "")
+    }
+
+    private var eras: [Era] { allEras }
+    private var month: Int? { monthText.isEmpty ? nil : Int(monthText) }
+    private var day: Int? { dayText.isEmpty ? nil : Int(dayText) }
+    private var canSave: Bool {
+        (month == nil || (1...12).contains(month!)) && (day == nil || (1...31).contains(day!))
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("時間序版本").font(.headline)
+            Form {
+                Picker("紀元", selection: $selectedEraID) {
+                    Text("無紀元").tag(Optional<UUID>.none)
+                    ForEach(eras) { era in
+                        Text(era.name.isEmpty ? "未命名紀元" : era.name).tag(Optional(era.id))
+                    }
+                }
+                HStack {
+                    TextField("年", text: numeric($yearText)).frame(width: 90)
+                    TextField("月", text: numeric($monthText)).frame(width: 70)
+                    TextField("日", text: numeric($dayText)).frame(width: 70)
+                }
+            }
+            HStack {
+                Button("取消") { dismiss() }
+                Spacer()
+                Button("儲存") {
+                    onSave(selectedEraID.flatMap { id in eras.first { $0.id == id } }, Int(yearText) ?? 0, month, day)
+                    dismiss()
+                }
+                .keyboardShortcut(.defaultAction)
+                .disabled(!canSave)
+            }
+        }
+        .padding(20)
+        .frame(width: 400, height: 260)
+    }
+
+    private func numeric(_ value: Binding<String>) -> Binding<String> {
+        Binding(get: { value.wrappedValue }, set: { value.wrappedValue = String($0.filter(\.isNumber).prefix(6)) })
+    }
+}
+
 struct CharacterNodePicker: View {
     let book: Book
     @Binding var node: Node?
@@ -322,7 +508,9 @@ private struct AbilityHistoryRow: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
                 TextField("階段", text: $history.stage).textFieldStyle(.roundedBorder)
-                CharacterNodePicker(book: book, node: $history.node)
+                CharacterTimelinePlacementEditor(book: book, node: $history.node) {
+                    history.updatedAt = Date()
+                }
                 Button(role: .destructive, action: onDelete) { Image(systemName: "trash") }.buttonStyle(.plain)
             }
             TextField("描述", text: $history.descriptionText).textFieldStyle(.roundedBorder)
@@ -432,7 +620,9 @@ private struct ItemHistoryRow: View {
     var body: some View {
         HStack {
             TextField("自由文字紀錄", text: $history.content).textFieldStyle(.roundedBorder)
-            CharacterNodePicker(book: book, node: $history.node, sourceReference: .init(kind: .characterItemHistory, id: history.id))
+            CharacterTimelinePlacementEditor(book: book, node: $history.node) {
+                history.updatedAt = Date()
+            }
             Button(role: .destructive, action: onDelete) { Image(systemName: "trash") }.buttonStyle(.plain)
         }
         .onChange(of: history.content) { history.updatedAt = Date() }
@@ -468,7 +658,9 @@ private struct RelationshipHistoryRow: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
                 TextField("關係", text: $history.type).textFieldStyle(.roundedBorder)
-                CharacterNodePicker(book: book, node: $history.node, sourceReference: .init(kind: .relationshipHistory, id: history.id))
+                CharacterTimelinePlacementEditor(book: book, node: $history.node) {
+                    history.updatedAt = Date()
+                }
                 Button(role: .destructive, action: onDelete) { Image(systemName: "trash") }.buttonStyle(.plain)
             }
             TextField("備註", text: $history.note).textFieldStyle(.roundedBorder)
