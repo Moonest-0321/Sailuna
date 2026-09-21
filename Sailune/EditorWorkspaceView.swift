@@ -571,7 +571,6 @@ struct EditorSidebarView: View {
                 Text(volume.title).lineLimit(1).fontWeight(.semibold)
                     .padding(.vertical, 6)
                     .contentShape(Rectangle())
-                    .onTapGesture { startRenaming(id: volume.id, currentName: volume.title) }
             }
             Rectangle()
                 .fill(Color.clear)
@@ -600,8 +599,9 @@ struct EditorSidebarView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .contextMenu {
-            Button { addSection(to: volume) } label: { Label("新增節", systemImage: "doc.badge.plus") }
+            Button { startRenaming(id: volume.id, currentName: volume.title) } label: { Label("重新命名", systemImage: "pencil") }
             Divider()
+            Button { addSection(to: volume) } label: { Label("新增節", systemImage: "doc.badge.plus") }
             Button(role: .destructive) { deleteTarget = .volume(volume) } label: { Label("刪除卷", systemImage: "trash") }
         }
     }
@@ -615,26 +615,18 @@ struct EditorSidebarView: View {
                 .frame(width: 24, height: 22).contentShape(Rectangle())
                 .highPriorityGesture(outlineDragGesture(for: .section(section.id, volumeID: volume.id)))
             Image(systemName: "doc.text").foregroundStyle(.secondary).frame(width: 14)
-                .onTapGesture {
-                    commitCurrentRename()
-                    selectedSection = section
-                }
             if renamingID == section.id {
                 renameEditor(commit: { newName in section.title = newName.isEmpty ? section.title : newName })
             } else {
                 HStack(spacing: 0) {
                     Text("\(index)｜")
                         .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: true, vertical: false)
                         .padding(.vertical, 6)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            commitCurrentRename()
-                            selectedSection = section
-                        }
-                    Text(section.title).lineLimit(1)
+                    Text(section.title)
+                        .lineLimit(1)
+                        .fixedSize(horizontal: true, vertical: false)
                         .padding(.vertical, 6)
-                        .contentShape(Rectangle())
-                        .onTapGesture { startRenaming(id: section.id, currentName: section.title) }
                     if let annotation = planningStore.annotation(sectionID: section.id),
                        !annotation.plannedOutline.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         Circle().fill(.green.opacity(0.5)).frame(width: 5, height: 5)
@@ -649,10 +641,6 @@ struct EditorSidebarView: View {
                 .fill(Color.clear)
                 .frame(maxWidth: .infinity, minHeight: 30)
                 .contentShape(Rectangle())
-                .onTapGesture {
-                    commitCurrentRename()
-                    selectedSection = section
-                }
         }
         .padding(.leading, 20).padding(.trailing, 12).padding(.vertical, 3)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -663,6 +651,11 @@ struct EditorSidebarView: View {
             rowFrames: $outlineRowFrames
         )
         .background(selectedSection?.id == section.id ? Color.accentColor.opacity(0.2) : Color.clear)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            commitCurrentRename()
+            selectedSection = section
+        }
         .contextMenu {
             Button { startRenaming(id: section.id, currentName: section.title) } label: { Label("重新命名", systemImage: "pencil") }
             Button {
@@ -685,17 +678,20 @@ struct EditorSidebarView: View {
                     .opacity(0)
                 TextField("", text: $renameBuffer)
                     .textFieldStyle(.roundedBorder)
+                    .frame(maxWidth: .infinity)
                     .focused($renameFocused)
                     .submitLabel(.done)
                     .onAppear { renameFocused = true }
                     .onSubmit { commitAndClose(commit: commit) }
             }
-            .frame(minWidth: 60)
+            .frame(minWidth: 60, maxWidth: .infinity)
             Button { commitAndClose(commit: commit) } label: { Image(systemName: "checkmark").foregroundStyle(.green) }
                 .buttonStyle(.borderless).help("確認 (Enter)")
             Button { cancelRenaming() } label: { Image(systemName: "xmark").foregroundStyle(.secondary) }
                 .buttonStyle(.borderless).help("取消")
         }
+        .frame(maxWidth: .infinity)
+        .layoutPriority(1)
         .onChange(of: renameFocused) { _, focused in if !focused { commitAndClose(commit: commit) } }
     }
 
