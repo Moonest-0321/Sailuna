@@ -66,7 +66,32 @@ enum AbilityProgressSchemaV1: VersionedSchema {
         }
     }
     func clearPersistenceError() { persistenceErrorMessage = nil }
-    func register(abilityID: UUID, bookID: UUID) { guard !bookLinks.contains(where: { $0.abilityID == abilityID }) else { return }; let link = AbilityBookLink(abilityID: abilityID, bookID: bookID); context.insert(link); bookLinks.append(link); save() }
+    func resolvedBookIDs(for abilities: [CharacterAbility]) -> [UUID: UUID] {
+        let validAbilityIDs = Set(abilities.map(\.id))
+        var result = Dictionary(uniqueKeysWithValues: abilities.compactMap { ability in
+            ability.character?.book.map { (ability.id, $0.id) }
+        })
+        for link in bookLinks where validAbilityIDs.contains(link.abilityID) {
+            result[link.abilityID] = link.bookID
+        }
+        return result
+    }
+    func register(abilityID: UUID, bookID: UUID) throws {
+        guard !bookLinks.contains(where: { $0.abilityID == abilityID }) else { return }
+        let link = AbilityBookLink(abilityID: abilityID, bookID: bookID)
+        context.insert(link)
+        do {
+            try context.save()
+            bookLinks.append(link)
+            persistenceErrorMessage = nil
+        } catch {
+            context.rollback()
+            try? reload()
+            let nsError = error as NSError
+            persistenceErrorMessage = "\(nsError.domain) \(nsError.code)：\(nsError.localizedDescription)"
+            throw error
+        }
+    }
     func addLevel(abilityID: UUID) { let level = AbilityLevel(abilityID: abilityID, sortOrder: (levels.filter { $0.abilityID == abilityID }.map(\.sortOrder).max() ?? -1) + 1, name: "新等級"); context.insert(level); levels.append(level); save() }
     func deleteAbilityLevel(_ level: AbilityLevel) { connections.filter { $0.currentLevelID == level.id }.forEach { $0.currentLevelID = nil }; context.delete(level); levels.removeAll { $0.id == level.id }; save() }
     func connect(characterID: UUID, abilityID: UUID) { guard !connections.contains(where: { $0.characterID == characterID && $0.abilityID == abilityID }) else { return }; let connection = CharacterAbilityConnection(characterID: characterID, abilityID: abilityID); context.insert(connection); connections.append(connection); save() }

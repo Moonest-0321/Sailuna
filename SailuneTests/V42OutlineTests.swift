@@ -1580,6 +1580,62 @@ final class V42OutlineTests: XCTestCase {
         XCTAssertTrue(store.histories.isEmpty)
     }
 
+    func testStandaloneAbilityBookLinkSurvivesReloadAndReconcile() throws {
+        let schema = Schema(versionedSchema: AbilityProgressSchemaV1.self)
+        let container = try ModelContainer(
+            for: schema,
+            configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)]
+        )
+        let bookID = UUID()
+        let characterID = UUID()
+        let ability = CharacterAbility(name: "星光")
+        let firstStore = try AbilityProgressStore(container: container)
+        try firstStore.register(abilityID: ability.id, bookID: bookID)
+        firstStore.connect(characterID: characterID, abilityID: ability.id)
+        firstStore.addLevel(abilityID: ability.id)
+
+        let reopenedStore = try AbilityProgressStore(container: container)
+        let resolved = reopenedStore.resolvedBookIDs(for: [ability])
+        try reopenedStore.reconcile(
+            validBookIDs: [bookID],
+            characterBookIDs: [characterID: bookID],
+            abilityBookIDs: resolved,
+            validNodeIDs: []
+        )
+
+        XCTAssertEqual(resolved[ability.id], bookID)
+        XCTAssertEqual(reopenedStore.bookLinks.count, 1)
+        XCTAssertEqual(reopenedStore.connections.count, 1)
+        XCTAssertEqual(reopenedStore.levels.count, 1)
+    }
+
+    func testStartupRepairPreservesStandaloneAbilityAfterMainStoreReopen() throws {
+        let storeURL = FileManager.default.temporaryDirectory
+            .appendingPathComponent("standalone-ability-main-\(UUID().uuidString).store")
+        defer { removeStoreFiles(at: storeURL) }
+        let schema = Schema(versionedSchema: NovelWriterSchemaV5.self)
+        let abilityID = UUID()
+
+        do {
+            let container = try ModelContainer(
+                for: schema,
+                configurations: [ModelConfiguration(schema: schema, url: storeURL)]
+            )
+            container.mainContext.insert(CharacterAbility(id: abilityID, name: "不應在重開時消失"))
+            try container.mainContext.save()
+        }
+
+        let reopened = try ModelContainer(
+            for: schema,
+            configurations: [ModelConfiguration(schema: schema, url: storeURL)]
+        )
+        try PersistentStoreRepair.run(in: reopened.mainContext)
+
+        let abilities = try reopened.mainContext.fetch(FetchDescriptor<CharacterAbility>())
+        XCTAssertEqual(abilities.map(\.id), [abilityID])
+        XCTAssertNil(abilities.first?.character)
+    }
+
     private func removeStoreFiles(at url: URL) {
         for suffix in ["", "-shm", "-wal"] {
             try? FileManager.default.removeItem(atPath: url.path + suffix)

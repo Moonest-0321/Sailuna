@@ -1690,6 +1690,7 @@ private struct AbilityListContainerView: View {
     @State private var showCurrentSectionOnly = false
     @State private var deleteTarget: CharacterAbility?
     @State private var deletionErrorMessage: String?
+    @State private var creationErrorMessage: String?
 
     private var characters: [Character] { allCharacters.filter { $0.book?.id == book.id } }
     private var bookAbilities: [CharacterAbility] {
@@ -1737,11 +1738,7 @@ private struct AbilityListContainerView: View {
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(Color.workspacePanelBackground)
-            Button("新增能力", systemImage: "plus") {
-                let ability = CharacterAbility(name: "新能力")
-                modelContext.insert(ability)
-                abilityStore.register(abilityID: ability.id, bookID: book.id)
-            }
+            Button("新增能力", systemImage: "plus", action: addAbility)
             .padding(10)
         }
         .confirmationDialog("刪除能力？", isPresented: Binding(
@@ -1756,6 +1753,31 @@ private struct AbilityListContainerView: View {
             set: { if !$0 { deletionErrorMessage = nil } }
         )) { Button("好") { deletionErrorMessage = nil } } message: {
             Text(deletionErrorMessage ?? "")
+        }
+        .alert("能力建立未完成", isPresented: Binding(
+            get: { creationErrorMessage != nil },
+            set: { if !$0 { creationErrorMessage = nil } }
+        )) { Button("好") { creationErrorMessage = nil } } message: {
+            Text(creationErrorMessage ?? "")
+        }
+    }
+
+    private func addAbility() {
+        let ability = CharacterAbility(name: "新能力")
+        modelContext.insert(ability)
+        do {
+            // 能力本體與書籍歸屬分屬兩個 store；先確定本體落盤，再建立跨 store 連結。
+            try modelContext.save()
+            do {
+                try abilityStore.register(abilityID: ability.id, bookID: book.id)
+            } catch {
+                modelContext.delete(ability)
+                try? modelContext.save()
+                throw error
+            }
+        } catch {
+            modelContext.rollback()
+            creationErrorMessage = error.localizedDescription
         }
     }
 
@@ -2004,6 +2026,7 @@ struct CharacterDetailView: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(AbilityProgressStore.self) private var abilityStore
     @Environment(ItemCopyStore.self) private var copyStore
+    @Environment(V5SettingsStore.self) private var settingsStore
     @Query private var allProfiles: [CharacterProfile]
     @Query private var allAliases: [CharacterAlias]
     @Query private var allAbilities: [CharacterAbility]
@@ -2142,6 +2165,10 @@ struct CharacterDetailView: View {
                             set: { character.originStory = $0 }
                         ), minHeight: 90)
                         textEditorField("私人備註 / 非血緣關係", text: $character.notes)
+                    }
+
+                    detailSection("所屬勢力", systemImage: "building.2", preview: latestPowerMembershipPreview) {
+                        CharacterPowerMembershipSection(character: character, book: book)
                     }
 
                     detailSection("別名", systemImage: "person.badge.key", preview: latestAliasPreview) {
@@ -2325,7 +2352,7 @@ struct CharacterDetailView: View {
     }
 
     private var basicInfoSummary: String {
-        let values = [character.gender, character.birthYear, character.originBackground]
+        let values = [character.gender, character.originBackground]
             .compactMap { $0?.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         return values.isEmpty ? "尚未填寫" : values.prefix(2).joined(separator: "・")
@@ -2338,6 +2365,17 @@ struct CharacterDetailView: View {
             id: { $0.id }
         ) else { return "尚無" }
         return nonempty(alias.name, fallback: "未命名別名")
+    }
+
+    private var latestPowerMembershipPreview: String {
+        guard let membership = settingsStore.members(for: book.id)
+            .filter({ $0.characterID == character.id })
+            .max(by: { $0.updatedAt < $1.updatedAt }) else { return "尚無" }
+        let powerName = settingsStore.powers(for: book.id)
+            .first(where: { $0.id == membership.powerID })?.name
+        let name = nonempty(powerName, fallback: "未命名勢力")
+        let title = membership.title.trimmingCharacters(in: .whitespacesAndNewlines)
+        return title.isEmpty ? name : "\(name)・\(title)"
     }
 
     private var latestAbilityPreview: String {
@@ -2445,6 +2483,102 @@ struct CharacterDetailView: View {
         }
         character.kinships.removeAll { $0.id == kinship.id }
         modelContext.delete(kinship)
+    }
+}
+
+private struct CharacterPowerMembershipSection: View {
+    let character: Character
+    let book: Book
+    @Environment(V5SettingsStore.self) private var settingsStore
+    @State private var errorMessage: String?
+
+    private var powers: [PowerUnit] {
+        settingsStore.powers(for: book.id).sorted {
+            $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        }
+    }
+    private var memberships: [PowerMember] {
+        settingsStore.members(for: book.id).filter { $0.characterID == character.id }
+    }
+    private var availablePowers: [PowerUnit] {
+        let joinedIDs = Set(memberships.map(\.powerID))
+        return powers.filter { !joinedIDs.contains($0.id) }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            ForEach(memberships) { member in
+                HStack(spacing: 7) {
+                    Picker("名稱", selection: powerBinding(member)) {
+                        ForEach(powers) { power in
+                            Text(power.name.isEmpty ? "未命名勢力" : power.name).tag(power.id)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(maxWidth: .infinity)
+                    TextField("職稱", text: titleBinding(member))
+                        .textFieldStyle(.roundedBorder)
+                    Button("刪除", role: .destructive) {
+                        settingsStore.removeMember(member, bookID: book.id)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            Menu {
+                ForEach(availablePowers) { power in
+                    Button(power.name.isEmpty ? "未命名勢力" : power.name) {
+                        addMembership(to: power)
+                    }
+                }
+            } label: {
+                Label("新增所屬勢力", systemImage: "plus")
+            }
+            .menuStyle(.borderlessButton)
+            .disabled(availablePowers.isEmpty)
+        }
+        .alert("無法更新所屬勢力", isPresented: Binding(
+            get: { errorMessage != nil },
+            set: { if !$0 { errorMessage = nil } }
+        )) {
+            Button("好", role: .cancel) { errorMessage = nil }
+        } message: {
+            Text(errorMessage ?? "請稍後再試。")
+        }
+    }
+
+    private func powerBinding(_ member: PowerMember) -> Binding<UUID> {
+        Binding(
+            get: { member.powerID },
+            set: { powerID in
+                guard let power = powers.first(where: { $0.id == powerID }) else { return }
+                do { try settingsStore.moveMember(member, to: power, bookID: book.id) }
+                catch { errorMessage = error.localizedDescription }
+            }
+        )
+    }
+
+    private func titleBinding(_ member: PowerMember) -> Binding<String> {
+        Binding(
+            get: { member.title },
+            set: { title in
+                do { try settingsStore.updateMember(member, title: title, bookID: book.id) }
+                catch { errorMessage = error.localizedDescription }
+            }
+        )
+    }
+
+    private func addMembership(to power: PowerUnit) {
+        do {
+            try settingsStore.addMember(
+                characterID: character.id,
+                characterBookID: book.id,
+                title: "",
+                to: power,
+                bookID: book.id
+            )
+        } catch {
+            errorMessage = error.localizedDescription
+        }
     }
 }
 

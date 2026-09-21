@@ -101,9 +101,16 @@ enum PersistentStoreRepair {
         let validAliasIDs = try linkedIDs(characters) { characterID in
             try context.fetch(FetchDescriptor<CharacterAlias>(predicate: #Predicate { $0.character?.id == characterID })).map(\.id)
         }
-        let validAbilityIDs = try linkedIDs(characters) { characterID in
+        // V6.3 abilities may be book-owned through AbilityBookLink while their
+        // legacy Character relationship is intentionally nil. This repair runs
+        // before the ability-progress store is opened, so a nil relationship is
+        // not evidence that the ability is orphaned and must be preserved.
+        var validAbilityIDs = Set(try context.fetch(
+            FetchDescriptor<CharacterAbility>(predicate: #Predicate { $0.character == nil })
+        ).map(\.id))
+        validAbilityIDs.formUnion(try linkedIDs(characters) { characterID in
             try context.fetch(FetchDescriptor<CharacterAbility>(predicate: #Predicate { $0.character?.id == characterID })).map(\.id)
-        }
+        })
         let validAppearanceIDs = try linkedIDs(characters) { characterID in
             try context.fetch(FetchDescriptor<CharacterAppearance>(predicate: #Predicate { $0.character?.id == characterID })).map(\.id)
         }
@@ -734,7 +741,8 @@ enum CrossStoreDeletionCoordinator {
                 nodeIDs: Set(nodes.map(\.id)),
                 characterBookIDs: Dictionary(uniqueKeysWithValues: characters.compactMap { character in character.book.map { (character.id, $0.id) } }),
                 itemBookIDs: Dictionary(uniqueKeysWithValues: items.compactMap { item in item.book.map { (item.id, $0.id) } }),
-                abilityBookIDs: Dictionary(uniqueKeysWithValues: abilities.compactMap { ability in ability.character?.book.map { (ability.id, $0.id) } }),
+                abilityBookIDs: abilityStore?.resolvedBookIDs(for: abilities)
+                    ?? Dictionary(uniqueKeysWithValues: abilities.compactMap { ability in ability.character?.book.map { (ability.id, $0.id) } }),
                 itemLevelItemIDs: Dictionary(uniqueKeysWithValues: levels.map { ($0.id, $0.itemID) })
             )
         } catch {

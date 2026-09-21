@@ -227,9 +227,7 @@ struct SailuneApp: App {
             let itemBookIDs = Dictionary(uniqueKeysWithValues: items.compactMap { item in
                 item.book.map { (item.id, $0.id) }
             })
-            let abilityBookIDs = Dictionary(uniqueKeysWithValues: abilities.compactMap { ability in
-                ability.character?.book.map { (ability.id, $0.id) }
-            })
+            let abilityBookIDs = abilityStore.resolvedBookIDs(for: abilities)
             try settingsStore.reconcile(
                 validBookIDs: validBookIDs,
                 validCharacterIDs: validCharacterIDs,

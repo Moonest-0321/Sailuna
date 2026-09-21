@@ -22,6 +22,7 @@ struct InsetTextEditor: View {
 struct CharacterSummarySectionView: View {
     let character: Character
     @Environment(\.modelContext) private var modelContext
+    @Environment(AbilityProgressStore.self) private var abilityStore
     @Query private var allSummaries: [CharacterSummary]
     @Query(sort: \CharacterAlias.createdAt) private var allAliases: [CharacterAlias]
     @Query(sort: \CharacterAbility.createdAt) private var allAbilities: [CharacterAbility]
@@ -30,9 +31,22 @@ struct CharacterSummarySectionView: View {
 
     private var summary: CharacterSummary? { allSummaries.first { $0.character?.id == character.id } }
     private var aliases: [CharacterAlias] { allAliases.filter { $0.character?.id == character.id } }
-    private var abilities: [CharacterAbility] { allAbilities.filter { $0.character?.id == character.id } }
+    private var abilities: [CharacterAbility] {
+        let connectedAbilityIDs = Set(
+            abilityStore.connections
+                .filter { $0.characterID == character.id }
+                .map(\.abilityID)
+        )
+        return allAbilities.filter {
+            $0.character?.id == character.id || connectedAbilityIDs.contains($0.id)
+        }
+    }
     private var psychologies: [CharacterPsychology] { allPsychologies.filter { $0.character?.id == character.id } }
-    private var relationships: [CharacterRelationship] { allRelationships.filter { $0.sourceCharacter?.id == character.id } }
+    private var relationships: [CharacterRelationship] {
+        allRelationships.filter {
+            $0.sourceCharacter?.id == character.id || $0.targetCharacter?.id == character.id
+        }
+    }
     private var latestAlias: CharacterAlias? { aliases.max { $0.updatedAt < $1.updatedAt } }
     private var latestAbility: CharacterAbility? { abilities.max { $0.updatedAt < $1.updatedAt } }
     private var latestPsychology: CharacterPsychology? { psychologies.max { $0.updatedAt < $1.updatedAt } }
@@ -49,9 +63,9 @@ struct CharacterSummarySectionView: View {
             summaryPicker("心理", automaticTitle: automaticTitle(latestPsychology.map(psychologyLabel)), selection: psychologyBinding) {
                 ForEach(psychologies) { Text(psychologyLabel($0)).tag(Optional($0.id)) }
             }
-            summaryPicker("關係", automaticTitle: automaticTitle(latestRelationship.map { "\($0.targetCharacter?.realName ?? "未知角色")・\($0.type)" }), selection: relationshipBinding) {
+            summaryPicker("關係", automaticTitle: automaticTitle(latestRelationship.map(relationshipLabel)), selection: relationshipBinding) {
                 ForEach(relationships) { relationship in
-                    Text("\(relationship.targetCharacter?.realName ?? "未知角色")・\(relationship.type)").tag(Optional(relationship.id))
+                    Text(relationshipLabel(relationship)).tag(Optional(relationship.id))
                 }
             }
         }
@@ -71,7 +85,14 @@ struct CharacterSummarySectionView: View {
 
     private func automaticTitle(_ value: String?) -> String {
         guard let value, !value.isEmpty else { return "自動" }
-        return "自動・\(value)"
+        return value
+    }
+
+    private func relationshipLabel(_ relationship: CharacterRelationship) -> String {
+        let other = relationship.sourceCharacter?.id == character.id
+            ? relationship.targetCharacter
+            : relationship.sourceCharacter
+        return "\(other?.realName ?? "未知角色")・\(relationship.type)"
     }
 
     private func currentSummary() -> CharacterSummary {

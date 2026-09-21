@@ -1274,6 +1274,42 @@ final class V5SettingsTests: XCTestCase {
         XCTAssertTrue(try container.mainContext.fetch(FetchDescriptor<PowerMember>()).isEmpty)
     }
 
+    func testCharacterMembershipCanMoveBetweenPowersAndRejectDuplicateDestination() throws {
+        let container = try makeMainContainer()
+        let store = V5SettingsStore(container: container)
+        let context = container.mainContext
+        let bookID = UUID()
+        let characterID = UUID()
+        let first = PowerUnit(bookID: bookID, name: "第一勢力")
+        let second = PowerUnit(bookID: bookID, name: "第二勢力")
+        let third = PowerUnit(bookID: bookID, name: "第三勢力")
+        [first, second, third].forEach(context.insert)
+        try context.save()
+
+        let moving = try store.addMember(
+            characterID: characterID,
+            characterBookID: bookID,
+            title: "隊長",
+            to: first,
+            bookID: bookID
+        )
+        _ = try store.addMember(
+            characterID: characterID,
+            characterBookID: bookID,
+            title: "顧問",
+            to: second,
+            bookID: bookID
+        )
+
+        try store.moveMember(moving, to: third, bookID: bookID)
+        XCTAssertEqual(moving.powerID, third.id)
+        XCTAssertEqual(moving.title, "隊長")
+        XCTAssertEqual(store.members(for: bookID).filter { $0.characterID == characterID }.count, 2)
+
+        XCTAssertThrowsError(try store.moveMember(moving, to: second, bookID: bookID))
+        XCTAssertEqual(moving.powerID, third.id)
+    }
+
     func testRemovingUpperDeletesOnlySpecifiedDirectEdge() throws {
         let container = try makeMainContainer()
         let store = V5SettingsStore(container: container)

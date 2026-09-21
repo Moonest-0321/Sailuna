@@ -2193,6 +2193,21 @@ final class V5SettingsStore {
         didSave()
     }
 
+    func moveMember(_ member: PowerMember, to power: PowerUnit, bookID: UUID) throws {
+        guard member.bookID == bookID, power.bookID == bookID else { throw PowerDetailError.invalidBook }
+        guard !members(for: power, bookID: bookID).contains(where: {
+            $0.characterID == member.characterID && $0.id != member.id
+        }) else { throw PowerDetailError.duplicateMember }
+        member.powerID = power.id
+        member.updatedAt = Date()
+        for role in roles(for: member, bookID: bookID) {
+            role.powerID = power.id
+            role.updatedAt = Date()
+        }
+        try context.save()
+        didSave()
+    }
+
     func removeMember(_ member: PowerMember, bookID: UUID) {
         guard member.bookID == bookID else { return }
         roles(for: member, bookID: bookID).forEach(context.delete)
