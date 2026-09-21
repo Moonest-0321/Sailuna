@@ -81,52 +81,86 @@ struct SidebarSettingsManagerView: View {
 
 struct PowerListView: View {
     let book: Book
+    let currentSection: Section?
     let onOpen: (PowerUnit) -> Void
     @Environment(V5SettingsStore.self) private var settingsStore
     @State private var searchText = ""
+    @State private var showCurrentSectionOnly = false
     @State private var showingLevels = false
+    @State private var deleteTarget: PowerUnit?
 
     private var levels: [PowerLevel] { settingsStore.levels(for: book.id) }
-    private var powers: [PowerUnit] {
-        settingsStore.powers(for: book.id).filter { searchText.isEmpty || $0.name.localizedCaseInsensitiveContains(searchText) }
+    private var allPowers: [PowerUnit] {
+        settingsStore.powers(for: book.id)
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+    private var referencedPowers: [PowerUnit] {
+        allPowers.filter { InspectorSectionNameMatcher.matches(name: $0.name, in: currentSection) }
+    }
+    private var powers: [PowerUnit] {
+        let source = showCurrentSectionOnly && currentSection != nil ? referencedPowers : allPowers
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return source.filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) }
     }
 
     var body: some View {
         VStack(spacing: 0) {
+            InspectorLinkedItemsRow(
+                title: "本節連結勢力",
+                entries: referencedPowers.map { InspectorLinkedEntry(id: $0.id, name: $0.name.isEmpty ? "未命名勢力" : $0.name) },
+                onOpen: { id in if let power = allPowers.first(where: { $0.id == id }) { onOpen(power) } }
+            )
+            InspectorSearchField(placeholder: "搜尋勢力", text: $searchText)
+            if currentSection != nil {
+                Toggle("只顯示本節相關勢力", isOn: $showCurrentSectionOnly)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
+            }
             HStack {
-                TextField("搜尋勢力", text: $searchText).textFieldStyle(.roundedBorder)
                 Button { showingLevels = true } label: { Label("管理層級", systemImage: "list.number") }
-                    .buttonStyle(.borderless)
-                Button { addPower() } label: { Label("新增", systemImage: "plus") }
                     .buttonStyle(.borderless)
             }
             .padding(10)
             List {
                 ForEach(powers) { power in
-                    Button { onOpen(power) } label: {
-                        VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 8) {
+                        Button { onOpen(power) } label: {
                             HStack {
                                 Text(power.name.isEmpty ? "未命名勢力" : power.name)
                                     .foregroundStyle(.primary)
                                 Spacer()
-                                Text(PowerHierarchyStore.level(for: power, levels: levels)?.name ?? "尚未指定層級")
+                                if let level = PowerHierarchyStore.level(for: power, levels: levels)?.name,
+                                   !level.isEmpty {
+                                    Text(level)
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
-                            }
-                            if !power.powerDescription.isEmpty {
-                                Text(power.powerDescription).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                                }
                             }
                         }
-                    }
-                    .buttonStyle(.plain)
-                }
-                .onDelete { offsets in
-                    for power in offsets.map({ powers[$0] }) {
-                        settingsStore.deletePower(power, bookID: book.id)
+                        .buttonStyle(.plain)
+                        Button("刪除", role: .destructive) { deleteTarget = power }
+                            .buttonStyle(.plain)
                     }
                 }
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(Color.workspacePanelBackground)
+            Button { addPower() } label: { Label("新增", systemImage: "plus") }
+                .buttonStyle(.borderless)
+                .padding(10)
+        }
+        .confirmationDialog("刪除勢力？", isPresented: Binding(
+            get: { deleteTarget != nil },
+            set: { if !$0 { deleteTarget = nil } }
+        ), presenting: deleteTarget) { power in
+            Button("刪除", role: .destructive) {
+                settingsStore.deletePower(power, bookID: book.id)
+                deleteTarget = nil
+            }
+            Button("取消", role: .cancel) { deleteTarget = nil }
         }
         .sheet(isPresented: $showingLevels) {
             PowerLevelManagementView(book: book)
@@ -967,106 +1001,122 @@ private struct PowerRelationEditorView: View {
 
 struct PlaceListView: View {
     let book: Book
+    let currentSection: Section?
     @Environment(V5SettingsStore.self) private var settingsStore
     @State private var searchText = ""
+    @State private var showCurrentSectionOnly = false
     @State private var editingPlace: Place?
+    @State private var deleteTarget: Place?
 
     private var places: [Place] { settingsStore.places(for: book.id).sorted { $0.sortOrder < $1.sortOrder } }
+    private var referencedPlaces: [Place] {
+        places.filter { InspectorSectionNameMatcher.matches(name: $0.name, in: currentSection) }
+    }
     private var filteredPlaces: [Place] {
-        V5SettingsSearch.places(places, matching: searchText)
+        V5SettingsSearch.places(
+            showCurrentSectionOnly && currentSection != nil ? referencedPlaces : places,
+            matching: searchText
+        )
     }
 
     var body: some View {
-        List {
-            ForEach(filteredPlaces) { place in
-                Button { editingPlace = place } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
+        VStack(spacing: 0) {
+            InspectorLinkedItemsRow(
+                title: "本節連結地點",
+                entries: referencedPlaces.map { InspectorLinkedEntry(id: $0.id, name: $0.name.isEmpty ? "未命名地點" : $0.name) },
+                onOpen: { id in editingPlace = places.first(where: { $0.id == id }) }
+            )
+            InspectorSearchField(placeholder: "搜尋地點", text: $searchText)
+            if currentSection != nil {
+                Toggle("只顯示本節相關地點", isOn: $showCurrentSectionOnly)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
+            }
+            List {
+                ForEach(filteredPlaces) { place in
+                    HStack(spacing: 8) {
+                        Button { editingPlace = place } label: {
                             Text(place.name.isEmpty ? "未命名地點" : place.name)
-                                .font(.headline)
-                            if let placeType = place.placeType, !placeType.isEmpty {
-                                Text(placeType)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
+                                .frame(maxWidth: .infinity, alignment: .leading)
                         }
-                        Text(place.placeDescription.isEmpty ? "尚無簡介" : place.placeDescription)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
+                        .buttonStyle(.plain)
+                        if let placeType = place.placeType, !placeType.isEmpty {
+                            Text(placeType)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Button("刪除", role: .destructive) { deleteTarget = place }
+                            .buttonStyle(.plain)
                     }
                 }
-                .buttonStyle(.plain)
             }
-            .onDelete { offsets in
-                offsets.map { filteredPlaces[$0] }.forEach { settingsStore.deletePlace($0, bookID: book.id) }
-            }
-        }
-        .overlay {
-            if places.isEmpty {
-                ContentUnavailableView("尚無地點", systemImage: "mappin.and.ellipse", description: Text("使用右上角新增第一個地點。"))
-            } else if filteredPlaces.isEmpty {
-                ContentUnavailableView("找不到地點", systemImage: "magnifyingglass", description: Text("請嘗試其他搜尋關鍵字。"))
-            }
-        }
-        .searchable(text: $searchText, prompt: "搜尋地點、別名、類型或簡介")
-        .toolbar {
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(Color.workspacePanelBackground)
             Button("新增地點", systemImage: "plus") {
                 editingPlace = settingsStore.createPlace(bookID: book.id)
             }
+            .padding(10)
         }
         .sheet(item: $editingPlace) { place in
             PlaceDetailView(place: place, book: book)
+        }
+        .confirmationDialog("刪除地點？", isPresented: Binding(
+            get: { deleteTarget != nil },
+            set: { if !$0 { deleteTarget = nil } }
+        ), presenting: deleteTarget) { place in
+            Button("刪除", role: .destructive) {
+                settingsStore.deletePlace(place, bookID: book.id)
+                deleteTarget = nil
+            }
+            Button("取消", role: .cancel) { deleteTarget = nil }
         }
     }
 }
 
 struct WorldTermListView: View {
     let book: Book
+    let currentSection: Section?
     @Environment(V5SettingsStore.self) private var settingsStore
     @State private var searchText = ""
+    @State private var showCurrentSectionOnly = false
     @State private var categoryFilter: String?
     @State private var editingTerm: WorldTerm?
     @State private var newlyCreatedTermID: UUID?
+    @State private var deleteTarget: WorldTerm?
 
     private var terms: [WorldTerm] { settingsStore.worldTerms(for: book.id).sorted { $0.sortOrder < $1.sortOrder } }
+    private var referencedTerms: [WorldTerm] {
+        terms.filter { InspectorSectionNameMatcher.matches(name: $0.name, in: currentSection) }
+    }
     private var filteredTerms: [WorldTerm] {
+        let sectionFilteredTerms = showCurrentSectionOnly && currentSection != nil ? referencedTerms : terms
         let categoryFilteredTerms = categoryFilter.map { category in
-            terms.filter { $0.termCategory == category }
-        } ?? terms
+            sectionFilteredTerms.filter { $0.termCategory == category }
+        } ?? sectionFilteredTerms
         return V5SettingsSearch.worldTerms(categoryFilteredTerms, matching: searchText)
     }
 
     var body: some View {
-        List {
-            ForEach(filteredTerms) { term in
-                Button {
+        VStack(spacing: 0) {
+            InspectorLinkedItemsRow(
+                title: "本節連結世界條目",
+                entries: referencedTerms.map { InspectorLinkedEntry(id: $0.id, name: $0.name.isEmpty ? "未命名條目" : $0.name) },
+                onOpen: { id in
                     newlyCreatedTermID = nil
-                    editingTerm = term
-                } label: {
-                    VStack(alignment: .leading, spacing: 4) {
-                        HStack {
-                            Text(term.name.isEmpty ? "未命名條目" : term.name)
-                                .font(.headline)
-                            if let termCategory = term.termCategory, !termCategory.isEmpty {
-                                Text(termCategory)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        Text(term.termDescription.isEmpty ? "尚無簡介" : term.termDescription)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
+                    editingTerm = terms.first(where: { $0.id == id })
                 }
-                .buttonStyle(.plain)
+            )
+            InspectorSearchField(placeholder: "搜尋世界條目", text: $searchText)
+            if currentSection != nil {
+                Toggle("只顯示本節相關世界條目", isOn: $showCurrentSectionOnly)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
             }
-            .onDelete { offsets in
-                offsets.map { filteredTerms[$0] }.forEach { settingsStore.deleteWorldTerm($0, bookID: book.id) }
-            }
-        }
-        .safeAreaInset(edge: .top, spacing: 0) {
             HStack(spacing: 10) {
                 Picker("分類篩選", selection: $categoryFilter) {
                     Text("全部分類").tag(String?.none)
@@ -1075,35 +1125,57 @@ struct WorldTermListView: View {
                     }
                 }
                 .pickerStyle(.menu)
-
-                Spacer()
-
-                Button {
-                    let term = settingsStore.createWorldTerm(bookID: book.id)
-                    newlyCreatedTermID = term.id
-                    editingTerm = term
-                } label: {
-                    Label("新增條目", systemImage: "plus")
-                }
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
-            .background(.bar)
-        }
-        .overlay {
-            if terms.isEmpty {
-                ContentUnavailableView("尚無世界條目", systemImage: "book.closed", description: Text("使用上方的「新增條目」建立第一筆世界設定。"))
-            } else if filteredTerms.isEmpty {
-                ContentUnavailableView("找不到世界條目", systemImage: "magnifyingglass", description: Text("請嘗試其他搜尋關鍵字或分類。"))
+
+            List {
+                ForEach(filteredTerms) { term in
+                    HStack(spacing: 8) {
+                        Button {
+                            newlyCreatedTermID = nil
+                            editingTerm = term
+                        } label: {
+                            Text(term.name.isEmpty ? "未命名條目" : term.name)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.plain)
+                        if let termCategory = term.termCategory, !termCategory.isEmpty {
+                            Text(termCategory)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        Button("刪除", role: .destructive) { deleteTarget = term }
+                            .buttonStyle(.plain)
+                    }
+                }
             }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(Color.workspacePanelBackground)
+            Button {
+                let term = settingsStore.createWorldTerm(bookID: book.id)
+                newlyCreatedTermID = term.id
+                editingTerm = term
+            } label: { Label("新增條目", systemImage: "plus") }
+            .padding(10)
         }
-        .searchable(text: $searchText, prompt: "搜尋條目、別名、分類或簡介")
         .sheet(item: $editingTerm, onDismiss: { newlyCreatedTermID = nil }) { term in
             WorldTermDetailView(
                 term: term,
                 book: book,
                 shouldFocusName: term.id == newlyCreatedTermID
             )
+        }
+        .confirmationDialog("刪除世界條目？", isPresented: Binding(
+            get: { deleteTarget != nil },
+            set: { if !$0 { deleteTarget = nil } }
+        ), presenting: deleteTarget) { term in
+            Button("刪除", role: .destructive) {
+                settingsStore.deleteWorldTerm(term, bookID: book.id)
+                deleteTarget = nil
+            }
+            Button("取消", role: .cancel) { deleteTarget = nil }
         }
     }
 }

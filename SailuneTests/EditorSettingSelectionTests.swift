@@ -10,6 +10,17 @@ final class EditorSettingSelectionTests: XCTestCase {
         XCTAssertTrue(CharacterSearchMatcher.matches(query: " \n ", realName: "林遠", aliasNames: []))
     }
 
+    func testInspectorSectionNameMatcherUsesCompleteTrimmedName() {
+        XCTAssertTrue(
+            InspectorSectionNameMatcher.matches(
+                name: "  Silver Key  ",
+                inText: "She carried the silver key through the gate."
+            )
+        )
+        XCTAssertFalse(InspectorSectionNameMatcher.matches(name: "Silver Key", inText: "She carried silver."))
+        XCTAssertFalse(InspectorSectionNameMatcher.matches(name: "  \n ", inText: "Any text"))
+    }
+
     func testUniqueMatchTrimsSelectionAndMatchesCharacterAlias() {
         let characterID = UUID()
         let candidate = EditorSettingsNameCandidate(

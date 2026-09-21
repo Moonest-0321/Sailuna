@@ -98,6 +98,75 @@ struct WritingReferenceScanner {
     }
 }
 
+struct InspectorLinkedEntry: Identifiable, Equatable {
+    let id: UUID
+    let name: String
+}
+
+struct InspectorSectionNameMatcher {
+    static func matches(name: String, inText text: String) -> Bool {
+        let normalizedName = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedName.isEmpty else { return false }
+        return text.localizedCaseInsensitiveContains(normalizedName)
+    }
+
+    static func matches(name: String, in section: Section?) -> Bool {
+        guard let section else { return false }
+        return matches(name: name, inText: WritingReferenceScanner.plainText(section))
+    }
+}
+
+struct InspectorLinkedItemsRow: View {
+    let title: String
+    let entries: [InspectorLinkedEntry]
+    let onOpen: (UUID) -> Void
+
+    var body: some View {
+        if !entries.isEmpty {
+            ScrollView(.horizontal) {
+                HStack(spacing: 8) {
+                    Label(title, systemImage: "link")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                    ForEach(entries) { entry in
+                        Button(entry.name) { onOpen(entry.id) }
+                            .buttonStyle(.borderless)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+            }
+            .scrollIndicators(.hidden)
+        }
+    }
+}
+
+struct InspectorSearchField: View {
+    let placeholder: String
+    @Binding var text: String
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .foregroundStyle(.secondary)
+            TextField(placeholder, text: $text)
+                .textFieldStyle(.plain)
+            if !text.isEmpty {
+                Button { text = "" } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(8)
+        .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+        .padding(.bottom, 10)
+    }
+}
+
 private struct CompositionAwareTextField: NSViewRepresentable {
     @Binding var text: String
     let placeholder: String
@@ -580,9 +649,9 @@ struct InspectorRootView: View {
                         onCreated: { navigate(to: .detail($0)) }
                     )
                 } else if activeSidebarKey == .ability {
-                    AbilityListContainerView(book: book, onOpen: { navigate(to: .abilityDetail($0)) })
+                    AbilityListContainerView(book: book, currentSection: currentSection, onOpen: { navigate(to: .abilityDetail($0)) })
                 } else if activeSidebarKey == .power {
-                    PowerListView(book: book, onOpen: { navigate(to: .powerDetail($0)) })
+                    PowerListView(book: book, currentSection: currentSection, onOpen: { navigate(to: .powerDetail($0)) })
                 } else if activeSidebarKey == .item {
                     ItemListContainerView(
                         book: book,
@@ -591,11 +660,11 @@ struct InspectorRootView: View {
                         onOpen: { navigate(to: .itemDetail($0, nil)) }
                     )
                 } else if activeSidebarKey == .storyTag {
-                    StoryTagListView(book: book, onOpen: onOpenStoryTag)
+                    StoryTagListView(book: book, currentSection: currentSection, onOpen: onOpenStoryTag)
                 } else if activeSidebarKey == .place {
-                    PlaceListView(book: book)
+                    PlaceListView(book: book, currentSection: currentSection)
                 } else if activeSidebarKey == .worldTerm {
-                    WorldTermListView(book: book)
+                    WorldTermListView(book: book, currentSection: currentSection)
                 } else {
                     ContentUnavailableView("設定集項目已隱藏", systemImage: "eye.slash")
                 }
@@ -825,15 +894,25 @@ private struct ItemListContainerView: View {
     @Environment(ItemCopyStore.self) private var copyStore
     @Environment(V5SettingsStore.self) private var settingsStore
     @Query(sort: \Item.updatedAt, order: .reverse) private var allItems: [Item]
+    @Query(sort: \ItemLevel.sortOrder) private var allLevels: [ItemLevel]
     @State private var searchText = ""
     @State private var showCurrentSectionOnly = false
     @State private var showNewItemSheet = false
     @State private var newItemName = ""
+    @State private var deleteTarget: Item?
+    @State private var deletionErrorMessage: String?
+
+    private var bookItems: [Item] {
+        allItems.filter { $0.book?.id == book.id }
+    }
+
+    private var referencedItems: [Item] {
+        bookItems.filter { InspectorSectionNameMatcher.matches(name: $0.name, in: currentSection) }
+    }
 
     private var items: [Item] {
-        let bookItems = allItems.filter { $0.book?.id == book.id }
         let related = showCurrentSectionOnly && currentSection != nil
-            ? bookItems.filter { WritingReferenceScanner.contains($0.name, in: currentSection!) }
+            ? referencedItems
             : bookItems
         let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty else { return related }
@@ -845,22 +924,16 @@ private struct ItemListContainerView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-                TextField("搜尋物品", text: $searchText).textFieldStyle(.plain)
-                if !searchText.isEmpty {
-                    Button { searchText = "" } label: {
-                        Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(8)
-            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-            .padding(.horizontal, 12).padding(.top, 10)
+            InspectorLinkedItemsRow(
+                title: "本節連結物品",
+                entries: referencedItems.map { InspectorLinkedEntry(id: $0.id, name: $0.name.isEmpty ? "未命名物品" : $0.name) },
+                onOpen: { id in if let item = bookItems.first(where: { $0.id == id }) { onOpen(item) } }
+            )
+
+            InspectorSearchField(placeholder: "搜尋物品", text: $searchText)
 
             if currentSection != nil {
-                Toggle("只顯示本節引用物品", isOn: $showCurrentSectionOnly)
+                Toggle("只顯示本節相關物品", isOn: $showCurrentSectionOnly)
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .padding(.horizontal, 12).padding(.vertical, 8)
@@ -869,11 +942,9 @@ private struct ItemListContainerView: View {
             }
 
             List {
-                if items.isEmpty {
-                    ContentUnavailableView("尚無符合的物品", systemImage: "shippingbox")
-                } else {
+                if !items.isEmpty {
                     ForEach(items) { item in
-                    ItemReferenceRow(item: item, book: book, onSelectSection: onSelectSection, onOpen: onOpen)
+                        ItemReferenceRow(item: item, onOpen: onOpen, onDelete: { deleteTarget = item })
                     }
                 }
             }
@@ -909,84 +980,57 @@ private struct ItemListContainerView: View {
             .padding(20)
             .frame(width: 320)
         }
+        .confirmationDialog("刪除物品？", isPresented: Binding(
+            get: { deleteTarget != nil },
+            set: { if !$0 { deleteTarget = nil } }
+        ), presenting: deleteTarget) { item in
+            Button("刪除", role: .destructive) { delete(item) }
+            Button("取消", role: .cancel) { deleteTarget = nil }
+        }
+        .alert("物品刪除未完成", isPresented: Binding(
+            get: { deletionErrorMessage != nil },
+            set: { if !$0 { deletionErrorMessage = nil } }
+        )) { Button("好") { deletionErrorMessage = nil } } message: {
+            Text(deletionErrorMessage ?? "")
+        }
+    }
+
+    private func delete(_ item: Item) {
+        do {
+            let levels = allLevels.filter { $0.itemID == item.id }
+            _ = try CrossStoreDeletionCoordinator.deleteItem(
+                item, levels: levels, in: modelContext,
+                copyStore: copyStore, settingsStore: settingsStore
+            )
+            deleteTarget = nil
+        } catch {
+            modelContext.rollback()
+            deletionErrorMessage = error.localizedDescription
+        }
     }
 }
 
 private struct ItemReferenceRow: View {
     @Bindable var item: Item
-    let book: Book
-    let onSelectSection: ((Section) -> Void)?
     let onOpen: (Item) -> Void
-    @Environment(ItemCopyStore.self) private var copyStore
-    @Query private var allCharacters: [Character]
-
-    private var referencedSections: [Section] {
-        WritingReferenceScanner.sections(for: item, in: book)
-    }
-    private var copies: [ItemCopy] { copyStore.copies.filter { $0.itemID == item.id } }
+    let onDelete: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        HStack(spacing: 8) {
             Button(action: { onOpen(item) }) {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(item.name.isEmpty ? "未命名物品" : item.name).font(.headline)
-                    if !item.category.isEmpty { Text(item.category).font(.caption).foregroundStyle(.secondary) }
-                    if !item.itemDescription.isEmpty { Text(item.itemDescription).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
-                }
+                Text(item.name.isEmpty ? "未命名物品" : item.name)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            if referencedSections.isEmpty {
-                Text("尚未在正文中出現")
-                    .font(.caption2).foregroundStyle(.secondary)
-            } else {
-                VStack(alignment: .leading, spacing: 3) {
-                    Text("出現於")
-                        .font(.caption2).foregroundStyle(.secondary)
-                    ScrollView(.vertical) {
-                        VStack(alignment: .leading, spacing: 3) {
-                            ForEach(referencedSections) { section in
-                                Button("第 \(sectionNumber(section, in: book)) 節｜\(section.title)") {
-                                    onSelectSection?(section)
-                                }
-                                .buttonStyle(.link)
-                                .font(.caption2)
-                                .lineLimit(1)
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                    }
-                    .frame(maxHeight: 72)
-                }
-            }
-            if !copies.isEmpty {
-                Text("副本：\(copies.count) 件")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                let copyIDs = Set(copies.map(\.id))
-                let characterIDs = Set(copyStore.holdings.filter { copyIDs.contains($0.copyID) }.map(\.characterID))
-                let linkedNames = allCharacters.filter { characterIDs.contains($0.id) }.map {
-                    $0.realName.isEmpty ? "未命名角色" : $0.realName
-                }
-                if !linkedNames.isEmpty {
-                    Text("持有角色：" + linkedNames.joined(separator: "、"))
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-            }
+            Button("刪除", role: .destructive, action: onDelete)
+                .buttonStyle(.plain)
         }
         .padding(.vertical, 5)
         .onChange(of: item.name) { item.updatedAt = Date() }
         .onChange(of: item.itemDescription) { item.updatedAt = Date() }
     }
 
-    private func sectionNumber(_ section: Section, in book: Book) -> Int {
-        guard let volume = section.volume else { return 1 }
-        return volume.sections.sorted { $0.sortOrder < $1.sortOrder }
-            .firstIndex(where: { $0.id == section.id }).map { $0 + 1 } ?? 1
-    }
 }
 
 private struct ItemDetailView: View {
@@ -1607,57 +1651,96 @@ private struct AbilityDetailView: View {
 
 private struct AbilityListContainerView: View {
     let book: Book
+    let currentSection: Section?
     let onOpen: (CharacterAbility) -> Void
     @Environment(\.modelContext) private var modelContext
     @Environment(AbilityProgressStore.self) private var abilityStore
+    @Environment(V5SettingsStore.self) private var settingsStore
     @Query(sort: \CharacterAbility.createdAt) private var allAbilities: [CharacterAbility]
     @Query(sort: \Character.createdAt) private var allCharacters: [Character]
+    @State private var searchText = ""
+    @State private var showCurrentSectionOnly = false
+    @State private var deleteTarget: CharacterAbility?
+    @State private var deletionErrorMessage: String?
 
     private var characters: [Character] { allCharacters.filter { $0.book?.id == book.id } }
-    private var abilities: [CharacterAbility] {
+    private var bookAbilities: [CharacterAbility] {
         let ids = Set(characters.map(\.id))
         return allAbilities.filter { ability in
             abilityStore.bookLinks.contains { $0.abilityID == ability.id && $0.bookID == book.id }
                 || (ability.character.map { ids.contains($0.id) } ?? false)
         }
     }
+    private var referencedAbilities: [CharacterAbility] {
+        bookAbilities.filter { InspectorSectionNameMatcher.matches(name: $0.name, in: currentSection) }
+    }
+    private var abilities: [CharacterAbility] {
+        let source = showCurrentSectionOnly && currentSection != nil ? referencedAbilities : bookAbilities
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return source }
+        return source.filter { $0.name.localizedCaseInsensitiveContains(query) }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            if abilities.isEmpty {
-                VStack(spacing: 8) {
-                    Image(systemName: "sparkles")
-                        .font(.system(size: 28))
-                        .foregroundStyle(.secondary)
-                    Text("尚無能力資料")
-                        .font(.headline)
-                    Text("建立能力後，再到角色詳細資料中連接它。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .padding(24)
-            } else {
-                List(abilities) { ability in
-                    Button { onOpen(ability) } label: {
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(ability.name.isEmpty ? "未命名能力" : ability.name).font(.headline)
-                        Text("查看等級與連接角色")
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, 4)
-                    }
-                    .buttonStyle(.plain)
-                }
-                .listStyle(.plain)
+            InspectorLinkedItemsRow(
+                title: "本節連結能力",
+                entries: referencedAbilities.map { InspectorLinkedEntry(id: $0.id, name: $0.name.isEmpty ? "未命名能力" : $0.name) },
+                onOpen: { id in if let ability = bookAbilities.first(where: { $0.id == id }) { onOpen(ability) } }
+            )
+            InspectorSearchField(placeholder: "搜尋能力", text: $searchText)
+            if currentSection != nil {
+                Toggle("只顯示本節相關能力", isOn: $showCurrentSectionOnly)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 8)
             }
-            Divider()
+            List(abilities) { ability in
+                HStack(spacing: 8) {
+                    Button(ability.name.isEmpty ? "未命名能力" : ability.name) { onOpen(ability) }
+                        .buttonStyle(.plain)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Button("刪除", role: .destructive) { deleteTarget = ability }
+                        .buttonStyle(.plain)
+                }
+                .padding(.vertical, 4)
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(Color.workspacePanelBackground)
             Button("新增能力", systemImage: "plus") {
                 let ability = CharacterAbility(name: "新能力")
                 modelContext.insert(ability)
                 abilityStore.register(abilityID: ability.id, bookID: book.id)
             }
             .padding(10)
+        }
+        .confirmationDialog("刪除能力？", isPresented: Binding(
+            get: { deleteTarget != nil },
+            set: { if !$0 { deleteTarget = nil } }
+        ), presenting: deleteTarget) { ability in
+            Button("刪除", role: .destructive) { delete(ability) }
+            Button("取消", role: .cancel) { deleteTarget = nil }
+        }
+        .alert("能力刪除未完成", isPresented: Binding(
+            get: { deletionErrorMessage != nil },
+            set: { if !$0 { deletionErrorMessage = nil } }
+        )) { Button("好") { deletionErrorMessage = nil } } message: {
+            Text(deletionErrorMessage ?? "")
+        }
+    }
+
+    private func delete(_ ability: CharacterAbility) {
+        do {
+            _ = try CrossStoreDeletionCoordinator.deleteAbility(
+                ability, in: modelContext,
+                abilityStore: abilityStore, settingsStore: settingsStore
+            )
+            deleteTarget = nil
+        } catch {
+            modelContext.rollback()
+            deletionErrorMessage = error.localizedDescription
         }
     }
 }
@@ -1782,42 +1865,14 @@ struct CharacterListView: View {
     var body: some View {
         VStack(spacing: 0) {
             if !referencedCharacters.isEmpty {
-                ScrollView(.horizontal) {
-                    HStack(spacing: 8) {
-                        Label("本節連結角色", systemImage: "link")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                        ForEach(referencedCharacters) { character in
-                            Button(character.realName.isEmpty ? "未命名角色" : character.realName) {
-                                onSelect(character)
-                            }
-                            .buttonStyle(.borderless)
-                        }
-                    }
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
-                }
-                .scrollIndicators(.hidden)
+                InspectorLinkedItemsRow(
+                    title: "本節連結角色",
+                    entries: referencedCharacters.map { InspectorLinkedEntry(id: $0.id, name: $0.realName.isEmpty ? "未命名角色" : $0.realName) },
+                    onOpen: { id in if let character = characters.first(where: { $0.id == id }) { onSelect(character) } }
+                )
             }
 
-            HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass")
-                    .foregroundStyle(.secondary)
-                TextField("搜尋角色", text: $searchText)
-                    .textFieldStyle(.plain)
-                if !searchText.isEmpty {
-                    Button { searchText = "" } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .foregroundStyle(.secondary)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(8)
-            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
-            .padding(.horizontal, 12)
-            .padding(.top, 10)
-            .padding(.bottom, 10)
+            InspectorSearchField(placeholder: "搜尋角色", text: $searchText)
 
             if currentSection != nil {
                 Toggle("只顯示本節相關角色", isOn: $showCurrentSectionOnly)
