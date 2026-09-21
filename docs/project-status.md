@@ -44,6 +44,8 @@
 
 ## 建議下一步
 
+- 2026-09-21：V6.2.2 右側設定集欄依確認線框重設：設定種類列下依序是「連結符號＋本節連結角色」與實際引用角色、搜尋、只顯示本節相關角色及清單；角色列右側依序顯示既有角色定位與「刪除」按鈕。移除全域引用摘要、UID 與未指定空狀態／提示文案；新增維持原位。完整 macOS XCTest、Debug build、parse、diff check 及新建置 UI 驗收通過；追加標籤與刪除按鈕的畫面驗收待新建置重啟，未改 schema 或資料。
+- 2026-09-21：V6.2.2 關係網／關係列表的角色搜尋補上本名與別名比對；設定集角色列表原已支援兩者。matcher 專項與完整 macOS XCTest、Swift parse 及 diff check 通過；未改 schema、關係資料或版面。
 - 2026-09-21：編輯器「頁面地圖」空白入口 R／U／I 均已批准並完成程式實作：按鈕置於「大綱」與「設定集」之間，點擊只取代中央正文區為空白，工具列與左右側欄保留；同一按鈕再次點擊返回正文。Frontend parse、`git diff --check` 與 macOS Debug build 通過；隔離 UI 冒煙待驗收，未新增資料模型或修改 store。
 - 2026-09-21：右側設定種類列依使用者指定，將「簡易版大綱」納入設定種類，移除「設定集／大綱」外層橫欄及「設定種類」字樣；簡易大綱原有子頁籤與正文跳轉保留。受影響 parse、diff check 與 macOS Debug build 通過，隔離 UI 驗收待完成。
 - 2026-09-21：正文中文輸入改用原生 `NSTextView`／`NSLayoutManager` 組字呈現，避免自訂移除原生組字底線後以 marked range 手動畫線；Inspector 短文字欄位維持原狀。更新編輯器規格；frontend parse、完整 macOS XCTest 與 diff check 通過，原生注音 Enter 確認仍待隔離 UI 驗收。

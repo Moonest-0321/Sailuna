@@ -536,9 +536,6 @@ struct InspectorRootView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if let currentSection {
-                WritingReferenceSummaryView(book: book, section: currentSection)
-            }
             if route == .list {
                 HStack(spacing: 8) {
                     ScrollView(.horizontal) {
@@ -1493,56 +1490,6 @@ private struct ItemLevelRow: View {
     }
 }
 
-private struct WritingReferenceSummaryView: View {
-    let book: Book
-    let section: Section
-    @Query private var allItems: [Item]
-    @Query private var allAliases: [CharacterAlias]
-
-    private var referencedItems: [Item] {
-        allItems.filter { $0.book?.id == book.id && WritingReferenceScanner.contains($0.name, in: section) }
-    }
-    private var referencedCharacters: [Character] {
-        book.characters.filter { WritingReferenceScanner.contains($0, aliases: allAliases, in: section) }
-    }
-    private var referencedCharacterLabels: [String] {
-        referencedCharacters.map { character in
-            let matchedAliases = WritingReferenceScanner.matchingNames(for: character, aliases: allAliases, in: section)
-                .filter { $0.compare(character.realName, options: [.caseInsensitive, .diacriticInsensitive]) != .orderedSame }
-            let name = character.realName.isEmpty ? "未命名角色" : character.realName
-            return matchedAliases.isEmpty ? name : "\(name)（別名：\(matchedAliases.joined(separator: "、"))）"
-        }
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Label("本節引用", systemImage: "link")
-                    .font(.caption.weight(.semibold))
-                Spacer()
-                Text("角色 \(referencedCharacters.count) · 物品 \(referencedItems.count)")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            }
-            if referencedCharacters.isEmpty && referencedItems.isEmpty {
-                Text("尚未找到設定集項目引用")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-            } else {
-                Text((referencedCharacterLabels + referencedItems.map { $0.name })
-                    .filter { !$0.isEmpty }
-                    .joined(separator: "、"))
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(2)
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .background(Color.accentColor.opacity(0.06))
-    }
-}
-
 private struct AbilityDetailView: View {
     @Bindable var ability: CharacterAbility
     let book: Book
@@ -1794,6 +1741,21 @@ struct CharacterListView: View {
     @State private var showCurrentSectionOnly = false
     @State private var deleteTarget: Character?
     @Query private var allAliases: [CharacterAlias]
+    @Query private var allProfiles: [CharacterProfile]
+
+    private var referencedCharacters: [Character] {
+        guard let currentSection else { return [] }
+        let linkedIDs = WritingReferenceScanner.linkedCharacterIDs(in: currentSection)
+        return characters.filter { character in
+            linkedIDs.contains(character.id) ||
+                WritingReferenceScanner.contains(character, aliases: allAliases, in: currentSection)
+        }
+    }
+
+    private func role(for character: Character) -> String {
+        allProfiles.first { $0.character?.id == character.id }?.role
+            .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+    }
 
     private var filteredCharacters: [Character] {
         let source: [Character]
@@ -1819,6 +1781,25 @@ struct CharacterListView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if !referencedCharacters.isEmpty {
+                ScrollView(.horizontal) {
+                    HStack(spacing: 8) {
+                        Label("本節連結角色", systemImage: "link")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        ForEach(referencedCharacters) { character in
+                            Button(character.realName.isEmpty ? "未命名角色" : character.realName) {
+                                onSelect(character)
+                            }
+                            .buttonStyle(.borderless)
+                        }
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                }
+                .scrollIndicators(.hidden)
+            }
+
             HStack(spacing: 8) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(.secondary)
@@ -1848,10 +1829,14 @@ struct CharacterListView: View {
 
             List {
                 if filteredCharacters.isEmpty {
-                    ContentUnavailableView("找不到角色", systemImage: "person.crop.circle.badge.questionmark")
+                    EmptyView()
                 } else {
                     ForEach(filteredCharacters) { character in
-                    CharacterRow(character: character)
+                    CharacterRow(
+                        character: character,
+                        role: role(for: character),
+                        onDelete: { deleteTarget = character }
+                    )
                         .contentShape(Rectangle())
                         .onTapGesture { onSelect(character) }
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
@@ -1896,6 +1881,8 @@ struct CharacterListView: View {
 
 struct CharacterRow: View {
     let character: Character
+    let role: String
+    let onDelete: () -> Void
     var body: some View {
         HStack(spacing: 12) {
             Button { character.isPinned.toggle() } label: {
@@ -1907,10 +1894,16 @@ struct CharacterRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(character.realName.isEmpty ? "未命名角色" : character.realName)
                     .font(.body).fontWeight(.medium)
-                Text(String(format: "UID: %06d", character.sortOrder + 1))
-                    .font(.caption2).foregroundStyle(.secondary)
             }
             Spacer()
+            if !role.isEmpty {
+                Text(role)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            Button("刪除", role: .destructive, action: onDelete)
+                .buttonStyle(.plain)
         }
         .padding(.vertical, 4)
     }
@@ -2491,6 +2484,7 @@ struct KinshipGraphView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \Character.sortOrder) private var allCharacters: [Character]
     @Query(sort: \CharacterRelationship.createdAt) private var allRelationships: [CharacterRelationship]
+    @Query private var allAliases: [CharacterAlias]
     @Query private var allProfiles: [CharacterProfile]
     @State private var showingAddSheet = false
     @State private var showingAddGeneralRelationship = false
@@ -2534,7 +2528,14 @@ struct KinshipGraphView: View {
     private var visibleGroups: [RelationshipGroup] {
         graphGroups.filter { group in
             let peer = group.source.id == character.id ? group.target : group.source
-            let matchesSearch = searchText.isEmpty || peer.realName.localizedCaseInsensitiveContains(searchText)
+            let aliasNames = allAliases
+                .filter { $0.character?.id == peer.id }
+                .map(\.name)
+            let matchesSearch = CharacterSearchMatcher.matches(
+                query: searchText,
+                realName: peer.realName,
+                aliasNames: aliasNames
+            )
             let matchesFilter = selectedFilter == "全部" ||
                 (selectedFilter == "血緣" ? !group.kinships.isEmpty : group.currentNames.contains(selectedFilter))
             return matchesSearch && matchesFilter

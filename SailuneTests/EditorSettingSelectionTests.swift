@@ -2,6 +2,14 @@ import XCTest
 @testable import Sailune
 
 final class EditorSettingSelectionTests: XCTestCase {
+    func testCharacterSearchMatchesRealNameAndAlias() {
+        XCTAssertTrue(CharacterSearchMatcher.matches(query: "林遠", realName: "林遠", aliasNames: ["夜行者"]))
+        XCTAssertTrue(CharacterSearchMatcher.matches(query: "夜行者", realName: "林遠", aliasNames: ["夜行者"]))
+        XCTAssertTrue(CharacterSearchMatcher.matches(query: "  夜行者  ", realName: "林遠", aliasNames: ["夜行者"]))
+        XCTAssertFalse(CharacterSearchMatcher.matches(query: "不存在", realName: "林遠", aliasNames: ["夜行者"]))
+        XCTAssertTrue(CharacterSearchMatcher.matches(query: " \n ", realName: "林遠", aliasNames: []))
+    }
+
     func testUniqueMatchTrimsSelectionAndMatchesCharacterAlias() {
         let characterID = UUID()
         let candidate = EditorSettingsNameCandidate(

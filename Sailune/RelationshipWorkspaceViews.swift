@@ -1,6 +1,15 @@
 import SwiftUI
 import SwiftData
 
+enum CharacterSearchMatcher {
+    static func matches(query: String, realName: String, aliasNames: [String]) -> Bool {
+        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalizedQuery.isEmpty else { return true }
+        return realName.localizedCaseInsensitiveContains(normalizedQuery) ||
+            aliasNames.contains { $0.localizedCaseInsensitiveContains(normalizedQuery) }
+    }
+}
+
 struct RelationshipGroup: Identifiable {
     let source: Character
     let target: Character
@@ -66,6 +75,7 @@ struct RelationshipListView: View {
     let searchText: String
     let selectedFilter: String
     @Query(sort: \CharacterRelationship.updatedAt, order: .reverse) private var allRelationships: [CharacterRelationship]
+    @Query private var allAliases: [CharacterAlias]
     @State private var selectedGroup: RelationshipGroup?
 
     private var groups: [RelationshipGroup] {
@@ -79,7 +89,14 @@ struct RelationshipListView: View {
     private var visibleGroups: [RelationshipGroup] {
         groups.filter { group in
             let peer = group.source.id == center.id ? group.target : group.source
-            let matchesSearch = searchText.isEmpty || peer.realName.localizedCaseInsensitiveContains(searchText)
+            let aliasNames = allAliases
+                .filter { $0.character?.id == peer.id }
+                .map(\.name)
+            let matchesSearch = CharacterSearchMatcher.matches(
+                query: searchText,
+                realName: peer.realName,
+                aliasNames: aliasNames
+            )
             let matchesFilter = selectedFilter == "全部" ||
                 (selectedFilter == "血緣" ? !group.kinships.isEmpty : group.currentNames.contains(selectedFilter))
             return matchesSearch && matchesFilter
