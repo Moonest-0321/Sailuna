@@ -63,6 +63,24 @@ final class MapV7Tests: XCTestCase {
         XCTAssertEqual(roundTrip.y, coordinate.y, accuracy: 0.0001)
     }
 
+    func testViewportUsesFixedFourByThreeClipInsideWideWorkspace() {
+        let availableBounds = CGRect(x: 24, y: 24, width: 1_200, height: 600)
+        let fixedViewport = MapCoordinateTransform.fittedMapRect(in: availableBounds)
+        var viewport = MapViewport()
+
+        XCTAssertEqual(fixedViewport.size, CGSize(width: 800, height: 600))
+        XCTAssertEqual(viewport.mapRect(in: availableBounds), fixedViewport)
+
+        viewport.setZoom(2, anchor: CGPoint(x: fixedViewport.midX, y: fixedViewport.midY), in: availableBounds)
+        viewport.setPan(CGSize(width: 10_000, height: 0), in: availableBounds)
+        let contentRect = viewport.mapRect(in: availableBounds)
+
+        XCTAssertEqual(contentRect.width, fixedViewport.width * 2)
+        XCTAssertEqual(contentRect.minX, fixedViewport.minX, accuracy: 0.0001)
+        XCTAssertEqual(fixedViewport.minX, 224, accuracy: 0.0001)
+        XCTAssertGreaterThan(fixedViewport.minX, availableBounds.minX)
+    }
+
     func testMarkerNameUsesSemanticZoomThreshold() {
         XCTAssertFalse(MapMarkerPresentation.showsName(zoom: 1.49, isHovered: false, isSelected: false))
         XCTAssertTrue(MapMarkerPresentation.showsName(zoom: 1.5, isHovered: false, isSelected: false))

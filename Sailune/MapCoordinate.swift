@@ -151,8 +151,9 @@ struct MapViewport: Equatable {
     }
 
     private func clampedPan(_ proposedPan: CGSize, mapSize: CGSize, in bounds: CGRect) -> CGSize {
-        let maximumX = max(0, (mapSize.width - bounds.width) / 2)
-        let maximumY = max(0, (mapSize.height - bounds.height) / 2)
+        let viewportRect = MapCoordinateTransform.fittedMapRect(in: bounds)
+        let maximumX = max(0, (mapSize.width - viewportRect.width) / 2)
+        let maximumY = max(0, (mapSize.height - viewportRect.height) / 2)
         return CGSize(
             width: min(max(proposedPan.width, -maximumX), maximumX),
             height: min(max(proposedPan.height, -maximumY), maximumY)

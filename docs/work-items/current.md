@@ -6,6 +6,20 @@
 >
 > 單一下一步：以最新建置確認 hover、文字點擊、設定跳轉與標記／畫布拖曳的實際手感。
 
+## V7.4b 放大地圖命中區外溢（完成）
+
+- 使用者確認 V7.4a 後仍可重現：放大時點擊工具列「匯入地圖」會被底下地圖的新增標記手勢接收。
+- 根因是 SwiftUI 的視覺 `clipShape` 不會自動限制放大子 View 的 hit-testing；MapSurface 雖看不見，命中區仍可能延伸到 toolbar。
+- 固定 4:3 viewport 與其 GeometryReader 現在都明確設定 interaction `contentShape` 並裁切；工具列補上不透明工作區背景與較高 z-index，地圖層固定在下方。放大的地圖不能再從 viewport／地圖區塊外接收點擊。
+- Swift parse、無簽章 Debug build與 diff check 通過；此問題屬實際 pointer routing，仍需最新建置 UI 確認。
+
+## V7.4a 固定 4:3 viewport 縮放裁切（完成）
+
+- 使用者回報放大後座標配置錯誤，且原地圖以外區域也變成地圖。根因是縮放直接放大整個 MapSurface frame，只有中央工作區層級裁切，未保留固定 4:3 可視邊界。
+- 現改為固定 Fit 尺寸的 4:3 viewport；底圖、座標軸與標記作為同一 content rect，只在 viewport 內縮放、平移與裁切。外側工作區保持原背景，不再被放大的地圖覆蓋。
+- 平移 clamp 改以固定 4:3 viewport 尺寸計算，不再使用可能更寬或更高的整個可用工作區；寬視窗下也可正確看到地圖左右邊界。
+- 新增寬工作區固定 viewport 測試。18 項地圖專項與完整 186 項 macOS XCTest、Debug build、Swift parse、diff check 通過。
+
 ## V7.4 標記完整命中、設定跳轉與拖曳定位（R／U／I approved；完成）
 
 ### 現況與使用者要求

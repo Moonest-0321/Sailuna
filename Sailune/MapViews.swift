@@ -91,40 +91,60 @@ struct MapWorkspaceView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .zIndex(1)
 
             Divider()
 
             GeometryReader { proxy in
                 let bounds = CGRect(origin: .zero, size: proxy.size)
                 let availableBounds = bounds.insetBy(dx: 24, dy: 24)
+                let viewportRect = MapCoordinateTransform.fittedMapRect(in: availableBounds)
                 let mapRect = viewport.mapRect(in: availableBounds)
 
-                MapSurfaceView(
-                    pdfData: pdfData,
-                    places: placedPlaces,
-                    zoom: viewport.zoom,
-                    selectedPlaceID: markerDraft?.placeID,
-                    onCreateMarker: { coordinate in
-                        markerDraft = MapMarkerDraft(coordinate: coordinate)
-                    },
-                    onEditMarker: { place, coordinate in
-                        markerDraft = MapMarkerDraft(place: place, coordinate: coordinate)
-                    },
-                    onMoveMarker: moveMarker,
-                    onMarkerDragChanged: { isDragging in
-                        isDraggingMarker = isDragging
-                    }
-                )
-                .frame(width: mapRect.width, height: mapRect.height)
-                .position(x: mapRect.midX, y: mapRect.midY)
+                ZStack(alignment: .topLeading) {
+                    Color(nsColor: .windowBackgroundColor)
+
+                    MapSurfaceView(
+                        pdfData: pdfData,
+                        places: placedPlaces,
+                        zoom: viewport.zoom,
+                        selectedPlaceID: markerDraft?.placeID,
+                        onCreateMarker: { coordinate in
+                            markerDraft = MapMarkerDraft(coordinate: coordinate)
+                        },
+                        onEditMarker: { place, coordinate in
+                            markerDraft = MapMarkerDraft(place: place, coordinate: coordinate)
+                        },
+                        onMoveMarker: moveMarker,
+                        onMarkerDragChanged: { isDragging in
+                            isDraggingMarker = isDragging
+                        }
+                    )
+                    .frame(width: mapRect.width, height: mapRect.height)
+                    .offset(
+                        x: mapRect.minX - viewportRect.minX,
+                        y: mapRect.minY - viewportRect.minY
+                    )
+                }
+                .frame(width: viewportRect.width, height: viewportRect.height, alignment: .topLeading)
+                .clipShape(Rectangle())
+                // Visual clipping does not constrain SwiftUI hit testing. Keep the
+                // enlarged map content from receiving clicks in the toolbar/letterbox.
+                .contentShape(.interaction, Rectangle())
+                .overlay(Rectangle().stroke(.primary.opacity(0.55), lineWidth: 1))
+                .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
+                .position(x: viewportRect.midX, y: viewportRect.midY)
                 .simultaneousGesture(panGesture(in: availableBounds))
                 .simultaneousGesture(magnifyGesture(in: availableBounds))
                 .onHover { isInside in
                     scrollWheelMonitor.isPointerInside = isInside
                 }
             }
+            .contentShape(.interaction, Rectangle())
             .clipped()
             .background(Color(nsColor: .windowBackgroundColor))
+            .zIndex(0)
             .onGeometryChange(for: CGSize.self) { proxy in
                 proxy.size
             } action: { size in
@@ -397,11 +417,8 @@ private struct MapSurfaceView: View {
                     }
                 }
             }
-            .clipShape(Rectangle())
-            .overlay(Rectangle().stroke(.primary.opacity(0.55), lineWidth: 1))
         }
         .aspectRatio(4 / 3, contentMode: .fit)
-        .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
     }
 
     private func markerHelp(for place: Place, coordinate: MapCoordinate) -> String {

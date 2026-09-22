@@ -6,6 +6,19 @@
 >
 > 唯一下一步：由使用者在最新建置確認 hover、文字點擊、設定跳轉，以及標記拖曳與地圖平移不衝突。
 
+## 2026-09-22 V7.4b 命中區裁切
+
+- V7.4a 視覺裁切後，使用者仍重現放大地圖攔截「匯入地圖」點擊並新增 Place；確認是 SwiftUI clip 不限制 hit-testing，不是座標數學問題。
+- viewport 與 GeometryReader 均加入 interaction content shape／clipping；工具列使用實色背景與 z-index 1，地圖區為 z-index 0，阻止放大 MapSurface 在工具列或 letterbox 接收點擊。
+- Swift parse、無簽章 Debug build與 diff check 通過；需由最新建置確認匯入按鈕只開啟檔案選擇器。
+
+## 2026-09-22 V7.4a 固定 viewport 修正
+
+- 使用者回報放大後 X／Y 配置異常且 4:3 外側也顯示地圖。查明 MapSurface 自身 frame 被放大後只由整個中央區裁切，沒有固定地圖 viewport。
+- `MapWorkspaceView` 現以 Fit rect 建立固定 4:3 clip，放大的 MapSurface 依 content rect offset 在其中；viewport 邊框與陰影固定，外側維持工作區背景。
+- `MapViewport` 平移上限改依 Fit viewport 尺寸計算，寬／高工作區不再混入 letterbox 尺寸。新增寬工作區測試，確認 100% content 等於 viewport、200% content 仍只由固定邊界顯示。
+- 18 項地圖專項、完整 186 項 macOS XCTest、無簽章 Debug build、Swift parse 與 diff check 通過。
+
 ## 2026-09-22 V7.4 標記互動
 
 - 截圖查明點擊後名稱例外來自 `selectedPlaceID` 未隨 sheet 關閉清除；現改由 `markerDraft?.placeID` 推導選取狀態，關閉表單即恢復一般顯示。

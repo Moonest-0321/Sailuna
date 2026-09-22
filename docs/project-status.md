@@ -21,7 +21,7 @@
 | 世界時間軸 | 紀元、年月日、主／副軸、事件及設定時間序唯讀投影；可由既有敘事大綱建立事件 |
 | 設定集 | 角色、別名、勢力、能力、外觀、心理、物品、一般／血緣關係、事件與歷史；每本書可管理側邊欄顯示 |
 | 資料 | 一個既有主 store 加五個獨立功能 store；settings V11 的 Place 保存可空座標，地圖 PDF 另存 `Sailune/Maps`，不遷移主資料 |
-| 自動測試 | 完整 185 項 XCTest 通過；無簽章 Debug build 通過。地圖測試包含 PDF／PNG／JPEG、透明白底、座標輸入、背景替換、備份、跨書隔離、永久刪除、viewport、語意縮放與拖曳邊界 |
+| 自動測試 | 完整 186 項 XCTest 通過；無簽章 Debug build 通過。地圖測試包含 PDF／PNG／JPEG、透明白底、座標輸入、背景替換、備份、跨書隔離、永久刪除、固定 viewport、語意縮放與拖曳邊界 |
 | 人工驗收 | V7.1／V7.2 已以隔離資料驗證圖片補白、座標輸入、工具列直接建立、刪除確認與取消保留；永久刪除由隔離自動測試驗證。既有 V5 預設與勢力流程已冒煙；V6.4 紀元刪除 alert 取消仍待完成 |
 
 產品版本與資料 schema 版本分開：V7 地圖保持主資料的 `NovelWriterSchemaV5`；設定集使用 `V5SettingsSchemaV11`（保留不可變的 V1～V10 遷移快照），勢力關係、資產及時間序以 UUID 連接既有來源，故事規劃為 `StoryPlanningSchemaV7`。
@@ -60,6 +60,8 @@
 - V7.3 已完成：編輯／大綱／地圖改為同層互斥模式並直接互切；設定集保持獨立。標記改為以座標為圓心的 6 pt 小點，hover／選取或 `150%` 以上顯示名稱；加入 Fit、`50%...400%`、25% 按鈕級距、錨點縮放與受限平移。新增 5 項邏輯測試後完整 183 項 XCTest、Debug build、Swift parse 與 diff check 通過；未改 schema。
 - V7.3a 修正深色模式名稱浮標的白底白字；放大後支援觸控板／滾輪上下左右平移與 Shift＋滾輪水平平移；三模式入口改回書本、大綱、地圖圖示。完整 183 項 XCTest、Debug build、Swift parse 與 diff check 通過；未改模式、資料或 schema。
 - V7.4 完成標記完整命中與 hover 修正、sheet 關閉清除選取、Place 設定跳轉及拖曳改座標；超界拖曳貼齊邊界，標記拖曳期間不平移畫布。完整 185 項 XCTest、Debug build、Swift parse 與 diff check 通過；未改 schema。
+- V7.4a 修正放大地圖侵入 4:3 外側及座標層配置問題：viewport 維持固定 Fit 邊界，只裁切其中縮放／平移的底圖、座標與標記；平移限制亦改依固定 viewport。完整 186 項 XCTest與地圖專項通過。
+- V7.4b 追加修正放大 MapSurface 的命中區外溢：viewport／地圖區明確限制 interaction shape，工具列置於不透明上層，避免點擊「匯入地圖」同時觸發新增標記。Debug build、Swift parse 與 diff check 通過，待最新建置 UI 確認。
 
 ## 2026-09-22 V6.4 紀元管理刪除
 
