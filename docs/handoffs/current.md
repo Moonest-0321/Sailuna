@@ -2,9 +2,32 @@
 
 > 整體狀態：active
 >
-> 目前階段：V6.3 時間序與事件追加實作完成（R／U／I approved；自動驗證完成）
+> 目前階段：V6.4 紀元刪除、單書紀元銜接、時間軸排序與特定時間刪除按鈕已完成；自動驗證通過；刪除 UI 冒煙待完成
 >
-> 唯一下一步：以隔離資料進行 V6.3 畫面驗收。
+> 唯一下一步：在隔離資料中查看紀元刪除 alert 並按取消；不執行刪除。
+
+## V6.4 紀元管理增加刪除按鈕（R／U／I approved；實作與自動驗證完成）
+
+- 使用者提出：「紀元管理增加刪除按鈕」。
+- 已讀取 `docs/spec-timeline.md`、`Sailune/Era.swift`、`Sailune/TimelineEngine.swift` 與 `Sailune/TimelineViews.swift` 的紀元管理區段，並查閱刪除資料安全規範。
+- 使用者澄清：需要保留的時間點先移出紀元；刪除紀元時連同仍掛在該紀元的時間點一起刪除，不保留成未指定紀元。R 已 approved。
+- 核對 `PersistentModelDeletion.deleteNodes`／`CrossStoreDeletionCoordinator.deleteNodes`：Node 刪除會級聯刪除 Event，清理規劃 metadata 與跨 store 時間定位；角色／能力／物品／關係等來源歷史本身保留但失去 Node 定位；正文與敘事大綱內容保留。紀元只屬目前 Book，刪除範圍是該書所有主／副 Timeline。
+- 若被刪 Era 是某本書 `currentEra`，關聯解除；既有 bootstrap 之後會建立空白預設 Era。這是已存在的系統行為，本輪不指定其他 Era 接任。
+- U 已 approved：每個紀元名稱欄右側放「刪除」破壞性按鈕；系統 alert 顯示 Era 名稱及節點／事件刪除、歷史定位失效、正文與敘事大綱保留，以及目前紀元會在之後 bootstrap 成空白預設紀元的影響；取消不變，確認才透過既有 coordinator 刪除。
+- I 已 approved：使用者回覆「I」。開始依工作單計畫實作與驗證。
+- 開始本工作時工作樹乾淨；本工作修改 `Sailune/PersistentStoreRepair.swift`、`Sailune/TimelineViews.swift`、`SailuneTests/ItemV3Tests.swift` 及時間軸、資料模型、架構、一致性、狀態與工作交接文件。未改 schema、migration 或正式作者資料。
+- `swiftc -parse` 與 `git diff --check` 通過；新增同一本書跨主／副 Timeline、另一書資料保留的紀元刪除整合測試通過；單項與完整 macOS XCTest 以主機環境執行通過。沙盒內 test runner 曾因分散式通知權限 exit 133，非程式測試失敗。
+- 以獨立 `/private/tmp/sailune-v64-era-ui/Sailune-v5.store` 啟動 Debug App 並確認空書櫃畫面；尚未建立測試書進入紀元管理，所以刪除按鈕／alert 的人工 UI 確認待完成。隔離資料未執行刪除。
+- 使用者追加要求提供刪除特定時間的按鈕；依後續 UI 修正，寬版與窄版時間軸每個日期項目右上角使用 `xmark` 圖示，仍呼叫同一個確認視窗與 `CrossStoreDeletionCoordinator.deleteNodes`，只處理該日期項目的 Node／Event。除必要 accessibility label／tooltip 外，不放多餘說明文字。
+- 追加位置修正：橫向時間格的 `xmark` 已移入內容方塊右上角；「尚無事件」方塊也直接在方塊內顯示，避免跟隨紀元名稱長度移動。
+- 本次驗證：`swiftc -frontend -parse Sailune/TimelineViews.swift`、`git diff --check` 通過；主機環境完整 macOS XCTest 通過（`xcodebuild test ... -derivedDataPath /private/tmp/sailune-v64-specific-time-derived-host`）。沙盒測試另受 SwiftData／SwiftUI macro plugin sandbox 限制失敗，不代表程式測試失敗。
+- V6.3 的自動驗證已完成；其先前 UI 驗收狀態不受本次 V6.4 工作影響。
+
+## 第一個下一步
+
+使用者已確認：前一紀元最後一次紀錄的年份就是最後一年，各紀元從元年元月一日開始；紀元與設定只屬單一本書，不存在跨書共享。現行改元看觸發改元之書籍的所有時間軸。後續依此補測試／文件，並回到隔離 store 驗收紀元刪除 alert、按取消；不執行刪除。
+
+- 追加完成：時間軸節點與日期格先按紀元順序，再按紀元內年月日、同日 `sortOrder` 與 UUID；角色時間定位、物品副本歷史同步使用此排序，未指定紀元排在最後。單項與完整 macOS XCTest 已通過。
 
 ## 2026-09-21 V6.3 角色所屬勢力（R／U／I approved；實作與自動驗證完成）
 

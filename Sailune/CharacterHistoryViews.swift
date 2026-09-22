@@ -187,6 +187,7 @@ private struct CharacterTimelineDateSheet: View {
     }
 }
 
+@MainActor
 struct CharacterNodePicker: View {
     let book: Book
     @Binding var node: Node?
@@ -197,7 +198,7 @@ struct CharacterNodePicker: View {
     private var nodes: [Node] {
         allNodes
             .filter { $0.timeline?.book?.id == book.id }
-            .sorted { $0.absoluteOrdinal < $1.absoluteOrdinal }
+            .sorted(by: TimelineEngine.Query.nodeComesBefore)
     }
 
     var body: some View {

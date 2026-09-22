@@ -10,6 +10,25 @@ enum TimelineEngine {
             let d = day ?? 0
             return ((eraStart + year - 1) * 10000) + (m * 100) + d
         }
+        nonisolated static func eraOrder(_ startOrdinal: Int?) -> Int {
+            startOrdinal ?? Int.max
+        }
+        nonisolated static func dateOrdinal(year: Int, month: Int?, day: Int?) -> Int {
+            (year * 10000) + ((month ?? 0) * 100) + (day ?? 0)
+        }
+        nonisolated static func timelineNodeLessThan(
+            eraStartL: Int?, yearL: Int, monthL: Int?, dayL: Int?, orderL: Double, idL: String,
+            eraStartR: Int?, yearR: Int, monthR: Int?, dayR: Int?, orderR: Double, idR: String
+        ) -> Bool {
+            let eraL = eraOrder(eraStartL)
+            let eraR = eraOrder(eraStartR)
+            if eraL != eraR { return eraL < eraR }
+            let dateL = dateOrdinal(year: yearL, month: monthL, day: dayL)
+            let dateR = dateOrdinal(year: yearR, month: monthR, day: dayR)
+            if dateL != dateR { return dateL < dateR }
+            if orderL != orderR { return orderL < orderR }
+            return idL < idR
+        }
         nonisolated static func nodeLessThan(
             ordinalL: Int, orderL: Double, idL: String,
             ordinalR: Int, orderR: Double, idR: String
@@ -114,10 +133,17 @@ enum TimelineEngine {
         static func allNodesSorted(in context: ModelContext) throws -> [Node] {
             try context.fetch(FetchDescriptor<Node>()).sorted(by: compareNodes)
         }
+        static func nodeComesBefore(_ lhs: Node, _ rhs: Node) -> Bool {
+            compareNodes(lhs, rhs)
+        }
         private static func compareNodes(_ lhs: Node, _ rhs: Node) -> Bool {
-            Core.nodeLessThan(
-                ordinalL: lhs.absoluteOrdinal, orderL: lhs.sortOrder, idL: lhs.id.uuidString,
-                ordinalR: rhs.absoluteOrdinal, orderR: rhs.sortOrder, idR: rhs.id.uuidString
+            Core.timelineNodeLessThan(
+                eraStartL: lhs.era?.startOrdinal,
+                yearL: lhs.year, monthL: lhs.month, dayL: lhs.day,
+                orderL: lhs.sortOrder, idL: lhs.id.uuidString,
+                eraStartR: rhs.era?.startOrdinal,
+                yearR: rhs.year, monthR: rhs.month, dayR: rhs.day,
+                orderR: rhs.sortOrder, idR: rhs.id.uuidString
             )
         }
     }

@@ -1,6 +1,6 @@
 # 文件與實作一致性檢查
 
-> 稽核日期：2026-09-18。範圍包含 Swift 原始碼、三個 XCTest 檔、Xcode 設定與 `docs/`；本文件記錄程式事實和產品文件的差異，不代表已修正程式。
+> 稽核日期：2026-09-22。範圍包含 Swift 原始碼、XCTest、Xcode 設定與 `docs/`；本文件記錄程式事實和產品文件的差異，不代表已修正程式。
 
 ## 已確認一致
 
@@ -12,6 +12,8 @@
 - 角色正文引用使用穩定 URL；已連結名稱可同步，未連結文字只列候選。
 - 正文大綱來源和伏筆／修改標籤均可重新定位；來源消失時分別採大綱降級與標籤刪除。
 - 世界時間軸使用主 store Timeline／Era／Node／Event；既有敘事大綱可建立 Event 並以 metadata 關聯。
+- V6.4 紀元刪除由 `CrossStoreDeletionCoordinator.deleteEra` 限定目前 Book 的所有 Timeline 找出仍連結的 Node；主 store 同次保存刪除 Era／Node，Node cascade 刪除 Event，歷史來源保留但解除定位，StoryPlanning／ItemCopy／AbilityProgress／V5 settings 的 Node references 隨後清理。每本書的 Era／設定獨立，不存在跨書共享；`Book.currentEra` 使用既有 nullify；不改 schema。
+- V6.4 時間軸排序由紀元順序優先，再比較紀元內年月日、同日 `sortOrder` 與 UUID；日期格建立後仍維持此順序，角色時間定位及物品副本歷史也共用同一節點比較器。未指定紀元排在已指定紀元之後。
 - 原始碼中共有 140 個 XCTest 方法；2026-09-18 完整 140 項均通過，包含六 store／封面備份還原、AbilityProgress／ItemCopy／V5 settings reconcile 及原有遷移。
 
 ## 2026-09-18 已修正

@@ -1265,9 +1265,8 @@ private struct ItemCopyDetailView: View {
                 let rhsNode = rhs.nodeID.flatMap { nodesByID[$0] }
                 switch (lhsNode, rhsNode) {
                 case let (left?, right?):
-                    if left.absoluteOrdinal != right.absoluteOrdinal {
-                        return left.absoluteOrdinal < right.absoluteOrdinal
-                    }
+                    if TimelineEngine.Query.nodeComesBefore(left, right) { return true }
+                    if TimelineEngine.Query.nodeComesBefore(right, left) { return false }
                 case (_?, nil): return true
                 case (nil, _?): return false
                 case (nil, nil): break

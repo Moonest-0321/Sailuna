@@ -50,6 +50,7 @@
 - 避免在 `body` 中進行昂貴查詢、資料遷移或副作用；使用明確事件處理函式。
 - View 的 modifier 依序排列：版面、互動、狀態／生命週期、輔助功能；過長 View 拆成具名子 View。
 - UI 文案集中使用一致的繁體中文；快捷鍵、system image 與 accessibility label 在功能規格中有意義時一併維護。
+- 除非使用者明確要求，UI 不加入多餘的說明文字；單一項目的操作優先使用簡潔圖示（例如右上角 `xmark`），必要語意放在 accessibility label、tooltip 或確認視窗，不以長文字按鈕佔用內容版面。
 - 首頁的任何彈窗、浮動面板或自訂 modal 都必須提供可點擊空白處取消；若原生 sheet／popover 不支援此行為，使用半透明遮罩與明確的 dismiss callback 實作，且不讓空白點擊穿透到背景操作。
 - 短輸入彈窗若只有一個主要確認動作，文字欄按 Enter 應直接送出；自訂 overlay 優先使用 `TextField.onSubmit`，避免以可能把按鈕提升至視窗工具列的 default-action shortcut 實作。
 - 需要和視窗或整體版面比對位置的物件，使用父容器 `GeometryReader`／layout proposal 的可用尺寸與比例計算，並設定合理上下限；不可用固定像素 `offset` 模擬跨區定位。固定點數只保留給元件自身尺寸、間距及最小可讀邊界。

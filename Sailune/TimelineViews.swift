@@ -769,7 +769,7 @@ struct TimelinePanelView: View {
                     .font(.caption2).foregroundStyle(.secondary).lineLimit(1)
                 Text(label).font(.caption.weight(.semibold)).lineLimit(1)
             }
-            .frame(height: 38)
+            .frame(maxWidth: .infinity, minHeight: 38, maxHeight: 38)
             ZStack {
                 Rectangle().fill(Color.secondary.opacity(0.5)).frame(height: 1)
                 Circle().fill(Color(hex: cell.eraHex) ?? .accentColor).frame(width: 9, height: 9)
@@ -781,18 +781,31 @@ struct TimelinePanelView: View {
                 }
             }
             .frame(height: 18)
-            Group {
-                if let event = slot.event {
-                    timelineCard(event)
-                } else if let record = slot.planningRecord {
-                    planningRecordCard(record)
-                } else {
-                    Text("尚無事件")
-                        .font(.caption)
-                        .foregroundStyle(.tertiary)
-                        .frame(maxWidth: .infinity, minHeight: 76)
-                        .background(Color.secondary.opacity(0.04), in: RoundedRectangle(cornerRadius: 9))
+            ZStack(alignment: .topTrailing) {
+                Group {
+                    if let event = slot.event {
+                        timelineCard(event)
+                    } else if let record = slot.planningRecord {
+                        planningRecordCard(record)
+                    } else {
+                        Text("尚無事件")
+                            .font(.caption)
+                            .foregroundStyle(.tertiary)
+                            .frame(maxWidth: .infinity, minHeight: 76)
+                            .background(Color.secondary.opacity(0.04), in: RoundedRectangle(cornerRadius: 9))
+                    }
                 }
+                Button(role: .destructive) {
+                    requestDeleteNodes(cell.nodes)
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.caption2.weight(.semibold))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .padding(8)
+                .accessibilityLabel("刪除這個時間")
+                .help("刪除這個時間")
             }
             .padding(.horizontal, 7)
             .padding(.top, 8)
@@ -886,10 +899,15 @@ struct TimelinePanelView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                Button("刪除時間釘子", systemImage: "trash", role: .destructive) {
+                Button(role: .destructive) {
                     requestDeleteNodes(cell.nodes)
+                } label: {
+                    Image(systemName: "xmark")
                 }
-                .buttonStyle(PlanningActionStyle())
+                .buttonStyle(.plain)
+                .foregroundStyle(.secondary)
+                .accessibilityLabel("刪除這個時間")
+                .help("刪除這個時間")
             }
             if !collapsed {
                 VStack(alignment: .leading, spacing: 3) {
@@ -1039,11 +1057,16 @@ struct TimelinePanelView: View {
                             .background(Color.accentColor.opacity(0.15))
                             .clipShape(Capsule())
                     }
-                    Button("刪除釘子", systemImage: "trash", role: .destructive) {
+                    Button(role: .destructive) {
                         requestDeleteNodes(cell.nodes)
+                    } label: {
+                        Image(systemName: "xmark")
                     }
-                    .buttonStyle(PlanningActionStyle())
-                    .help("刪除時間釘子")
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.secondary)
+                    .font(.caption)
+                    .accessibilityLabel("刪除這個時間")
+                    .help("刪除這個時間")
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { toggle(cell.id) }
@@ -1417,7 +1440,13 @@ enum TimelineDateProjection {
                                 repYear: g.repYear, repMonth: g.repMonth, repDay: g.repDay,
                                 events: g.events, planningRecords: g.planningRecords)
         }
-        cells.sort { $0.ordinal < $1.ordinal }
+        cells.sort { lhs, rhs in
+            let lhsEra = TimelineEngine.Core.eraOrder(lhs.era?.startOrdinal)
+            let rhsEra = TimelineEngine.Core.eraOrder(rhs.era?.startOrdinal)
+            if lhsEra != rhsEra { return lhsEra < rhsEra }
+            if lhs.ordinal != rhs.ordinal { return lhs.ordinal < rhs.ordinal }
+            return lhs.id < rhs.id
+        }
         assignLabels(&cells, granularity: granularity)
         return cells
     }
@@ -2243,10 +2272,22 @@ private struct EraManagerPopover: View {
     let book: Book
     @Query private var eras: [Era]
     @Environment(\.modelContext) private var modelContext
+    @Environment(StoryPlanningStore.self) private var planningStore
+    @Environment(ItemCopyStore.self) private var copyStore
+    @Environment(V5SettingsStore.self) private var settingsStore
+    @Environment(AbilityProgressStore.self) private var abilityStore
     @Environment(\.dismiss) private var dismiss
     @State private var saveError: String?
+    @State private var pendingDeleteEra: Era?
 
     private var sortedEras: [Era] { eras.sorted { $0.startOrdinal < $1.startOrdinal } }
+
+    private var deleteEraBinding: Binding<Bool> {
+        Binding(
+            get: { pendingDeleteEra != nil },
+            set: { if !$0 { pendingDeleteEra = nil } }
+        )
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -2259,7 +2300,9 @@ private struct EraManagerPopover: View {
             ScrollView {
                 VStack(spacing: 8) {
                     ForEach(sortedEras) { era in
-                        EraRow(era: era)
+                        EraRow(era: era) {
+                            pendingDeleteEra = era
+                        }
                     }
                 }
             }
@@ -2278,6 +2321,16 @@ private struct EraManagerPopover: View {
                 .buttonStyle(PlanningActionStyle(prominent: true))
             }
         }
+        .alert(
+            deleteTitle(for: pendingDeleteEra),
+            isPresented: deleteEraBinding,
+            presenting: pendingDeleteEra
+        ) { era in
+            Button("取消", role: .cancel) { pendingDeleteEra = nil }
+            Button("刪除", role: .destructive) { performDeleteEra(era) }
+        } message: { era in
+            Text(deleteWarning(for: era))
+        }
         .padding(16)
         .frame(width: 320)
     }
@@ -2287,11 +2340,48 @@ private struct EraManagerPopover: View {
         let e = Era(name: "", color: "#888888", startOrdinal: next)
         modelContext.insert(e)
     }
+
+    private func deleteTitle(for era: Era?) -> String {
+        guard let era else { return "刪除紀元？" }
+        let name = era.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        return "刪除紀元「\(name.isEmpty ? "未命名紀元" : name)」？"
+    }
+
+    private func deleteWarning(for era: Era) -> String {
+        let isCurrentEra = book.currentEra?.id == era.id
+        var warning = "目前這本書所有時間軸中仍掛在此紀元下的時間點與世界時間事件將一併刪除，且無法復原。角色、能力、物品與關係歷史內容會保留，但失去這些時間定位；正文與敘事大綱保留。"
+        if isCurrentEra {
+            warning += "此紀元是目前紀元，之後會建立空白預設紀元。"
+        }
+        return warning
+    }
+
+    private func performDeleteEra(_ era: Era) {
+        saveError = nil
+        do {
+            let outcome = try CrossStoreDeletionCoordinator.deleteEra(
+                era,
+                for: book,
+                in: modelContext,
+                planningStore: planningStore,
+                copyStore: copyStore,
+                settingsStore: settingsStore,
+                abilityStore: abilityStore
+            )
+            if outcome.requiresRepair {
+                saveError = "紀元已刪除，但部分附屬資料尚未清理，將由啟動修復重試。\n\(outcome.deferredCleanupErrors.joined(separator: "\n"))"
+            }
+        } catch {
+            saveError = "無法刪除紀元；主要資料尚未刪除。\n\(error.localizedDescription)"
+        }
+        pendingDeleteEra = nil
+    }
 }
 
 @MainActor
 private struct EraRow: View {
     @Bindable var era: Era
+    let onDelete: () -> Void
     @State private var hovering = false
 
     var body: some View {
@@ -2300,6 +2390,10 @@ private struct EraRow: View {
                 Circle().fill(Color(hex: era.color) ?? .gray).frame(width: 12, height: 12)
                 TextField("紀元名", text: $era.name)
                     .textFieldStyle(.roundedBorder).font(.caption)
+                Button(role: .destructive, action: onDelete) {
+                    Label("刪除", systemImage: "trash")
+                }
+                .buttonStyle(.borderless)
             }
             HStack(spacing: 8) {
                 Text("序").font(.caption2).foregroundStyle(.secondary)

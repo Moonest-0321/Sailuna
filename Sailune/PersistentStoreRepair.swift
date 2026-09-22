@@ -449,6 +449,18 @@ enum PersistentModelDeletion {
         if save { try context.save() }
     }
 
+    static func deleteEra(_ era: Era, for book: Book, in context: ModelContext, save: Bool = true) throws {
+        let eraID = era.id
+        let bookID = book.id
+        let nodes = try context.fetch(FetchDescriptor<Node>()).filter { node in
+            guard node.era?.id == eraID else { return false }
+            return node.timeline?.book?.id == bookID || node.section?.volume?.book?.id == bookID
+        }
+        try deleteNodes(nodes, in: context, save: false)
+        context.delete(era)
+        if save { try context.save() }
+    }
+
     static func deleteTimeline(_ timeline: Timeline, in context: ModelContext, save: Bool = true) throws {
         let timelineID = timeline.id
         let nodes = try context.fetch(
@@ -564,6 +576,26 @@ enum CrossStoreDeletionCoordinator {
     ) throws -> CrossStoreDeletionOutcome {
         try performPrimary(in: context) {
             try PersistentModelDeletion.deleteNodes(nodes, in: context)
+        }
+        var errors = reconcileTimelineMetadata(in: context, planningStore: planningStore).deferredCleanupErrors
+        errors.append(contentsOf: reconcileReferenceStores(
+            in: context, copyStore: copyStore, settingsStore: settingsStore, abilityStore: abilityStore
+        ))
+        return CrossStoreDeletionOutcome(deferredCleanupErrors: errors)
+    }
+
+    @discardableResult
+    static func deleteEra(
+        _ era: Era,
+        for book: Book,
+        in context: ModelContext,
+        planningStore: StoryPlanningStore,
+        copyStore: ItemCopyStore? = nil,
+        settingsStore: V5SettingsStore? = nil,
+        abilityStore: AbilityProgressStore? = nil
+    ) throws -> CrossStoreDeletionOutcome {
+        try performPrimary(in: context) {
+            try PersistentModelDeletion.deleteEra(era, for: book, in: context)
         }
         var errors = reconcileTimelineMetadata(in: context, planningStore: planningStore).deferredCleanupErrors
         errors.append(contentsOf: reconcileReferenceStores(

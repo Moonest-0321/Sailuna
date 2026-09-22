@@ -1,6 +1,6 @@
 # 帆夢（Sailune）專案現況
 
-> 最後核對：2026-09-21；依目前程式碼、測試與 Xcode 設定整理。
+> 最後核對：2026-09-22；依目前程式碼、測試與 Xcode 設定整理。
 
 ## 專案定位
 
@@ -13,7 +13,7 @@
 | 項目 | 現況 |
 |---|---|
 | 已發布版本 | V4.2.1 |
-| 目前開發內容 | V6.1 已調整書籍總覽：封面置頂左側、右鍵更換／移除、書名作者使用封面右側剩餘寬度、故事背景中央彈窗及單一匯出選單；TXT／EPUB 改由 SwiftUI `fileExporter` 輸出，EPUB 會嵌入畫面目前顯示的自訂或預設首字封面。封面沿用獨立檔案儲存並立即同步書櫃。 |
+| 目前開發內容 | V6.4 紀元管理新增列內刪除與確認；時間軸各日期項目右上角提供 `xmark` 刪除圖示。確認後協調刪除目前書籍各時間軸仍連結的 Node 及其 Event，清除附屬 store 的時間定位參照。歷史來源內容、正文及敘事大綱保留；不改 schema。完整 macOS XCTest 已通過，隔離資料 UI 確認 alert 冒煙待完成。 |
 | 平台 | macOS、SwiftUI、AppKit `NSTextView`、SwiftData |
 | 正文 | 卷次 → 節次；富文字、幕標題、字數、自動儲存、查找替換、TXT／EPUB 匯出 |
 | 正文連動 | 角色使用穩定連結與別名同步；大綱與故事標籤使用文字錨點；物品正文引用仍是名稱掃描 |
@@ -42,8 +42,18 @@
 - Xcode 專案設定：Swift 5 language mode、macOS 26.5 deployment target、產品與測試 bundle 版本皆為 1.0（build 1）。
 - 文件入口：`docs/README.md`；實作與文件差異：`docs/consistency-audit.md`。
 
+## 2026-09-22 V6.4 紀元管理刪除
+
+- 已完成 `PersistentModelDeletion.deleteEra` 與 `CrossStoreDeletionCoordinator.deleteEra`；所有仍引用目標 Era 的 Node 與 Event 一併刪除，歷史來源解除定位，其他相關 store 依既有 reconcile 路徑清理。
+- `EraManagerPopover` 每列新增破壞性刪除按鈕與影響說明確認；取消不執行刪除，附屬清理失敗會顯示可重試警告。
+- 時間軸寬版與窄版的每個日期項目右上角均提供 `xmark` 刪除圖示，沿用同一個確認視窗與 Node／Event 清理流程；不在項目上加入多餘說明文字。
+- 時間軸項目排序已統一為紀元順序 → 紀元內年月日 → 同日排序；前紀元晚年不會被後紀元元年插隊，未指定紀元排在最後。
+- 新增同一本書跨主／副時間軸、另一書資料保留、Event cascade、歷史定位解除與 ItemCopy／AbilityProgress／StoryPlanning 清理的整合測試。受影響 Swift parse、完整 macOS XCTest、`git diff --check` 通過；未改 schema。
+- 隔離版 App 已在 `/private/tmp` store 啟動並確認空書櫃可用；尚未建立測試書籍來操作紀元管理確認畫面，因此 alert 的人工 UI 冒煙仍待完成。
+
 ## 建議下一步
 
+- 2026-09-22：以 `/private/tmp` 隔離 store 建立測試書，人工確認 V6.4 紀元列刪除按鈕與影響說明，然後取消 alert；目前未執行刪除。
 - 2026-09-21：V6.3 角色詳情圖示化與追加時間序需求均已完成實作及自動驗證。時間定位依使用者校正為兩個按鈕與彈窗：「敘事版本」選卷／節，「時間序版本」選紀元／年／月／日；事件彙整能力、外觀、心理、物品、關係及直接事件；能力預覽增加目前等級。沿用既有 Node 並在首次編輯時複製共用定位，不改 schema；完整 macOS XCTest與 Debug build通過，隔離資料 UI 驗收待完成。
 - 2026-09-21：V6.3 角色詳情新增多筆所屬勢力，沿用既有 `PowerMember`：每列只顯示勢力名稱與單一職稱，可新增、切換與解除且不可重複；不加入時間序、狀態或多職務 UI，不改 schema。完整 macOS XCTest、Debug build、parse 與 diff check通過。
 - 2026-09-21：所屬勢力依追加要求移出基本資訊，改為角色詳情獨立圖示區塊。另修正能力關閉程式後從設定集消失：真正刪除點是能力進度 store 載入前的主 store 啟動修復，現已保留以 `AbilityBookLink` 歸屬書籍、沒有舊角色關係的能力；新增流程也會依序確認兩個 store 均保存成功。真實檔案 store 的關閉／重開／啟動修復測試及完整 macOS XCTest通過。

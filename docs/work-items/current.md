@@ -2,9 +2,99 @@
 
 > 整體狀態：active
 >
-> 目前階段：V6.3 時間序與事件追加實作完成（R／U／I approved；自動驗證完成）
+> 目前階段：V6.4 紀元刪除、單書紀元銜接、時間軸排序與特定時間刪除按鈕已完成；自動驗證通過；刪除 UI 冒煙待完成
 >
-> 單一下一步：以隔離資料進行 V6.3 畫面驗收，確認行內日期、卷／節、全時間序與能力等級預覽。
+> 單一下一步：在隔離資料中查看紀元刪除 alert 並按取消；不執行刪除。
+
+### 追加需求：刪除特定時間
+
+- 使用者要求在時間軸提供刪除特定時間的按鈕。
+- 實作：寬版與窄版每個日期項目右上角均顯示 `xmark` 刪除圖示，沿用既有確認視窗及 `CrossStoreDeletionCoordinator.deleteNodes`；確認後只刪除該日期項目的 Node／Event，正文、敘事大綱與其他日期保留，不在 UI 加入多餘說明文字。
+- 追加修正：橫向時間軸的 `xmark` 移入每個內容方塊右上角；「尚無事件」方塊也直接在方塊內提供，避免標題列定位歪斜。
+- 驗證：受影響 Swift parse、主機完整 macOS XCTest 與 `git diff --check` 通過；未執行正式資料刪除。
+
+## V6.4 紀元管理增加刪除按鈕（R／U／I approved；實作與自動驗證完成）
+
+### 現況與目標
+
+- 使用者提出：「紀元管理增加刪除按鈕」。
+- 目前 `EraManagerPopover` 在 `TimelineViews.swift` 以排序列表呈現紀元，每列可編輯名稱、序數與顏色，沒有刪除入口。
+- `Era` 只屬於目前這本書；該書的多個 `Node.era` 與 `Book.currentEra` 可引用同一紀元，關聯刪除規則為 nullify；刪除紀元不必然代表刪除相關時間點或事件。
+- `TimelineEngine.Bootstrap.ensure` 會在書籍沒有 `currentEra` 時建立空白預設紀元。
+
+### 需求草案
+
+- 範圍：在既有紀元管理列表中，為單一紀元提供刪除操作；保留新增、編輯、排序與顏色操作。
+- 非目標：不刪除時間軸、正文、章節或角色／能力／物品／關係歷史內容；不改 schema／migration，也不重設其他紀元。
+- 使用者澄清：要保留的時間點應先移到其他紀元；刪除紀元時，不保留仍掛在該紀元下的時間點，亦不將它們轉成未指定紀元。
+- R 決定：刪除目前這本書的所選紀元及其所有時間軸中仍連結該紀元的 `Node`；由既有 Node 刪除流程刪除其 `Event`、清理規劃 metadata 與跨 store 時間定位。Node 所定位的角色／能力／物品／關係等歷史內容依既有刪除規則保留，但失去該時間定位；正文及敘事大綱內容保留。每本書設定獨立，不存在其他書籍受同一紀元刪除影響的情況。
+- 被刪紀元若是某本書的 `currentEra`，其關聯會解除；既有 bootstrap 之後會建立空白預設紀元。這不改變本次刪除範圍，也不指定其他紀元接任。
+- 驗收草案：每個紀元列可觸發破壞性確認；取消不改資料；確認後選定 Era 與其全部 Node／Event 刪除，其他 Era 與不屬於這些 Node 的資料保留；跨 store cleanup 依既有 coordinator 完成或明確回報錯誤。
+
+### 批准狀態
+
+- R：approved；使用者明確要求先將需保留的內容移出紀元，刪除時連同仍隸屬該紀元的時間點一併刪除。
+- U：approved；使用者回覆「U」。
+- I：approved；使用者回覆「I」。
+- 工作樹基線：開始本項目前 `git status` 與 `git diff` 乾淨；本工作修改範圍為 `PersistentStoreRepair.swift`、`TimelineViews.swift`、`ItemV3Tests.swift` 及相關文件。
+
+### UI 提案（U approved）
+
+- 保留既有「年號管理」標題、說明、列順序、名稱／序數／顏色編輯及新增、完成操作；不改其他紀元管理互動。
+- 每一紀元列的名稱欄右側新增文字「刪除」按鈕，採破壞性按鈕樣式；按下後先開啟系統確認 alert，不立即刪除。
+- 確認標題顯示紀元名稱；內容說明目前這本書所有時間軸中仍掛在此紀元下的時間點與世界時間事件會刪除、無法復原。角色／能力／物品／關係等歷史紀錄本身仍保留，但不再有這些時間點的定位。若它是目前紀元，之後會建立空白預設紀元。正文與敘事大綱保留。
+- 選「取消」關閉確認且資料不變；選「刪除」才執行刪除，管理 popover 留在原處並更新列表；錯誤留在現有管理畫面可見。
+- 不增加二次輸入名稱、移動節點流程、批次重新指派或其他未要求控制項。
+
+```text
+紀元管理
+說明文字
+────────────────────────
+[●] [紀元名稱＿＿＿＿＿＿＿＿] [刪除]
+[序 ____] [既有色票……]
+…
+[＋ 新增紀元]
+                                          [完成]
+
+刪除紀元「〈名稱〉」？
+其下時間點與世界時間事件將一併刪除且無法復原；
+相關設定歷史內容保留但失去時間定位。若為目前紀元，之後會建立空白預設紀元。
+正文與敘事大綱保留。
+[取消]                                [刪除]
+```
+
+### 實作與測試計畫（I approved；已實施）
+
+1. 在 `PersistentModelDeletion`／`CrossStoreDeletionCoordinator` 增加紀元刪除入口：找出目前 Book 所有 Timeline 中 `Node.era.id` 等於目標 Era 的 Node（跨主／副時間軸），沿用既有 Node 清理規則，於同一次主 store save 刪除 Node 與 Era，避免主資料只完成一半。
+2. 主資料成功後沿用 Node 刪除後的 reconciliation：清除孤立世界時間 metadata，以及 ItemCopy、AbilityProgress、V5 settings 等 store 內已失效 Node UUID；遵循現有 best-effort cleanup 與錯誤呈現，不宣稱跨 store ACID。
+3. 在 `EraManagerPopover` 加入列內刪除按鈕、目標紀元確認狀態與 alert。確認後呼叫 coordinator；取消不執行刪除；主資料錯誤時 rollback 並顯示錯誤；延後 cleanup 有錯時呈現既有 deferred cleanup 錯誤。刪除後列表即時更新，popover 保持開啟。
+4. 不改目前 Era 列表的範圍／排序、現有新增與編輯控制、`currentEra` bootstrap、資料 schema 或 migration；被刪 Era 的 `Book.currentEra` 關聯照既有 nullify，後續 bootstrap 可建立空白預設 Era。
+5. 更新 `docs/spec-timeline.md` 記錄紀元刪除範圍與保留規則；重新檢查並更新 `docs/consistency-audit.md`，明列 Node／Event 刪除、歷史來源保留但失去定位、正文及敘事大綱保留。
+6. 新增測試覆蓋：刪除目標 Era 與目前 Book 跨主／副軸的所有 Node／Event、另一 Book 的 Era／Node／Event 保留、相關歷史來源保留但 Node 定位解除、主 store 與跨 store metadata/reference cleanup。既有完整 XCTest、受影響 Swift parse、無簽章 Debug build、`git diff --check`，並用隔離資料人工驗收取消／確認與警告內容。
+
+### 實作結果與驗證
+
+- `PersistentModelDeletion.deleteEra` 依目前 Book 與 Era UUID 找出該書所有 Timeline 中仍關聯的 Node，重用既有 Node 清理後，在同一主 store save 刪除 Node 與 Era；Node 關聯 Event 隨之刪除。
+- `CrossStoreDeletionCoordinator.deleteEra` 在主 store 成功後清理 StoryPlanning metadata 與 ItemCopy、V5 settings、AbilityProgress 的 Node UUID；沿用可重試的 deferred cleanup 結果。
+- `EraManagerPopover` 每列新增「刪除」按鈕及系統確認 alert。文案說明目前書籍所有時間軸的影響、歷史內容保留但失去定位、正文／敘事大綱保留，以及若為目前紀元將在後續建立空白預設紀元。取消不刪除；錯誤／延後清理狀態在原 popover 顯示。
+- `TimelineEngine.Query` 與日期格投影改為先按紀元順序，再按紀元內年月日、同日 `sortOrder` 與 UUID；角色時間定位及物品副本歷史沿用同一節點比較器，未指定紀元排在最後。
+- 新增 `testCrossStoreCoordinatorDeletesEraAndAllLinkedNodesAcrossBookTimelines`，覆蓋同一本書跨主／副軸、另一書的 Era／Node／Event 保留、Event cascade、Book.currentEra nullify、角色歷史定位解除，以及 planning metadata、能力／副本歷史 Node references 清理。V5 settings reference 由呼叫端傳入既有 reconcile 路徑；本新增整合測試未直接建立 V5 settings 歷史資料。
+- 受影響 Swift 檔案 `swiftc -parse` 通過；單項與完整 macOS XCTest 均通過：`xcodebuild test -quiet -project Sailune.xcodeproj -scheme Sailune -destination 'platform=macOS' -derivedDataPath /private/tmp/sailune-v64-era-derived CODE_SIGNING_ALLOWED=NO`；`git diff --check` 通過。執行測試需使用主機環境，沙盒內 Xcode test runner 因分散式通知權限以 exit 133 中止，主機重跑成功。
+- 隔離 Debug App 使用 `/private/tmp/sailune-v64-era-ui/Sailune-v5.store` 啟動，只確認空書櫃可顯示；尚未在 UI 建立測試書並檢查確認 alert，因此保留此人工驗收，不宣稱完成。
+
+### 追加需求：紀元銜接計算與時間軸排序（規則已確認；實作與自動驗證完成）
+
+- 使用者補充規則：「紀元的計算方式為前一個結束了才換後面一個開始，並且一律從元年元月一日開始計算。」並確認「結束條件就是前一個紀元最後一次紀錄年份就是最後一年」。規則與範圍已明確：只看目前這本書的全部時間軸，不存在跨書共享紀元。
+- 現況：`Era.startOrdinal` 是各紀元的全域年份基準，管理頁可直接編輯；`Node.absoluteOrdinal` 以紀元基準、年、月、日組成排序序位。改元會從該書全部時間軸找出最末紀元及其最大 Node 年份，空紀元以元年計，再將下一紀元基準設為前紀元基準加最大年份，並建立年月日為 1／1／1 的新 Node。月份及日期不影響新基準。
+- 模型沒有明確紀元結束日；結束年由目前這本書全部時間軸最後一次紀錄的最大年份決定，月／日不延後換元。每本書設定獨立；空紀元沿用目前「視作元年」的行為。新增紀元的人工序數亦可造成間隔或重疊。
+- 規則範圍已確認；已依單書規則收斂刪除入口與測試，不再提出跨書共享的分支問題。
+
+#### 風險與處理
+
+- 一個 Era 可被同一本書的多條 Timeline 使用；刪除限於目前 Book 的所有 Timeline，確認文案已明示此範圍。
+- Node 刪除會移除關聯 Event，但角色／能力／物品／關係歷史內容依既有規則保留並清除 Node 定位；確認文案明示這點。
+- 主 store 與附屬 stores 無共同交易；主 store 刪除成功而 deferred cleanup 失敗時，既有 reconcile／啟動修復負責重試，畫面需讓使用者知道尚有清理錯誤。
+- `EraManagerPopover` 現有名稱／序數／顏色直接綁定 ModelContext；需驗證刪除觸發的主 store save 不造成未預期的其他資料改寫，並遵循既有「完成」保存流程。
 
 ## V6.3 角色所屬勢力（R／U／I approved；實作與自動驗證完成）
 

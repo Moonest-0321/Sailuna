@@ -1,6 +1,6 @@
 # 技術架構
 
-> 基準：2026-09-18 目前工作樹。
+> 基準：2026-09-22 目前工作樹。
 
 ## 技術組成
 
@@ -38,7 +38,7 @@ ContentView（書櫃）
 - `InspectorViews`、`CharacterSectionViews`、`RelationshipWorkspace`：設定集與角色／物品／能力／勢力／關係管理；V5 勢力不與角色或正文連結。
 - `OutlineViews`：故事背景、敘事畫布、故事線／階段／大綱項目管理，以及「由大綱加入世界時間軸」。
 - `TimelineViews`／`TimelineEngine`：紀元、日期投影、主副軸、節點與事件管理、卡片及正文跳轉。
-- `PersistentStoreRepair`／`CrossStoreDeletionCoordinator`：主 store 修復與 Book／Character／Item／Ability／Event／Node／Timeline／Volume／Section 的跨 store 收斂。
+- `PersistentStoreRepair`／`CrossStoreDeletionCoordinator`：主 store 修復與 Book／Character／Item／Ability／Event／Node／Era／Timeline／Volume／Section 的跨 store 收斂。
 - `SailuneBackupService`：六個 SQLite online snapshot、封面、manifest／checksum 封裝，以及下次啟動前的驗證、現況安全備份、整組置換與失敗 rollback。
 - `MigrationPlan` 與各 Backfill：歷史 schema 匯入及獨立 store 回填。
 

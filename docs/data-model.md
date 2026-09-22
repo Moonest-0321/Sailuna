@@ -1,6 +1,6 @@
 # 資料模型與關聯
 
-> 依 2026-09-14 V5 實作與現行 schema、store 操作整理。
+> 依 2026-09-14 V5 實作與現行 schema、store 操作整理；V6.4 補充紀元刪除語意。
 
 ## Store 邊界
 
@@ -80,8 +80,9 @@ TimelineEventCardMetadata ─ eventID + 可選 outlineItemID
 
 ## 刪除語意
 
-- `PersistentModelDeletion` 明確解除 Node／Event 與角色歷史、設定歷史或 Section 的引用，再刪除 Book、Character、Item、Event、Node、Timeline、Section 或 Volume。
-- `CrossStoreDeletionCoordinator` 對 Book、Event、Node、Timeline 採「先保存主 store，再清理 StoryPlanning」；附屬清理失敗可稍後冪等重試。
+- `PersistentModelDeletion` 明確解除 Node／Event 與角色歷史、設定歷史或 Section 的引用，再刪除 Book、Character、Item、Event、Node、Era、Timeline、Section 或 Volume。
+- `CrossStoreDeletionCoordinator` 對 Book、Event、Node、Era、Timeline 採「先保存主 store，再清理 StoryPlanning」；附屬清理失敗可稍後冪等重試。
+- V6.4 刪除 Era 時，限按目前 Book 的所有 Timeline 找出仍關聯的 Node，沿用 Node 刪除語意並在同一次主 store save 刪除這些 Node 與 Era；Node 的 Event 隨之刪除。歷史來源保留但解除 Node 定位，StoryPlanning metadata、ItemCopy、AbilityProgress 與 V5 settings 的失效 Node UUID 在主 store 保存後清理，失敗可由既有修復重試。每本書的 Era／Timeline／設定獨立，不存在跨書共享；被刪 Era 的 `Book.currentEra` 依 nullify 解除。
 - 刪除勢力會刪除以它為端點的直接隸屬；已被勢力使用的層級不可刪除。刪除書籍時會一併刪除該書的層級與 settings 資料。
 - 啟動與時間軸載入會按現存 Book／Event UUID 清除孤立規劃資料；缺 OutlineItem 不會使 Event 或 metadata 被刪除。
 - 現行 UI 仍有 Volume／Section 與角色事件直接刪除入口，未完整套用上述集中語意；詳見 `consistency-audit.md`。

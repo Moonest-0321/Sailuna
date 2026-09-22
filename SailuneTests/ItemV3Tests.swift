@@ -422,6 +422,35 @@ final class ItemV3Tests: XCTestCase {
         XCTAssertEqual(result.node.timeline?.id, primary.id)
     }
 
+    func testTimelineOrderingKeepsEarlierEraBeforeLaterEraDateMagnitude() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let book = Book(title: "紀元排序", author: "作者")
+        let timeline = Timeline(name: "主軸", isPrimary: true)
+        let earlierEra = Era(name: "前紀元", startOrdinal: 1)
+        let laterEra = Era(name: "後紀元", startOrdinal: 6)
+        let earlierNode = Node(year: 12)
+        let laterNode = Node(year: 1, month: 1, day: 1)
+        context.insert(book)
+        context.insert(timeline)
+        context.insert(earlierEra)
+        context.insert(laterEra)
+        context.insert(earlierNode)
+        context.insert(laterNode)
+        timeline.book = book
+        earlierNode.timeline = timeline
+        earlierNode.era = earlierEra
+        laterNode.timeline = timeline
+        laterNode.era = laterEra
+        try context.save()
+
+        XCTAssertEqual(TimelineEngine.Query.sorted([laterNode, earlierNode]).map(\.id), [earlierNode.id, laterNode.id])
+        let cells = TimelineDateProjection.cells(
+            nodes: [laterNode, earlierNode], events: [], primary: false, granularity: .day
+        )
+        XCTAssertEqual(cells.map(\.eraID), [earlierEra.id, laterEra.id])
+    }
+
     func testEraChangeAppendsAfterLastEraWhenCurrentEraIsEarlier() throws {
         let container = try makeContainer()
         let context = container.mainContext
@@ -871,6 +900,129 @@ final class ItemV3Tests: XCTestCase {
 
         XCTAssertTrue(try context.fetch(FetchDescriptor<Event>()).isEmpty)
         XCTAssertNil(planningStore.timelineMetadata(eventID: eventID))
+    }
+
+    func testCrossStoreCoordinatorDeletesEraAndAllLinkedNodesAcrossBookTimelines() throws {
+        let container = try makeContainer()
+        let context = container.mainContext
+        let planningStore = try StoryPlanningStore(container: makePlanningContainer())
+        let abilitySchema = Schema(versionedSchema: AbilityProgressSchemaV1.self)
+        let abilityContainer = try ModelContainer(
+            for: abilitySchema,
+            configurations: [ModelConfiguration(schema: abilitySchema, isStoredInMemoryOnly: true)]
+        )
+        let abilityStore = try AbilityProgressStore(container: abilityContainer)
+        let copySchema = Schema(versionedSchema: ItemCopySchemaV1.self)
+        let copyContainer = try ModelContainer(
+            for: copySchema,
+            configurations: [ModelConfiguration(schema: copySchema, isStoredInMemoryOnly: true)]
+        )
+        let copyStore = try ItemCopyStore(container: copyContainer)
+
+        let firstBook = Book(title: "紀元刪除一", author: "作者")
+        let secondBook = Book(title: "紀元刪除二", author: "作者")
+        let character = Character(realName: "時間角色", book: firstBook)
+        let ability = CharacterAbility(name: "時間能力", character: character)
+        let item = Item(name: "時間物品", book: firstBook)
+        let era = Era(name: "待刪紀元")
+        let otherEra = Era(name: "另一書紀元", startOrdinal: 20)
+        let firstTimeline = Timeline(name: "第一書主軸", isPrimary: true)
+        let secondTimeline = Timeline(name: "第二書副軸")
+        let otherTimeline = Timeline(name: "第二書主軸", isPrimary: true)
+        context.insert(firstBook)
+        context.insert(secondBook)
+        context.insert(character)
+        context.insert(ability)
+        context.insert(item)
+        context.insert(era)
+        context.insert(otherEra)
+        context.insert(firstTimeline)
+        context.insert(secondTimeline)
+        context.insert(otherTimeline)
+        firstBook.currentEra = era
+        secondBook.currentEra = otherEra
+        firstTimeline.book = firstBook
+        secondTimeline.book = firstBook
+        otherTimeline.book = secondBook
+
+        let firstNode = Node(year: 1)
+        let secondNode = Node(year: 2, month: 3)
+        let retainedNode = Node(year: 1, month: 1, day: 1)
+        context.insert(firstNode)
+        context.insert(secondNode)
+        context.insert(retainedNode)
+        firstNode.era = era
+        firstNode.timeline = firstTimeline
+        secondNode.era = era
+        secondNode.timeline = secondTimeline
+        retainedNode.era = otherEra
+        retainedNode.timeline = otherTimeline
+
+        let firstEvent = Event(title: "第一書待刪事件", detail: "事件內容")
+        let secondEvent = Event(title: "第一書副軸待刪事件", detail: "事件內容")
+        let retainedEvent = Event(title: "保留事件", detail: "保留內容")
+        context.insert(firstEvent)
+        context.insert(secondEvent)
+        context.insert(retainedEvent)
+        firstEvent.node = firstNode
+        secondEvent.node = secondNode
+        retainedEvent.node = retainedNode
+
+        let appearance = CharacterAppearance(
+            kind: .outfit,
+            descriptionText: "歷史外觀仍保留",
+            node: firstNode
+        )
+        context.insert(appearance)
+        try context.save()
+
+        try abilityStore.register(abilityID: ability.id, bookID: firstBook.id)
+        abilityStore.connect(characterID: character.id, abilityID: ability.id)
+        let abilityConnection = try XCTUnwrap(
+            abilityStore.connections.first { $0.characterID == character.id && $0.abilityID == ability.id }
+        )
+        abilityStore.addHistory(connectionID: abilityConnection.id)
+        let abilityHistory = try XCTUnwrap(abilityStore.histories.first { $0.connectionID == abilityConnection.id })
+        abilityHistory.content = "能力歷史仍保留"
+        abilityHistory.nodeID = firstNode.id
+        abilityStore.save()
+        XCTAssertNil(abilityStore.persistenceErrorMessage)
+
+        let copy = copyStore.createCopy(itemID: item.id, name: "有時間定位的副本")
+        let copyHistory = copyStore.addHistory(copyID: copy.id, content: "物品歷史仍保留")
+        copyHistory.nodeID = firstNode.id
+        copyStore.save()
+        XCTAssertNil(copyStore.persistenceErrorMessage)
+
+        try planningStore.ensureTimelineMetadata(eventID: firstEvent.id, bookID: firstBook.id)
+        try planningStore.ensureTimelineMetadata(eventID: secondEvent.id, bookID: firstBook.id)
+        try planningStore.ensureTimelineMetadata(eventID: retainedEvent.id, bookID: secondBook.id)
+
+        let outcome = try CrossStoreDeletionCoordinator.deleteEra(
+            era,
+            for: firstBook,
+            in: context,
+            planningStore: planningStore,
+            copyStore: copyStore,
+            abilityStore: abilityStore
+        )
+
+        XCTAssertFalse(outcome.requiresRepair)
+        XCTAssertEqual(Set(try context.fetch(FetchDescriptor<Era>()).map(\.id)), Set([otherEra.id]))
+        XCTAssertEqual(Set(try context.fetch(FetchDescriptor<Node>()).map(\.id)), Set([retainedNode.id]))
+        XCTAssertEqual(Set(try context.fetch(FetchDescriptor<Event>()).map(\.id)), Set([retainedEvent.id]))
+        XCTAssertNil(firstBook.currentEra)
+        XCTAssertEqual(secondBook.currentEra?.id, otherEra.id)
+        XCTAssertEqual(otherTimeline.nodes.map(\.id), [retainedNode.id])
+        XCTAssertEqual(try context.fetch(FetchDescriptor<CharacterAppearance>()).first?.descriptionText, "歷史外觀仍保留")
+        XCTAssertNil(try context.fetch(FetchDescriptor<CharacterAppearance>()).first?.node)
+        XCTAssertEqual(abilityStore.histories.first?.content, "能力歷史仍保留")
+        XCTAssertNil(abilityStore.histories.first?.nodeID)
+        XCTAssertEqual(copyStore.histories.first?.content, "物品歷史仍保留")
+        XCTAssertNil(copyStore.histories.first?.nodeID)
+        XCTAssertNil(planningStore.timelineMetadata(eventID: firstEvent.id))
+        XCTAssertNil(planningStore.timelineMetadata(eventID: secondEvent.id))
+        XCTAssertNotNil(planningStore.timelineMetadata(eventID: retainedEvent.id))
     }
 
     func testCrossStoreCoordinatorDeletingBookRemovesPlanningData() throws {
