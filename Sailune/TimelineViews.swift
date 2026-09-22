@@ -795,15 +795,17 @@ struct TimelinePanelView: View {
                             .background(Color.secondary.opacity(0.04), in: RoundedRectangle(cornerRadius: 9))
                     }
                 }
-                Button(role: .destructive) {
+                Button {
                     requestDeleteNodes(cell.nodes)
                 } label: {
                     Image(systemName: "xmark")
                         .font(.caption2.weight(.semibold))
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
-                .padding(8)
+                .padding(4)
                 .accessibilityLabel("刪除這個時間")
                 .help("刪除這個時間")
             }
@@ -899,10 +901,12 @@ struct TimelinePanelView: View {
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                Button(role: .destructive) {
+                Button {
                     requestDeleteNodes(cell.nodes)
                 } label: {
                     Image(systemName: "xmark")
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
@@ -1057,10 +1061,12 @@ struct TimelinePanelView: View {
                             .background(Color.accentColor.opacity(0.15))
                             .clipShape(Capsule())
                     }
-                    Button(role: .destructive) {
+                    Button {
                         requestDeleteNodes(cell.nodes)
                     } label: {
                         Image(systemName: "xmark")
+                            .frame(width: 24, height: 24)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
