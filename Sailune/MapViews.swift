@@ -3,8 +3,32 @@ import PDFKit
 import SwiftUI
 import UniformTypeIdentifiers
 
+private final class MapScrollWheelMonitor {
+    private var monitor: Any?
+    var isPointerInside = false
+
+    func start(onScroll: @escaping (CGSize, NSEvent.ModifierFlags) -> Bool) {
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .scrollWheel) { [weak self] event in
+            guard self?.isPointerInside == true else { return event }
+            let delta = CGSize(width: event.scrollingDeltaX, height: event.scrollingDeltaY)
+            return onScroll(delta, event.modifierFlags) ? nil : event
+        }
+    }
+
+    func stop() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+        isPointerInside = false
+    }
+
+    deinit { stop() }
+}
+
 struct MapWorkspaceView: View {
     let book: Book
+    @Binding var viewport: MapViewport
+    let onOpenPlaceSettings: (UUID) -> Void
 
     @Environment(V5SettingsStore.self) private var settingsStore
     @State private var pdfData: Data?
@@ -12,6 +36,11 @@ struct MapWorkspaceView: View {
     @State private var exportRequest: SailuneExportRequest?
     @State private var markerDraft: MapMarkerDraft?
     @State private var errorMessage: String?
+    @State private var viewportSize: CGSize = .zero
+    @State private var magnifyStartViewport: MapViewport?
+    @State private var panStartViewport: MapViewport?
+    @State private var scrollWheelMonitor = MapScrollWheelMonitor()
+    @State private var isDraggingMarker = false
 
     private var placedPlaces: [Place] {
         settingsStore.places(for: book.id).filter {
@@ -34,9 +63,31 @@ struct MapWorkspaceView: View {
                 }
 
                 Button { isImporting = true } label: {
-                    Label("匯入地圖 PDF", systemImage: "square.and.arrow.down")
+                    Label("匯入地圖", systemImage: "square.and.arrow.down")
+                }
+
+                Button { markerDraft = MapMarkerDraft() } label: {
+                    Label("輸入座標", systemImage: "number")
                 }
                 Spacer()
+                Button { adjustZoom(by: -1) } label: {
+                    Image(systemName: "minus")
+                }
+                .help("縮小 25%")
+                .disabled(viewport.zoom <= MapViewport.minimumZoom)
+                Button { resetViewport() } label: {
+                    Text(zoomPercentage)
+                        .monospacedDigit()
+                        .frame(minWidth: 44)
+                }
+                .help("回到 100%")
+                Button { adjustZoom(by: 1) } label: {
+                    Image(systemName: "plus")
+                }
+                .help("放大 25%")
+                .disabled(viewport.zoom >= MapViewport.maximumZoom)
+                Button("符合視窗") { resetViewport() }
+                    .help("顯示完整地圖")
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -46,30 +97,66 @@ struct MapWorkspaceView: View {
             GeometryReader { proxy in
                 let bounds = CGRect(origin: .zero, size: proxy.size)
                 let availableBounds = bounds.insetBy(dx: 24, dy: 24)
-                let mapRect = MapCoordinateTransform.fittedMapRect(in: availableBounds)
+                let mapRect = viewport.mapRect(in: availableBounds)
 
                 MapSurfaceView(
                     pdfData: pdfData,
                     places: placedPlaces,
+                    zoom: viewport.zoom,
+                    selectedPlaceID: markerDraft?.placeID,
                     onCreateMarker: { coordinate in
                         markerDraft = MapMarkerDraft(coordinate: coordinate)
                     },
                     onEditMarker: { place, coordinate in
                         markerDraft = MapMarkerDraft(place: place, coordinate: coordinate)
+                    },
+                    onMoveMarker: moveMarker,
+                    onMarkerDragChanged: { isDragging in
+                        isDraggingMarker = isDragging
                     }
                 )
                 .frame(width: mapRect.width, height: mapRect.height)
                 .position(x: mapRect.midX, y: mapRect.midY)
+                .simultaneousGesture(panGesture(in: availableBounds))
+                .simultaneousGesture(magnifyGesture(in: availableBounds))
+                .onHover { isInside in
+                    scrollWheelMonitor.isPointerInside = isInside
+                }
             }
+            .clipped()
             .background(Color(nsColor: .windowBackgroundColor))
+            .onGeometryChange(for: CGSize.self) { proxy in
+                proxy.size
+            } action: { size in
+                viewportSize = size
+                constrainViewport(to: availableBounds(for: size))
+            }
         }
-        .fileImporter(isPresented: $isImporting, allowedContentTypes: [.pdf], allowsMultipleSelection: false) {
+        .fileImporter(
+            isPresented: $isImporting,
+            allowedContentTypes: [.pdf, .png, .jpeg],
+            allowsMultipleSelection: false
+        ) {
             handleImport($0)
         }
         .sheet(item: $markerDraft) { draft in
-            MapMarkerEditorView(draft: draft) { name, placeType in
-                saveMarker(draft, name: name, placeType: placeType)
-            }
+            MapMarkerEditorView(
+                draft: draft,
+                onSave: { name, placeType, coordinate in
+                    saveMarker(draft, name: name, placeType: placeType, coordinate: coordinate)
+                },
+                onDelete: draft.placeID == nil ? nil : {
+                    deleteMarker(draft)
+                },
+                onOpenSettings: draft.placeID.map { placeID in
+                    {
+                        markerDraft = nil
+                        DispatchQueue.main.async {
+                            onOpenPlaceSettings(placeID)
+                        }
+                    }
+                }
+            )
         }
         .alert("地圖處理失敗", isPresented: Binding(
             get: { errorMessage != nil },
@@ -80,11 +167,88 @@ struct MapWorkspaceView: View {
             Text(errorMessage ?? "未知錯誤")
         }
         .onAppear(perform: reloadMap)
+        .onAppear {
+            scrollWheelMonitor.start { delta, modifiers in
+                panWithScrollWheel(delta, modifiers: modifiers)
+            }
+        }
+        .onDisappear { scrollWheelMonitor.stop() }
         .onReceive(NotificationCenter.default.publisher(for: BookMapPDFStore.didChange)) { notification in
             guard notification.object as? NSUUID == book.id as NSUUID else { return }
             reloadMap()
         }
         .sailuneFileExporter(request: $exportRequest)
+    }
+
+    private var zoomPercentage: String {
+        "\(Int((viewport.zoom * 100).rounded()))%"
+    }
+
+    private func availableBounds(for size: CGSize) -> CGRect {
+        CGRect(origin: .zero, size: size).insetBy(dx: 24, dy: 24)
+    }
+
+    private func adjustZoom(by steps: Int) {
+        viewport.zoom(by: steps, in: availableBounds(for: viewportSize))
+    }
+
+    private func resetViewport() {
+        viewport.reset()
+    }
+
+    private func constrainViewport(to bounds: CGRect) {
+        viewport.setPan(viewport.pan, in: bounds)
+    }
+
+    private func panWithScrollWheel(_ delta: CGSize, modifiers: NSEvent.ModifierFlags) -> Bool {
+        guard viewport.zoom > 1 else { return false }
+        let usesVerticalWheelForHorizontalPan = modifiers.contains(.shift)
+            && abs(delta.width) < abs(delta.height)
+        let translation = CGSize(
+            width: usesVerticalWheelForHorizontalPan ? delta.height : delta.width,
+            height: usesVerticalWheelForHorizontalPan ? 0 : delta.height
+        )
+        viewport.setPan(
+            CGSize(
+                width: viewport.pan.width + translation.width,
+                height: viewport.pan.height + translation.height
+            ),
+            in: availableBounds(for: viewportSize)
+        )
+        return true
+    }
+
+    private func panGesture(in bounds: CGRect) -> some Gesture {
+        DragGesture(minimumDistance: 8)
+            .onChanged { value in
+                guard viewport.zoom > 1, !isDraggingMarker else { return }
+                if panStartViewport == nil { panStartViewport = viewport }
+                guard var start = panStartViewport else { return }
+                start.setPan(
+                    CGSize(
+                        width: start.pan.width + value.translation.width,
+                        height: start.pan.height + value.translation.height
+                    ),
+                    in: bounds
+                )
+                viewport = start
+            }
+            .onEnded { _ in panStartViewport = nil }
+    }
+
+    private func magnifyGesture(in bounds: CGRect) -> some Gesture {
+        MagnifyGesture()
+            .onChanged { value in
+                if magnifyStartViewport == nil { magnifyStartViewport = viewport }
+                guard var start = magnifyStartViewport else { return }
+                let anchor = CGPoint(
+                    x: bounds.minX + bounds.width * value.startAnchor.x,
+                    y: bounds.minY + bounds.height * value.startAnchor.y
+                )
+                start.setZoom(start.zoom * value.magnification, anchor: anchor, in: bounds)
+                viewport = start
+            }
+            .onEnded { _ in magnifyStartViewport = nil }
     }
 
     private func exportTemplate(_ style: MapTemplateStyle) {
@@ -108,7 +272,15 @@ struct MapWorkspaceView: View {
             let didAccess = sourceURL.startAccessingSecurityScopedResource()
             defer { if didAccess { sourceURL.stopAccessingSecurityScopedResource() } }
             let sourceData = try Data(contentsOf: sourceURL)
-            pdfData = try BookMapPDFStore.saveImportedPDF(sourceData, forID: book.id)
+            let contentType = try sourceURL.resourceValues(forKeys: [.contentTypeKey]).contentType
+            guard let contentType else {
+                throw MapPDFGenerator.MapPDFError.unsupportedFormat
+            }
+            pdfData = try BookMapPDFStore.saveImportedMap(
+                sourceData,
+                contentType: contentType,
+                forID: book.id
+            )
         } catch {
             if (error as NSError).code != NSUserCancelledError {
                 errorMessage = error.localizedDescription
@@ -125,7 +297,12 @@ struct MapWorkspaceView: View {
         }
     }
 
-    private func saveMarker(_ draft: MapMarkerDraft, name: String, placeType: String?) {
+    private func saveMarker(
+        _ draft: MapMarkerDraft,
+        name: String,
+        placeType: String?,
+        coordinate: MapCoordinate
+    ) {
         if let placeID = draft.placeID,
            let place = settingsStore.places(for: book.id).first(where: { $0.id == placeID }) {
             settingsStore.updateMapPlace(
@@ -133,16 +310,28 @@ struct MapWorkspaceView: View {
                 bookID: book.id,
                 name: name,
                 placeType: placeType,
-                coordinate: draft.coordinate
+                coordinate: coordinate
             )
         } else {
             settingsStore.createMapPlace(
                 bookID: book.id,
                 name: name,
                 placeType: placeType,
-                coordinate: draft.coordinate
+                coordinate: coordinate
             )
         }
+    }
+
+    private func deleteMarker(_ draft: MapMarkerDraft) {
+        guard let placeID = draft.placeID,
+              let place = settingsStore.places(for: book.id).first(where: { $0.id == placeID }) else {
+            return
+        }
+        settingsStore.deletePlace(place, bookID: book.id)
+    }
+
+    private func moveMarker(_ place: Place, to coordinate: MapCoordinate) {
+        settingsStore.updateMapPlaceCoordinate(place, bookID: book.id, coordinate: coordinate)
     }
 
     private func sanitizedFilename(_ name: String) -> String {
@@ -156,8 +345,12 @@ struct MapWorkspaceView: View {
 private struct MapSurfaceView: View {
     let pdfData: Data?
     let places: [Place]
+    let zoom: CGFloat
+    let selectedPlaceID: UUID?
     let onCreateMarker: (MapCoordinate) -> Void
     let onEditMarker: (Place, MapCoordinate) -> Void
+    let onMoveMarker: (Place, MapCoordinate) -> Void
+    let onMarkerDragChanged: (Bool) -> Void
 
     var body: some View {
         GeometryReader { proxy in
@@ -189,29 +382,18 @@ private struct MapSurfaceView: View {
                     if let x = place.coordinateX, let y = place.coordinateY {
                         let coordinate = MapCoordinate(x: x, y: y)
                         let point = MapCoordinateTransform.viewPoint(for: coordinate, in: mapRect)
-                        Button {
-                            onEditMarker(place, coordinate)
-                        } label: {
-                            VStack(spacing: 2) {
-                                Image(systemName: "mappin.circle.fill")
-                                    .font(.title2)
-                                    .foregroundStyle(.red)
-                                Text(place.name.isEmpty ? "未命名地點" : place.name)
-                                    .font(.caption.weight(.semibold))
-                                    .lineLimit(1)
-                                if let placeType = place.placeType, !placeType.isEmpty {
-                                    Text(placeType)
-                                        .font(.caption2)
-                                        .foregroundStyle(.secondary)
-                                        .lineLimit(1)
-                                }
-                            }
-                            .padding(4)
-                            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
-                        }
-                        .buttonStyle(.plain)
-                        .position(point)
-                        .help("\(place.name)（\(Int(coordinate.x)), \(Int(coordinate.y))）")
+                        MapMarkerView(
+                            place: place,
+                            coordinate: coordinate,
+                            point: point,
+                            mapRect: mapRect,
+                            zoom: zoom,
+                            isSelected: selectedPlaceID == place.id,
+                            onOpen: { onEditMarker(place, coordinate) },
+                            onMove: { onMoveMarker(place, $0) },
+                            onDragChanged: onMarkerDragChanged
+                        )
+                        .help(markerHelp(for: place, coordinate: coordinate))
                     }
                 }
             }
@@ -220,6 +402,126 @@ private struct MapSurfaceView: View {
         }
         .aspectRatio(4 / 3, contentMode: .fit)
         .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
+    }
+
+    private func markerHelp(for place: Place, coordinate: MapCoordinate) -> String {
+        let type = place.placeType.flatMap { $0.isEmpty ? nil : $0 } ?? "未分類"
+        return "\(place.name)・\(type)（\(Int(coordinate.x)), \(Int(coordinate.y))）"
+    }
+}
+
+private struct MapMarkerView: View {
+    let place: Place
+    let coordinate: MapCoordinate
+    let point: CGPoint
+    let mapRect: CGRect
+    let zoom: CGFloat
+    let isSelected: Bool
+    let onOpen: () -> Void
+    let onMove: (MapCoordinate) -> Void
+    let onDragChanged: (Bool) -> Void
+
+    @State private var isHovered = false
+    @State private var dragTranslation: CGSize = .zero
+    @State private var previewCoordinate: MapCoordinate?
+    @State private var didCompleteDrag = false
+
+    private var showsName: Bool {
+        MapMarkerPresentation.showsName(
+            zoom: zoom,
+            isHovered: isHovered,
+            isSelected: isSelected
+        )
+    }
+
+    var body: some View {
+        Button {
+            guard !didCompleteDrag else { return }
+            onOpen()
+        } label: {
+            HStack(spacing: 4) {
+                ZStack {
+                    if isSelected {
+                        Circle()
+                            .stroke(Color.red.opacity(0.85), lineWidth: 1)
+                            .frame(width: 12, height: 12)
+                    }
+                    Circle()
+                        .fill(Color.red)
+                        .frame(width: 6, height: 6)
+                }
+                .frame(width: 24, height: 24)
+
+                if showsName || previewCoordinate != nil {
+                    markerLabel
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .fixedSize()
+        // The HStack's leading 24 pt cell is anchored so the dot center remains
+        // exactly on the projected world coordinate while the label grows rightward.
+        .offset(
+            x: point.x - 12 + dragTranslation.width,
+            y: point.y - 12 + dragTranslation.height
+        )
+        .onContinuousHover { phase in
+            switch phase {
+            case .active:
+                isHovered = true
+            case .ended:
+                isHovered = false
+            }
+        }
+        .highPriorityGesture(markerDragGesture)
+    }
+
+    @ViewBuilder
+    private var markerLabel: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(place.name.isEmpty ? "未命名地點" : place.name)
+                .font(.caption2.weight(.semibold))
+            if let previewCoordinate {
+                Text("X: \(Int(previewCoordinate.x.rounded()))  Y: \(Int(previewCoordinate.y.rounded()))")
+                    .font(.caption2.monospacedDigit())
+            }
+        }
+        .foregroundStyle(Color.black)
+        .lineLimit(1)
+        .fixedSize()
+        .padding(.horizontal, 5)
+        .padding(.vertical, 2)
+        .background(Color.white.opacity(0.9), in: RoundedRectangle(cornerRadius: 4))
+    }
+
+    private var markerDragGesture: some Gesture {
+        DragGesture(minimumDistance: 8)
+            .onChanged { value in
+                onDragChanged(true)
+                dragTranslation = value.translation
+                previewCoordinate = MapCoordinateTransform.clampedCoordinate(
+                    for: CGPoint(
+                        x: point.x + value.translation.width,
+                        y: point.y + value.translation.height
+                    ),
+                    in: mapRect
+                )
+            }
+            .onEnded { value in
+                let destination = CGPoint(
+                    x: point.x + value.translation.width,
+                    y: point.y + value.translation.height
+                )
+                if let coordinate = MapCoordinateTransform.clampedCoordinate(for: destination, in: mapRect) {
+                    onMove(coordinate)
+                }
+                dragTranslation = .zero
+                previewCoordinate = nil
+                onDragChanged(false)
+                didCompleteDrag = true
+                DispatchQueue.main.async { didCompleteDrag = false }
+            }
     }
 }
 
@@ -279,20 +581,27 @@ private struct MapCoordinateOverlay: View {
 private struct MapMarkerDraft: Identifiable {
     let id = UUID()
     let placeID: UUID?
-    let coordinate: MapCoordinate
+    let initialCoordinate: MapCoordinate?
     let initialName: String
     let initialPlaceType: String
 
+    init() {
+        placeID = nil
+        initialCoordinate = nil
+        initialName = ""
+        initialPlaceType = "城市"
+    }
+
     init(coordinate: MapCoordinate) {
         placeID = nil
-        self.coordinate = coordinate
+        initialCoordinate = coordinate
         initialName = ""
         initialPlaceType = "城市"
     }
 
     init(place: Place, coordinate: MapCoordinate) {
         placeID = place.id
-        self.coordinate = coordinate
+        initialCoordinate = coordinate
         initialName = place.name
         initialPlaceType = place.placeType ?? ""
     }
@@ -300,30 +609,61 @@ private struct MapMarkerDraft: Identifiable {
 
 private struct MapMarkerEditorView: View {
     let draft: MapMarkerDraft
-    let onSave: (String, String?) -> Void
+    let onSave: (String, String?, MapCoordinate) -> Void
+    let onDelete: (() -> Void)?
+    let onOpenSettings: (() -> Void)?
 
     @Environment(\.dismiss) private var dismiss
     @State private var name: String
     @State private var placeType: String
+    @State private var xCoordinate: String
+    @State private var yCoordinate: String
+    @State private var showingDeleteConfirmation = false
     @FocusState private var nameFocused: Bool
 
-    init(draft: MapMarkerDraft, onSave: @escaping (String, String?) -> Void) {
+    init(
+        draft: MapMarkerDraft,
+        onSave: @escaping (String, String?, MapCoordinate) -> Void,
+        onDelete: (() -> Void)? = nil,
+        onOpenSettings: (() -> Void)? = nil
+    ) {
         self.draft = draft
         self.onSave = onSave
+        self.onDelete = onDelete
+        self.onOpenSettings = onOpenSettings
         _name = State(initialValue: draft.initialName)
         _placeType = State(initialValue: draft.initialPlaceType)
+        _xCoordinate = State(initialValue: draft.initialCoordinate.map { String(Int($0.x.rounded())) } ?? "")
+        _yCoordinate = State(initialValue: draft.initialCoordinate.map { String(Int($0.y.rounded())) } ?? "")
     }
 
     private var trimmedName: String { name.trimmingCharacters(in: .whitespacesAndNewlines) }
+    private var parsedCoordinate: MapCoordinate? {
+        MapCoordinateInput.parse(x: xCoordinate, y: yCoordinate)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text(draft.placeID == nil ? "新增地圖標記" : "編輯地圖標記")
                 .font(.headline)
 
-            Text("座標：\(Int(draft.coordinate.x)), \(Int(draft.coordinate.y))")
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("座標")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                HStack(spacing: 10) {
+                    TextField("X（0–4000）", text: $xCoordinate)
+                    TextField("Y（0–3000）", text: $yCoordinate)
+                }
+                .textFieldStyle(.roundedBorder)
+                .font(.body.monospacedDigit())
+
+                if parsedCoordinate == nil {
+                    Text("X 需為 0–4000、Y 需為 0–3000 的整數")
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+            }
 
             TextField("地點名稱", text: $name)
                 .focused($nameFocused)
@@ -331,21 +671,43 @@ private struct MapMarkerEditorView: View {
             TextField("地點類型（例如城市）", text: $placeType)
 
             HStack {
+                if onDelete != nil {
+                    Button("刪除地點", role: .destructive) {
+                        showingDeleteConfirmation = true
+                    }
+                }
+                if let onOpenSettings {
+                    Button {
+                        onOpenSettings()
+                        dismiss()
+                    } label: {
+                        Label("前往地點設定", systemImage: "arrow.up.forward.square")
+                    }
+                }
                 Spacer()
                 Button("取消", role: .cancel) { dismiss() }
                 Button("儲存", action: save)
-                    .disabled(trimmedName.isEmpty)
+                    .disabled(trimmedName.isEmpty || parsedCoordinate == nil)
             }
         }
         .padding(20)
         .frame(width: 360)
         .onAppear { nameFocused = true }
+        .alert("刪除地點「\(trimmedName.isEmpty ? "未命名地點" : trimmedName)」？", isPresented: $showingDeleteConfirmation) {
+            Button("取消", role: .cancel) {}
+            Button("刪除", role: .destructive) {
+                onDelete?()
+                dismiss()
+            }
+        } message: {
+            Text("此地點會從地圖與設定集中永久刪除，且無法復原。")
+        }
     }
 
     private func save() {
-        guard !trimmedName.isEmpty else { return }
+        guard !trimmedName.isEmpty, let parsedCoordinate else { return }
         let trimmedType = placeType.trimmingCharacters(in: .whitespacesAndNewlines)
-        onSave(trimmedName, trimmedType.isEmpty ? nil : trimmedType)
+        onSave(trimmedName, trimmedType.isEmpty ? nil : trimmedType, parsedCoordinate)
         dismiss()
     }
 }

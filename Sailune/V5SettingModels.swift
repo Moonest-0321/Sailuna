@@ -2226,6 +2226,13 @@ final class V5SettingsStore {
         save()
     }
 
+    func updateMapPlaceCoordinate(_ place: Place, bookID: UUID, coordinate: MapCoordinate) {
+        guard place.bookID == bookID else { return }
+        place.coordinateX = coordinate.x
+        place.coordinateY = coordinate.y
+        save()
+    }
+
     func deletePlace(_ place: Place, bookID: UUID) {
         guard place.bookID == bookID else { return }
         context.delete(place)

@@ -1,5 +1,6 @@
 import Foundation
 import PDFKit
+import UniformTypeIdentifiers
 
 /// Stores one normalized map PDF per book outside SwiftData. Coordinates live on
 /// Place records, so replacing or removing this background never moves markers.
@@ -27,7 +28,19 @@ enum BookMapPDFStore {
 
     @discardableResult
     static func saveImportedPDF(_ sourceData: Data, forID bookID: UUID) throws -> Data {
-        let normalizedData = try MapPDFGenerator.normalizedMapData(from: sourceData)
+        try saveImportedMap(sourceData, contentType: .pdf, forID: bookID)
+    }
+
+    @discardableResult
+    static func saveImportedMap(
+        _ sourceData: Data,
+        contentType: UTType,
+        forID bookID: UUID
+    ) throws -> Data {
+        let normalizedData = try MapPDFGenerator.normalizedMapData(
+            from: sourceData,
+            contentType: contentType
+        )
         let directory = try mapsDirectory()
         try normalizedData.write(
             to: directory.appendingPathComponent("\(bookID.uuidString).pdf"),

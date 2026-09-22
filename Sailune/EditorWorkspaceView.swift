@@ -30,6 +30,30 @@ private final class EditorKeyboardMonitor {
     deinit { stop() }
 }
 
+enum EditorWorkspaceMode: String, CaseIterable, Identifiable {
+    case writing
+    case planning
+    case map
+
+    var id: Self { self }
+
+    var title: String {
+        switch self {
+        case .writing: "編輯"
+        case .planning: "大綱"
+        case .map: "地圖"
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .writing: "text.book.closed"
+        case .planning: "rectangle.3.group"
+        case .map: "map"
+        }
+    }
+}
+
 // MARK: - 三欄式編輯工作區 (PRD 3.3)
 struct EditorWorkspaceView: View {
     private enum Layout {
@@ -56,8 +80,8 @@ struct EditorWorkspaceView: View {
     @State private var matchedSettingRequestID = UUID()
     @State private var planningRecordReference: PlanningRecordSourceReference?
     @State private var planningRecordRequestID = UUID()
-    @State private var isShowingPlanningWorkspace = false
-    @State private var isShowingPageMap = false
+    @State private var workspaceMode: EditorWorkspaceMode = .writing
+    @State private var mapViewport = MapViewport()
     @State private var hasLoadedPlanningWorkspace = false
     @State private var writingColumnVisibility: NavigationSplitViewVisibility = .automatic
     @State private var exportRequest: SailuneExportRequest?
@@ -87,8 +111,12 @@ struct EditorWorkspaceView: View {
                         .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 320)
                 } detail: {
                     Group {
-                        if isShowingPageMap {
-                            MapWorkspaceView(book: book)
+                        if workspaceMode == .map {
+                            MapWorkspaceView(
+                                book: book,
+                                viewport: $mapViewport,
+                                onOpenPlaceSettings: openPlaceSettings
+                            )
                         } else {
                             EditorCenterView(
                                 section: selectedSection,
@@ -113,9 +141,9 @@ struct EditorWorkspaceView: View {
                     .frame(minWidth: Layout.minimumEditorWidth, minHeight: Layout.minimumEditorHeight)
                     .toolbar { workspaceToolbar }
                 }
-                .opacity(isShowingPlanningWorkspace ? 0 : 1)
-                .allowsHitTesting(!isShowingPlanningWorkspace)
-                .accessibilityHidden(isShowingPlanningWorkspace)
+                .opacity(workspaceMode == .planning ? 0 : 1)
+                .allowsHitTesting(workspaceMode != .planning)
+                .accessibilityHidden(workspaceMode == .planning)
 
                 if hasLoadedPlanningWorkspace {
                     BookPlanningWorkspaceView(
@@ -124,10 +152,10 @@ struct EditorWorkspaceView: View {
                         onOpenTimelineSection: openTimelineSection,
                         onOpenPlanningRecord: openPlanningRecord
                     )
-                        .opacity(isShowingPlanningWorkspace ? 1 : 0)
-                        .allowsHitTesting(isShowingPlanningWorkspace)
-                        .accessibilityHidden(!isShowingPlanningWorkspace)
-                } else if isShowingPlanningWorkspace {
+                        .opacity(workspaceMode == .planning ? 1 : 0)
+                        .allowsHitTesting(workspaceMode == .planning)
+                        .accessibilityHidden(workspaceMode != .planning)
+                } else if workspaceMode == .planning {
                     ProgressView("整理大綱…")
                 }
             }
@@ -181,10 +209,10 @@ struct EditorWorkspaceView: View {
             ShortcutHelpView()
         }
         .onReceive(NotificationCenter.default.publisher(for: .sailunePreviousSection)) { _ in
-            if !isShowingPlanningWorkspace { navigate(to: neighboringSections.previous) }
+            if workspaceMode == .writing { navigate(to: neighboringSections.previous) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .sailuneNextSection)) { _ in
-            if !isShowingPlanningWorkspace { navigate(to: neighboringSections.next) }
+            if workspaceMode == .writing { navigate(to: neighboringSections.next) }
         }
         .onReceive(NotificationCenter.default.publisher(for: .sailunePlanningMarkersChanged)) { _ in
             bridge.reloadVisibleContent()
@@ -222,17 +250,19 @@ struct EditorWorkspaceView: View {
                 } label: { Label("匯出 TXT", systemImage: "doc.text") }
                 Button { exportRequest = EpubExporter.exportRequest(book: book) } label: { Label("匯出 EPUB", systemImage: "book.closed") }
             } label: { Label("更多", systemImage: "ellipsis.circle") }
-            Button(action: isShowingPlanningWorkspace ? returnToWriting : showPlanningWorkspace) {
-                Label(
-                    isShowingPlanningWorkspace ? "回到文本編輯" : "大綱",
-                    systemImage: isShowingPlanningWorkspace ? "text.book.closed" : "rectangle.3.group"
-                )
+            Picker("工作模式", selection: Binding(
+                get: { workspaceMode },
+                set: switchWorkspace
+            )) {
+                ForEach(EditorWorkspaceMode.allCases) { mode in
+                    Label(mode.title, systemImage: mode.systemImage)
+                        .labelStyle(.iconOnly)
+                        .tag(mode)
+                }
             }
-            .help(isShowingPlanningWorkspace ? "回到文本編輯" : "開啟大綱工作區")
-            Button(action: togglePageMap) {
-                Label("頁面地圖", systemImage: "map")
-            }
-            .help(isShowingPageMap ? "返回正文" : "開啟頁面地圖")
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .help("切換編輯、大綱或地圖工作模式")
             Button { setInspectorPresented(!showInspector) } label: {
                 Label("設定集", systemImage: "sidebar.right")
             }
@@ -244,36 +274,29 @@ struct EditorWorkspaceView: View {
         columnVisibility = (columnVisibility == .detailOnly) ? .automatic : .detailOnly
     }
 
-    private func togglePageMap() {
-        if isShowingPageMap {
-            isShowingPageMap = false
-        } else {
-            bridge.flushPendingSave()
-            isShowingPageMap = true
-        }
-    }
-
-    private func showPlanningWorkspace() {
+    private func switchWorkspace(to mode: EditorWorkspaceMode) {
+        guard mode != workspaceMode else { return }
         NSApp.keyWindow?.makeFirstResponder(nil)
-        writingColumnVisibility = columnVisibility
-        columnVisibility = .detailOnly
-        setInspectorPresented(false)
-        isShowingPlanningWorkspace = true
-        if !hasLoadedPlanningWorkspace {
-            DispatchQueue.main.async { hasLoadedPlanningWorkspace = true }
-        }
-    }
+        bridge.flushPendingSave()
 
-    private func returnToWriting() {
-        isShowingPlanningWorkspace = false
-        columnVisibility = writingColumnVisibility
+        if mode == .planning {
+            if workspaceMode != .planning {
+                writingColumnVisibility = columnVisibility
+            }
+            columnVisibility = .detailOnly
+            if !hasLoadedPlanningWorkspace {
+                DispatchQueue.main.async { hasLoadedPlanningWorkspace = true }
+            }
+        } else if workspaceMode == .planning {
+            columnVisibility = writingColumnVisibility
+        }
+        workspaceMode = mode
     }
 
     private func openOutlineItem(_ item: OutlineItem, _ anchor: OutlineItemAnchor) {
         guard let section = BookStructure.orderedSections(in: book).first(where: { $0.id == anchor.sectionID }) else { return }
         let offset = anchor.resolvedOffset(in: String(section.content.characters))
-        isShowingPlanningWorkspace = false
-        columnVisibility = writingColumnVisibility
+        switchWorkspace(to: .writing)
         selectedSection = section
         DispatchQueue.main.async {
             bridge.requestSelect(sectionID: section.id, range: NSRange(location: offset, length: 0))
@@ -283,14 +306,12 @@ struct EditorWorkspaceView: View {
     private func openTimelineSection(_ section: Section) {
         guard BookStructure.orderedSections(in: book).contains(where: { $0.id == section.id }) else { return }
         bridge.flushPendingSave()
-        isShowingPlanningWorkspace = false
-        columnVisibility = writingColumnVisibility
+        switchWorkspace(to: .writing)
         selectedSection = section
     }
 
     private func openPlanningRecord(_ reference: PlanningRecordSourceReference) {
-        isShowingPlanningWorkspace = false
-        columnVisibility = writingColumnVisibility
+        switchWorkspace(to: .writing)
         focusedCharacter = nil
         settingsDestination = nil
         planningRecordReference = reference
@@ -301,12 +322,12 @@ struct EditorWorkspaceView: View {
     private func perform(_ command: PaletteCommand) {
         switch command {
         case .toggleOutline:
-            if !isShowingPlanningWorkspace { toggleSidebar() }
+            if workspaceMode != .planning { toggleSidebar() }
         case .toggleInspector: setInspectorPresented(!showInspector)
         case .previousSection:
-            if !isShowingPlanningWorkspace { navigate(to: neighboringSections.previous) }
+            if workspaceMode == .writing { navigate(to: neighboringSections.previous) }
         case .nextSection:
-            if !isShowingPlanningWorkspace { navigate(to: neighboringSections.next) }
+            if workspaceMode == .writing { navigate(to: neighboringSections.next) }
         case .toggleSceneHeading: bridge.requestToggleHeading()
         case .showShortcuts: showingShortcutHelp = true
         }
@@ -333,6 +354,14 @@ struct EditorWorkspaceView: View {
         focusedCharacter = nil
         settingsDestination = destination
         settingsRequestID = UUID()
+        setInspectorPresented(true)
+    }
+
+    private func openPlaceSettings(_ placeID: UUID) {
+        focusedCharacter = nil
+        settingsDestination = nil
+        matchedSettingTarget = .place(placeID)
+        matchedSettingRequestID = UUID()
         setInspectorPresented(true)
     }
 }

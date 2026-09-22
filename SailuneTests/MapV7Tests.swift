@@ -1,11 +1,137 @@
 import AppKit
 import PDFKit
 import SwiftData
+import UniformTypeIdentifiers
 import XCTest
 @testable import Sailune
 
 @MainActor
 final class MapV7Tests: XCTestCase {
+    func testWorkspaceModesAreAClosedMutuallyExclusiveSet() {
+        XCTAssertEqual(EditorWorkspaceMode.allCases, [.writing, .planning, .map])
+        XCTAssertEqual(Set(EditorWorkspaceMode.allCases.map(\.title)), ["編輯", "大綱", "地圖"])
+        XCTAssertEqual(
+            EditorWorkspaceMode.allCases.map(\.systemImage),
+            ["text.book.closed", "rectangle.3.group", "map"]
+        )
+    }
+
+    func testViewportZoomStepsClampAndReset() {
+        let bounds = CGRect(x: 24, y: 24, width: 800, height: 600)
+        var viewport = MapViewport()
+
+        viewport.zoom(by: 1, in: bounds)
+        XCTAssertEqual(viewport.zoom, 1.25)
+        viewport.setZoom(20, anchor: CGPoint(x: bounds.midX, y: bounds.midY), in: bounds)
+        XCTAssertEqual(viewport.zoom, MapViewport.maximumZoom)
+        viewport.setZoom(0.1, anchor: CGPoint(x: bounds.midX, y: bounds.midY), in: bounds)
+        XCTAssertEqual(viewport.zoom, MapViewport.minimumZoom)
+
+        viewport.reset()
+        XCTAssertEqual(viewport, MapViewport())
+    }
+
+    func testViewportKeepsAnchorOnSameWorldCoordinateWhenZooming() throws {
+        let bounds = CGRect(x: 24, y: 24, width: 800, height: 600)
+        let anchor = CGPoint(x: 470, y: 310)
+        var viewport = MapViewport()
+        let before = try XCTUnwrap(MapCoordinateTransform.coordinate(for: anchor, in: viewport.mapRect(in: bounds)))
+
+        viewport.setZoom(2, anchor: anchor, in: bounds)
+
+        let after = try XCTUnwrap(MapCoordinateTransform.coordinate(for: anchor, in: viewport.mapRect(in: bounds)))
+        XCTAssertEqual(after.x, before.x, accuracy: 0.0001)
+        XCTAssertEqual(after.y, before.y, accuracy: 0.0001)
+    }
+
+    func testViewportClampsPanAndCoordinateRoundTripsAfterTransform() throws {
+        let bounds = CGRect(x: 24, y: 24, width: 800, height: 600)
+        var viewport = MapViewport()
+        viewport.setZoom(2, anchor: CGPoint(x: bounds.midX, y: bounds.midY), in: bounds)
+        viewport.setPan(CGSize(width: 10_000, height: -10_000), in: bounds)
+        let mapRect = viewport.mapRect(in: bounds)
+
+        XCTAssertLessThanOrEqual(mapRect.minX, bounds.minX)
+        XCTAssertGreaterThanOrEqual(mapRect.maxX, bounds.maxX)
+        XCTAssertLessThanOrEqual(mapRect.minY, bounds.minY)
+        XCTAssertGreaterThanOrEqual(mapRect.maxY, bounds.maxY)
+
+        let coordinate = MapCoordinate(x: 2_100, y: 1_400)
+        let point = MapCoordinateTransform.viewPoint(for: coordinate, in: mapRect)
+        let roundTrip = try XCTUnwrap(MapCoordinateTransform.coordinate(for: point, in: mapRect))
+        XCTAssertEqual(roundTrip.x, coordinate.x, accuracy: 0.0001)
+        XCTAssertEqual(roundTrip.y, coordinate.y, accuracy: 0.0001)
+    }
+
+    func testMarkerNameUsesSemanticZoomThreshold() {
+        XCTAssertFalse(MapMarkerPresentation.showsName(zoom: 1.49, isHovered: false, isSelected: false))
+        XCTAssertTrue(MapMarkerPresentation.showsName(zoom: 1.5, isHovered: false, isSelected: false))
+        XCTAssertTrue(MapMarkerPresentation.showsName(zoom: 1, isHovered: true, isSelected: false))
+        XCTAssertTrue(MapMarkerPresentation.showsName(zoom: 1, isHovered: false, isSelected: true))
+    }
+
+    func testDraggedMapPointClampsToMapEdges() throws {
+        let mapRect = CGRect(x: 100, y: 50, width: 800, height: 600)
+
+        XCTAssertEqual(
+            try XCTUnwrap(MapCoordinateTransform.clampedCoordinate(
+                for: CGPoint(x: -500, y: 900),
+                in: mapRect
+            )),
+            MapCoordinate(x: 0, y: 0)
+        )
+        XCTAssertEqual(
+            try XCTUnwrap(MapCoordinateTransform.clampedCoordinate(
+                for: CGPoint(x: 1_500, y: -300),
+                in: mapRect
+            )),
+            MapCoordinate(x: 4_000, y: 3_000)
+        )
+
+        let coordinate = try XCTUnwrap(MapCoordinateTransform.clampedCoordinate(
+            for: CGPoint(x: 500, y: 350),
+            in: mapRect
+        ))
+        XCTAssertEqual(coordinate.x, 2_000, accuracy: 0.0001)
+        XCTAssertEqual(coordinate.y, 1_500, accuracy: 0.0001)
+    }
+
+    func testMovingMapPlaceChangesOnlyItsCoordinatesAndStaysBookScoped() throws {
+        let schema = Schema(versionedSchema: V5SettingsSchemaV11.self)
+        let container = try ModelContainer(
+            for: schema,
+            migrationPlan: V5SettingsMigrationPlan.self,
+            configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)]
+        )
+        let store = V5SettingsStore(container: container)
+        let bookID = UUID()
+        let otherBookID = UUID()
+        let place = store.createMapPlace(
+            bookID: bookID,
+            name: "王都",
+            placeType: "城市",
+            coordinate: MapCoordinate(x: 100, y: 200)
+        )
+
+        store.updateMapPlaceCoordinate(
+            place,
+            bookID: otherBookID,
+            coordinate: MapCoordinate(x: 3_000, y: 2_000)
+        )
+        XCTAssertEqual(place.coordinateX, 100)
+        XCTAssertEqual(place.coordinateY, 200)
+
+        store.updateMapPlaceCoordinate(
+            place,
+            bookID: bookID,
+            coordinate: MapCoordinate(x: 3_000, y: 2_000)
+        )
+        XCTAssertEqual(place.coordinateX, 3_000)
+        XCTAssertEqual(place.coordinateY, 2_000)
+        XCTAssertEqual(place.name, "王都")
+        XCTAssertEqual(place.placeType, "城市")
+    }
+
     func testBlankAndGridTemplatesAreSinglePageFourByThreePDFs() throws {
         let blankData = try MapPDFGenerator.templateData(style: .blank)
         let gridData = try MapPDFGenerator.templateData(style: .grid)
@@ -44,6 +170,124 @@ final class MapV7Tests: XCTestCase {
             XCTAssertEqual(error.localizedDescription, MapPDFGenerator.MapPDFError.requiresSinglePage.localizedDescription)
         }
         XCTAssertThrowsError(try MapPDFGenerator.normalizedMapData(from: Data("not pdf".utf8)))
+    }
+
+    func testWidePNGIsAspectFittedAndTransparentPixelsBecomeWhite() throws {
+        let sourceData = try makeImageData(
+            size: CGSize(width: 1_600, height: 800),
+            type: .png,
+            draw: { context, bounds in
+                context.clear(bounds)
+                context.setFillColor(NSColor.systemRed.cgColor)
+                context.fill(CGRect(x: 0, y: 0, width: 800, height: 800))
+            }
+        )
+        let normalizedData = try MapPDFGenerator.normalizedMapData(from: sourceData, contentType: .png)
+        let document = try XCTUnwrap(PDFDocument(data: normalizedData))
+        let page = try XCTUnwrap(document.page(at: 0))
+        let bitmap = try render(page: page, size: MapPDFGenerator.pageSize)
+
+        XCTAssertEqual(page.bounds(for: .mediaBox).size, MapPDFGenerator.pageSize)
+        assertColor(try XCTUnwrap(bitmap.colorAt(x: 200, y: 450)), resembles: .systemRed)
+        assertColor(try XCTUnwrap(bitmap.colorAt(x: 1_000, y: 450)), resembles: .white)
+        assertColor(try XCTUnwrap(bitmap.colorAt(x: 600, y: 850)), resembles: .white)
+        assertColor(try XCTUnwrap(bitmap.colorAt(x: 600, y: 50)), resembles: .white)
+    }
+
+    func testTallJPEGIsAspectFittedWithSidePadding() throws {
+        let sourceData = try makeImageData(
+            size: CGSize(width: 400, height: 800),
+            type: .jpeg,
+            draw: { context, bounds in
+                context.setFillColor(NSColor.systemBlue.cgColor)
+                context.fill(bounds)
+            }
+        )
+        let normalizedData = try MapPDFGenerator.normalizedMapData(from: sourceData, contentType: .jpeg)
+        let document = try XCTUnwrap(PDFDocument(data: normalizedData))
+        let page = try XCTUnwrap(document.page(at: 0))
+        let bitmap = try render(page: page, size: MapPDFGenerator.pageSize)
+
+        assertColor(try XCTUnwrap(bitmap.colorAt(x: 600, y: 450)), resembles: .systemBlue)
+        assertColor(try XCTUnwrap(bitmap.colorAt(x: 100, y: 450)), resembles: .white)
+        assertColor(try XCTUnwrap(bitmap.colorAt(x: 1_100, y: 450)), resembles: .white)
+        assertColor(try XCTUnwrap(bitmap.colorAt(x: 600, y: 10)), resembles: .systemBlue)
+        assertColor(try XCTUnwrap(bitmap.colorAt(x: 600, y: 890)), resembles: .systemBlue)
+    }
+
+    func testImageImportRejectsInvalidDataWithoutReplacingStoredMap() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Sailune-map-invalid-image-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer {
+            BookMapPDFStore.setDirectoryOverrideForTesting(nil)
+            try? FileManager.default.removeItem(at: directory)
+        }
+        BookMapPDFStore.setDirectoryOverrideForTesting(directory)
+
+        let bookID = UUID()
+        let original = try BookMapPDFStore.saveImportedPDF(
+            makeSolidPDF(size: CGSize(width: 400, height: 300), color: .systemGreen),
+            forID: bookID
+        )
+        XCTAssertThrowsError(
+            try BookMapPDFStore.saveImportedMap(Data("not an image".utf8), contentType: .png, forID: bookID)
+        )
+        XCTAssertEqual(try BookMapPDFStore.pdfData(forID: bookID), original)
+    }
+
+    func testCoordinateInputAcceptsOnlyIntegersInsideMapBounds() throws {
+        XCTAssertEqual(MapCoordinateInput.parse(x: "0", y: "0"), MapCoordinate(x: 0, y: 0))
+        XCTAssertEqual(
+            MapCoordinateInput.parse(x: " 4000 ", y: "3000\n"),
+            MapCoordinate(x: 4_000, y: 3_000)
+        )
+        XCTAssertEqual(MapCoordinateInput.parse(x: "1234", y: "567"), MapCoordinate(x: 1_234, y: 567))
+        XCTAssertNil(MapCoordinateInput.parse(x: "", y: "1"))
+        XCTAssertNil(MapCoordinateInput.parse(x: "one", y: "1"))
+        XCTAssertNil(MapCoordinateInput.parse(x: "1.5", y: "1"))
+        XCTAssertNil(MapCoordinateInput.parse(x: "-1", y: "1"))
+        XCTAssertNil(MapCoordinateInput.parse(x: "4001", y: "1"))
+        XCTAssertNil(MapCoordinateInput.parse(x: "1", y: "3001"))
+    }
+
+    func testDeletingPlacedPlaceKeepsOtherPlacesAndBooks() throws {
+        let schema = Schema(versionedSchema: V5SettingsSchemaV11.self)
+        let container = try ModelContainer(
+            for: schema,
+            migrationPlan: V5SettingsMigrationPlan.self,
+            configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)]
+        )
+        let store = V5SettingsStore(container: container)
+        let bookID = UUID()
+        let otherBookID = UUID()
+        let target = store.createMapPlace(
+            bookID: bookID,
+            name: "刪除目標",
+            placeType: "城市",
+            coordinate: MapCoordinate(x: 100, y: 200)
+        )
+        let sibling = store.createMapPlace(
+            bookID: bookID,
+            name: "保留地點",
+            placeType: "村莊",
+            coordinate: MapCoordinate(x: 300, y: 400)
+        )
+        let otherBookPlace = store.createMapPlace(
+            bookID: otherBookID,
+            name: "他書地點",
+            placeType: nil,
+            coordinate: MapCoordinate(x: 500, y: 600)
+        )
+
+        store.deletePlace(target, bookID: otherBookID)
+        XCTAssertTrue(store.places(for: bookID).contains { $0.id == target.id })
+
+        store.deletePlace(target, bookID: bookID)
+
+        XCTAssertFalse(store.places(for: bookID).contains { $0.id == target.id })
+        XCTAssertTrue(store.places(for: bookID).contains { $0.id == sibling.id })
+        XCTAssertTrue(store.places(for: otherBookID).contains { $0.id == otherBookPlace.id })
     }
 
     func testCoordinateTransformUsesBottomLeftOriginAndRoundTripsAtAnyScale() throws {
@@ -100,10 +344,17 @@ final class MapV7Tests: XCTestCase {
         )
 
         let first = try makeSolidPDF(size: CGSize(width: 400, height: 300), color: .systemBlue)
-        let second = try makeSolidPDF(size: CGSize(width: 300, height: 600), color: .systemGreen)
+        let second = try makeImageData(
+            size: CGSize(width: 300, height: 600),
+            type: .jpeg,
+            draw: { context, bounds in
+                context.setFillColor(NSColor.systemGreen.cgColor)
+                context.fill(bounds)
+            }
+        )
         try BookMapPDFStore.saveImportedPDF(first, forID: bookID)
         let firstStored = try XCTUnwrap(BookMapPDFStore.pdfData(forID: bookID))
-        try BookMapPDFStore.saveImportedPDF(second, forID: bookID)
+        try BookMapPDFStore.saveImportedMap(second, contentType: .jpeg, forID: bookID)
         let secondStored = try XCTUnwrap(BookMapPDFStore.pdfData(forID: bookID))
 
         XCTAssertNotEqual(firstStored, secondStored)
@@ -132,6 +383,34 @@ final class MapV7Tests: XCTestCase {
         }
         context.closePDF()
         return output as Data
+    }
+
+    private func makeImageData(
+        size: CGSize,
+        type: UTType,
+        draw: (CGContext, CGRect) -> Void
+    ) throws -> Data {
+        let bitmap = try XCTUnwrap(NSBitmapImageRep(
+            bitmapDataPlanes: nil,
+            pixelsWide: Int(size.width),
+            pixelsHigh: Int(size.height),
+            bitsPerSample: 8,
+            samplesPerPixel: 4,
+            hasAlpha: true,
+            isPlanar: false,
+            colorSpaceName: .deviceRGB,
+            bytesPerRow: 0,
+            bitsPerPixel: 0
+        ))
+        let context = try XCTUnwrap(NSGraphicsContext(bitmapImageRep: bitmap)?.cgContext)
+        draw(context, CGRect(origin: .zero, size: size))
+        if type == .png {
+            return try XCTUnwrap(bitmap.representation(using: .png, properties: [:]))
+        }
+        return try XCTUnwrap(bitmap.representation(
+            using: .jpeg,
+            properties: [.compressionFactor: 0.95]
+        ))
     }
 
     private func render(page: PDFPage, size: CGSize) throws -> NSBitmapImageRep {

@@ -1,6 +1,8 @@
 import AppKit
 import Foundation
+import ImageIO
 import PDFKit
+import UniformTypeIdentifiers
 
 enum MapTemplateStyle: String, CaseIterable, Identifiable {
     case blank
@@ -25,6 +27,8 @@ enum MapPDFGenerator {
     enum MapPDFError: LocalizedError {
         case cannotCreatePDF
         case invalidPDF
+        case invalidImage
+        case unsupportedFormat
         case requiresSinglePage
         case invalidPageBounds
 
@@ -32,6 +36,8 @@ enum MapPDFGenerator {
             switch self {
             case .cannotCreatePDF: "無法建立地圖 PDF。"
             case .invalidPDF: "無法讀取這份 PDF。"
+            case .invalidImage: "無法讀取這張地圖圖片。"
+            case .unsupportedFormat: "不支援這個地圖檔案格式。"
             case .requiresSinglePage: "地圖只支援單頁 PDF。"
             case .invalidPageBounds: "PDF 頁面尺寸無效。"
             }
@@ -70,6 +76,20 @@ enum MapPDFGenerator {
     }
 
     static func normalizedMapData(from sourceData: Data) throws -> Data {
+        try normalizedPDFData(from: sourceData)
+    }
+
+    static func normalizedMapData(from sourceData: Data, contentType: UTType) throws -> Data {
+        if contentType.conforms(to: .pdf) {
+            return try normalizedPDFData(from: sourceData)
+        }
+        if contentType.conforms(to: .png) || contentType.conforms(to: .jpeg) {
+            return try normalizedImageData(from: sourceData)
+        }
+        throw MapPDFError.unsupportedFormat
+    }
+
+    private static func normalizedPDFData(from sourceData: Data) throws -> Data {
         guard let document = PDFDocument(data: sourceData) else {
             throw MapPDFError.invalidPDF
         }
@@ -104,6 +124,51 @@ enum MapPDFGenerator {
             context.translateBy(x: -sourceRect.minX, y: -sourceRect.minY)
             page.draw(with: .cropBox, to: context)
             context.restoreGState()
+        }
+    }
+
+    private static func normalizedImageData(from sourceData: Data) throws -> Data {
+        guard let source = CGImageSourceCreateWithData(sourceData as CFData, nil),
+              CGImageSourceGetCount(source) > 0,
+              let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+              let pixelWidth = properties[kCGImagePropertyPixelWidth] as? NSNumber,
+              let pixelHeight = properties[kCGImagePropertyPixelHeight] as? NSNumber else {
+            throw MapPDFError.invalidImage
+        }
+
+        let width = pixelWidth.doubleValue
+        let height = pixelHeight.doubleValue
+        guard width > 0, height > 0, width.isFinite, height.isFinite else {
+            throw MapPDFError.invalidImage
+        }
+
+        let thumbnailOptions: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: max(width, height)
+        ]
+        guard let image = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbnailOptions as CFDictionary) else {
+            throw MapPDFError.invalidImage
+        }
+        let imageSize = CGSize(width: image.width, height: image.height)
+        guard imageSize.width > 0, imageSize.height > 0 else {
+            throw MapPDFError.invalidImage
+        }
+
+        return try makePDF { context, pageRect in
+            context.setFillColor(NSColor.white.cgColor)
+            context.fill(pageRect)
+
+            let scale = min(pageRect.width / imageSize.width, pageRect.height / imageSize.height)
+            let fittedSize = CGSize(width: imageSize.width * scale, height: imageSize.height * scale)
+            let fittedRect = CGRect(
+                x: pageRect.midX - fittedSize.width / 2,
+                y: pageRect.midY - fittedSize.height / 2,
+                width: fittedSize.width,
+                height: fittedSize.height
+            )
+            context.interpolationQuality = .high
+            context.draw(image, in: fittedRect)
         }
     }
 
