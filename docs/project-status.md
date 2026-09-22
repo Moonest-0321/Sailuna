@@ -51,6 +51,11 @@
 - 新增同一本書跨主／副時間軸、另一書資料保留、Event cascade、歷史定位解除與 ItemCopy／AbilityProgress／StoryPlanning 清理的整合測試。受影響 Swift parse、完整 macOS XCTest、`git diff --check` 通過；未改 schema。
 - 隔離版 App 已在 `/private/tmp` store 啟動並確認空書櫃可用；尚未建立測試書籍來操作紀元管理確認畫面，因此 alert 的人工 UI 冒煙仍待完成。
 
+## 2026-09-22 能力時間序列標記精簡
+
+- 依使用者截圖校正能力時間序列：移除首筆與未選等級時的「設定／未設定」文字；「敘事版本」與「時間序版本」改用書頁與時鐘小圖示，tooltip、輔助功能名稱及既有彈窗行為保留。
+- 角色詳情展開狀態不需記憶，本次未新增相關狀態保存。
+
 ## 建議下一步
 
 - 2026-09-22：以 `/private/tmp` 隔離 store 建立測試書，人工確認 V6.4 紀元列刪除按鈕與影響說明，然後取消 alert；目前未執行刪除。

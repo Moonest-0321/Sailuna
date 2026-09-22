@@ -352,10 +352,12 @@ private struct CharacterAbilityTimelineEditor: View {
                     }
                     .labelsHidden()
                     .frame(maxWidth: 180)
-                    Text(changeLabel(at: index))
-                        .font(.caption.weight(.medium))
-                        .foregroundStyle(changeLabel(at: index) == "上升" ? .green : changeLabel(at: index) == "下降" ? .orange : .secondary)
-                        .frame(width: 34, alignment: .leading)
+                    if let change = changeLabel(at: index) {
+                        Text(change)
+                            .font(.caption.weight(.medium))
+                            .foregroundStyle(change == "上升" ? .green : change == "下降" ? .orange : .secondary)
+                            .frame(width: 34, alignment: .leading)
+                    }
                     CharacterTimelinePlacementEditor(
                         book: book,
                         node: Binding(
@@ -381,12 +383,12 @@ private struct CharacterAbilityTimelineEditor: View {
         )
     }
 
-    private func changeLabel(at index: Int) -> String {
+    private func changeLabel(at index: Int) -> String? {
         guard let currentID = UUID(uuidString: history[index].content),
-              let current = levels.firstIndex(where: { $0.id == currentID }) else { return "未設定" }
+              let current = levels.firstIndex(where: { $0.id == currentID }) else { return nil }
         guard index > 0,
               let previousID = UUID(uuidString: history[index - 1].content),
-              let previous = levels.firstIndex(where: { $0.id == previousID }) else { return "設定" }
+              let previous = levels.firstIndex(where: { $0.id == previousID }) else { return nil }
         if current > previous { return "上升" }
         if current < previous { return "下降" }
         return "維持"

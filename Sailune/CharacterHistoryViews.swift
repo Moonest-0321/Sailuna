@@ -13,12 +13,25 @@ struct CharacterTimelinePlacementEditor: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Button("敘事版本") {
+            Button {
                 showingNarrativeEditor = true
+            } label: {
+                Image(systemName: "book.pages")
+                    .frame(width: 22, height: 22)
             }
-            Button("時間序版本") {
+            .buttonStyle(.borderless)
+            .accessibilityLabel("敘事版本")
+            .help("設定敘事版本")
+
+            Button {
                 showingTimelineEditor = true
+            } label: {
+                Image(systemName: "clock")
+                    .frame(width: 22, height: 22)
             }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("時間序版本")
+            .help("設定時間序版本")
         }
         .sheet(isPresented: $showingNarrativeEditor) {
             CharacterNarrativePlacementSheet(book: book, existingSection: node?.section) { section in
