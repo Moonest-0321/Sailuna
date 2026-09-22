@@ -384,7 +384,7 @@ final class V5SettingsTests: XCTestCase {
             try container.mainContext.save()
         }
 
-        let schema = Schema(versionedSchema: V5SettingsSchemaV10.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV11.self)
         let migrated = try ModelContainer(
             for: schema,
             migrationPlan: V5SettingsMigrationPlan.self,
@@ -451,7 +451,7 @@ final class V5SettingsTests: XCTestCase {
             try container.mainContext.save()
         }
 
-        let schema = Schema(versionedSchema: V5SettingsSchemaV10.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV11.self)
         let migrated = try ModelContainer(
             for: schema,
             migrationPlan: V5SettingsMigrationPlan.self,
@@ -714,7 +714,7 @@ final class V5SettingsTests: XCTestCase {
             try context.save()
         }
 
-        let schema = Schema(versionedSchema: V5SettingsSchemaV10.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV11.self)
         let migrated = try ModelContainer(
             for: schema,
             migrationPlan: V5SettingsMigrationPlan.self,
@@ -752,7 +752,7 @@ final class V5SettingsTests: XCTestCase {
             try context.save()
         }
 
-        let schema = Schema(versionedSchema: V5SettingsSchemaV10.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV11.self)
         let migrated = try ModelContainer(
             for: schema,
             migrationPlan: V5SettingsMigrationPlan.self,
@@ -803,7 +803,7 @@ final class V5SettingsTests: XCTestCase {
             try context.save()
         }
 
-        let schema = Schema(versionedSchema: V5SettingsSchemaV10.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV11.self)
         let migrated = try ModelContainer(
             for: schema,
             migrationPlan: V5SettingsMigrationPlan.self,
@@ -820,6 +820,8 @@ final class V5SettingsTests: XCTestCase {
         XCTAssertNil(place.placeType)
         XCTAssertNil(place.detailedDescription)
         XCTAssertNil(place.notes)
+        XCTAssertNil(place.coordinateX)
+        XCTAssertNil(place.coordinateY)
         XCTAssertEqual(term.id, termID)
         XCTAssertEqual(term.name, "月曆")
         XCTAssertEqual(term.termDescription, "一年十三月")
@@ -993,7 +995,7 @@ final class V5SettingsTests: XCTestCase {
 
         do {
             let mainSchema = Schema(versionedSchema: NovelWriterSchemaV5.self)
-            let settingsSchema = Schema(versionedSchema: V5SettingsSchemaV10.self)
+            let settingsSchema = Schema(versionedSchema: V5SettingsSchemaV11.self)
             let mainContainer = try ModelContainer(
                 for: mainSchema,
                 configurations: [ModelConfiguration(schema: mainSchema, url: mainURL)]
@@ -1165,7 +1167,7 @@ final class V5SettingsTests: XCTestCase {
         XCTAssertNotNil(try container.mainContext.fetch(FetchDescriptor<PowerUnit>()).first(where: { $0.id == duchy.id }))
     }
 
-    func testV9StoreMigratesToV10PreservingRelationshipNotes() throws {
+    func testV9StoreMigratesThroughV11PreservingRelationshipNotes() throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent("Sailune-settings-v10-relation-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -1177,12 +1179,104 @@ final class V5SettingsTests: XCTestCase {
             container.mainContext.insert(V5SettingsSchemaV9.PowerUnit(id: powerID, bookID: bookID, name: "舊勢力", relationshipNotes: "既有外交筆記"))
             try container.mainContext.save()
         }
-        let schema = Schema(versionedSchema: V5SettingsSchemaV10.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV11.self)
         let migrated = try ModelContainer(for: schema, migrationPlan: V5SettingsMigrationPlan.self, configurations: [ModelConfiguration(schema: schema, url: storeURL)])
         let power = try XCTUnwrap(migrated.mainContext.fetch(FetchDescriptor<PowerUnit>()).first)
         XCTAssertEqual(power.id, powerID)
         XCTAssertEqual(power.relationshipNotes, "既有外交筆記")
         XCTAssertTrue(try migrated.mainContext.fetch(FetchDescriptor<PowerRelation>()).isEmpty)
+    }
+
+    func testV10PlaceMigratesToV11WithCoordinatesUnsetAndCanPersistPlacement() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Sailune-settings-v11-map-place-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let storeURL = directory.appendingPathComponent("settings.store")
+        let bookID = UUID()
+        let placeID = UUID()
+
+        do {
+            let schema = Schema(versionedSchema: V5SettingsSchemaV10.self)
+            let container = try ModelContainer(
+                for: schema,
+                configurations: [ModelConfiguration(schema: schema, url: storeURL)]
+            )
+            container.mainContext.insert(
+                V5SettingsSchemaV9.Place(
+                    id: placeID,
+                    bookID: bookID,
+                    name: "霧港",
+                    alternateNames: "霧之港",
+                    placeType: "港口城市",
+                    placeDescription: "北方港口",
+                    detailedDescription: "全年多霧",
+                    notes: "重要據點",
+                    sortOrder: 7
+                )
+            )
+            try container.mainContext.save()
+        }
+
+        do {
+            let schema = Schema(versionedSchema: V5SettingsSchemaV11.self)
+            let container = try ModelContainer(
+                for: schema,
+                migrationPlan: V5SettingsMigrationPlan.self,
+                configurations: [ModelConfiguration(schema: schema, url: storeURL)]
+            )
+            let place = try XCTUnwrap(container.mainContext.fetch(FetchDescriptor<Place>()).first)
+            XCTAssertEqual(place.id, placeID)
+            XCTAssertEqual(place.bookID, bookID)
+            XCTAssertEqual(place.name, "霧港")
+            XCTAssertEqual(place.alternateNames, "霧之港")
+            XCTAssertEqual(place.placeType, "港口城市")
+            XCTAssertEqual(place.placeDescription, "北方港口")
+            XCTAssertEqual(place.detailedDescription, "全年多霧")
+            XCTAssertEqual(place.notes, "重要據點")
+            XCTAssertEqual(place.sortOrder, 7)
+            XCTAssertNil(place.coordinateX)
+            XCTAssertNil(place.coordinateY)
+
+            let store = V5SettingsStore(container: container)
+            store.updateMapPlace(
+                place,
+                bookID: bookID,
+                name: place.name,
+                placeType: place.placeType,
+                coordinate: MapCoordinate(x: 1_250, y: 875)
+            )
+        }
+
+        let schema = Schema(versionedSchema: V5SettingsSchemaV11.self)
+        let reopened = try ModelContainer(
+            for: schema,
+            migrationPlan: V5SettingsMigrationPlan.self,
+            configurations: [ModelConfiguration(schema: schema, url: storeURL)]
+        )
+        let place = try XCTUnwrap(reopened.mainContext.fetch(FetchDescriptor<Place>()).first)
+        XCTAssertEqual(place.coordinateX, 1_250)
+        XCTAssertEqual(place.coordinateY, 875)
+    }
+
+    func testMapPlaceCreationIsBookScopedAndClampsCoordinates() throws {
+        let container = try makeMainContainer()
+        let store = V5SettingsStore(container: container)
+        let bookID = UUID()
+        let otherBookID = UUID()
+
+        let place = store.createMapPlace(
+            bookID: bookID,
+            name: "王都",
+            placeType: "城市",
+            coordinate: MapCoordinate(x: 4_500, y: -100)
+        )
+        _ = store.createPlace(bookID: otherBookID)
+
+        XCTAssertEqual(place.coordinateX, 4_000)
+        XCTAssertEqual(place.coordinateY, 0)
+        XCTAssertEqual(store.places(for: bookID).map(\.id), [place.id])
+        XCTAssertEqual(store.places(for: otherBookID).count, 1)
     }
 
     func testPowerLifecycleSuccessionAndExistenceStatus() throws {
@@ -1246,7 +1340,7 @@ final class V5SettingsTests: XCTestCase {
             container.mainContext.insert(V5SettingsSchemaV8.PowerMember(id: memberID, bookID: bookID, powerID: powerID, characterID: UUID(), title: "舊領袖"))
             try container.mainContext.save()
         }
-        let schema = Schema(versionedSchema: V5SettingsSchemaV10.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV11.self)
         let migrated = try ModelContainer(for: schema, migrationPlan: V5SettingsMigrationPlan.self, configurations: [ModelConfiguration(schema: schema, url: storeURL)])
         let role = try XCTUnwrap(migrated.mainContext.fetch(FetchDescriptor<PowerMemberRole>()).first)
         let power = try XCTUnwrap(migrated.mainContext.fetch(FetchDescriptor<PowerUnit>()).first)
@@ -1330,7 +1424,7 @@ final class V5SettingsTests: XCTestCase {
     }
 
     private func makeMainContainer(at url: URL? = nil) throws -> ModelContainer {
-        let schema = Schema(versionedSchema: V5SettingsSchemaV10.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV11.self)
         let configuration = if let url {
             ModelConfiguration(schema: schema, url: url)
         } else {

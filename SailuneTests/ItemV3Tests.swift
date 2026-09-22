@@ -831,7 +831,7 @@ final class ItemV3Tests: XCTestCase {
         XCTAssertNil(store.currentLevelID(for: copy.id))
     }
 
-    func testFullBackupRestoresAllSixSQLiteSnapshotsAndCovers() throws {
+    func testFullBackupRestoresAllSixSQLiteSnapshotsCoversAndMaps() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("SailuneBackupTest-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -840,11 +840,15 @@ final class ItemV3Tests: XCTestCase {
         try FileManager.default.createDirectory(at: locations.coversDirectory, withIntermediateDirectories: true)
         let coverData = Data([1, 2, 3, 4])
         try coverData.write(to: locations.coversDirectory.appendingPathComponent("cover.png"))
+        try FileManager.default.createDirectory(at: locations.mapsDirectory, withIntermediateDirectories: true)
+        let mapData = Data([5, 6, 7, 8])
+        try mapData.write(to: locations.mapsDirectory.appendingPathComponent("map.pdf"))
         let backup = root.appendingPathComponent("test.sailunebackup")
 
         try SailuneBackupService.createBackup(at: backup, locations: locations)
         for store in locations.stores { try writeSQLiteValue(999, at: store.url) }
         try Data([9]).write(to: locations.coversDirectory.appendingPathComponent("cover.png"))
+        try Data([9]).write(to: locations.mapsDirectory.appendingPathComponent("map.pdf"))
         try SailuneBackupService.scheduleRestore(from: backup, locations: locations)
         try SailuneBackupService.applyPendingRestoreIfNeeded(locations: locations)
 
@@ -852,8 +856,56 @@ final class ItemV3Tests: XCTestCase {
             XCTAssertEqual(try readSQLiteValue(at: store.url), index + 10)
         }
         XCTAssertEqual(try Data(contentsOf: locations.coversDirectory.appendingPathComponent("cover.png")), coverData)
+        XCTAssertEqual(try Data(contentsOf: locations.mapsDirectory.appendingPathComponent("map.pdf")), mapData)
         XCTAssertFalse(FileManager.default.fileExists(atPath: locations.pendingRestoreURL.path))
         XCTAssertFalse((try FileManager.default.contentsOfDirectory(atPath: locations.recoveryDirectory.path)).isEmpty)
+    }
+
+    func testRestoringBackupWithoutMapsClearsCurrentMapAssets() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SailuneBackupNoMapsTest-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let locations = SailuneDataLocations(mainStore: root.appendingPathComponent("Sailune-v5.store"))
+        for (index, store) in locations.stores.enumerated() {
+            try writeSQLiteValue(index + 20, at: store.url)
+        }
+        let backup = root.appendingPathComponent("without-maps.sailunebackup")
+        try SailuneBackupService.createBackup(at: backup, locations: locations)
+
+        try FileManager.default.createDirectory(at: locations.mapsDirectory, withIntermediateDirectories: true)
+        try Data([1, 2, 3]).write(to: locations.mapsDirectory.appendingPathComponent("current.pdf"))
+        try SailuneBackupService.scheduleRestore(from: backup, locations: locations)
+        try SailuneBackupService.applyPendingRestoreIfNeeded(locations: locations)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: locations.mapsDirectory.path))
+    }
+
+    func testV10SettingsBackupManifestRemainsRestorableAfterV11Upgrade() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SailuneBackupV10ManifestTest-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let locations = SailuneDataLocations(mainStore: root.appendingPathComponent("Sailune-v5.store"))
+        for (index, store) in locations.stores.enumerated() {
+            try writeSQLiteValue(index + 30, at: store.url)
+        }
+        let backup = root.appendingPathComponent("v10-manifest.sailunebackup")
+        try SailuneBackupService.createBackup(at: backup, locations: locations)
+
+        var archive = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: Data(contentsOf: backup)) as? [String: Any]
+        )
+        var manifest = try XCTUnwrap(archive["manifest"] as? [String: Any])
+        var schemas = try XCTUnwrap(manifest["schemas"] as? [String: String])
+        schemas["settings.store"] = "V5SettingsSchemaV10"
+        manifest["schemas"] = schemas
+        archive["manifest"] = manifest
+        try JSONSerialization.data(withJSONObject: archive, options: [.sortedKeys])
+            .write(to: backup, options: .atomic)
+
+        XCTAssertNoThrow(try SailuneBackupService.scheduleRestore(from: backup, locations: locations))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: locations.pendingRestoreURL.path))
     }
 
     func testDeletingBookImmediatelyRemovesItsCopies() throws {
@@ -1026,6 +1078,14 @@ final class ItemV3Tests: XCTestCase {
     }
 
     func testCrossStoreCoordinatorDeletingBookRemovesPlanningData() throws {
+        let mapDirectory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("Sailune-delete-book-map-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: mapDirectory, withIntermediateDirectories: true)
+        BookMapPDFStore.setDirectoryOverrideForTesting(mapDirectory)
+        defer {
+            BookMapPDFStore.setDirectoryOverrideForTesting(nil)
+            try? FileManager.default.removeItem(at: mapDirectory)
+        }
         let container = try makeContainer()
         let context = container.mainContext
         let planningStore = try StoryPlanningStore(container: makePlanningContainer())
@@ -1035,6 +1095,10 @@ final class ItemV3Tests: XCTestCase {
         _ = try planningStore.ensureProfile(bookID: book.id)
         _ = try planningStore.createStoryLine(bookID: book.id, kind: .main)
         let bookID = book.id
+        try BookMapPDFStore.saveImportedPDF(
+            MapPDFGenerator.templateData(style: .blank),
+            forID: bookID
+        )
 
         try CrossStoreDeletionCoordinator.deleteBook(
             book,
@@ -1046,6 +1110,7 @@ final class ItemV3Tests: XCTestCase {
         XCTAssertTrue(try context.fetch(FetchDescriptor<Book>()).isEmpty)
         XCTAssertNil(planningStore.profile(bookID: bookID))
         XCTAssertTrue(planningStore.storyLines(bookID: bookID).isEmpty)
+        XCTAssertNil(try BookMapPDFStore.pdfData(forID: bookID))
     }
 
     func testCrossStoreCoordinatorDistinguishesPrimaryFailureFromDeferredCleanup() throws {

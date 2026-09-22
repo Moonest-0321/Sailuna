@@ -88,7 +88,7 @@ struct EditorWorkspaceView: View {
                 } detail: {
                     Group {
                         if isShowingPageMap {
-                            Color.clear
+                            MapWorkspaceView(book: book)
                         } else {
                             EditorCenterView(
                                 section: selectedSection,

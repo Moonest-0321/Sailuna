@@ -647,6 +647,9 @@ enum CrossStoreDeletionCoordinator {
         if let error = performDeferredCleanup("書籍 \(bookID) 封面", cleanup: {
             try BookCoverStore.removeCover(forID: bookID)
         }) { errors.append(error) }
+        if let error = performDeferredCleanup("書籍 \(bookID) 地圖", cleanup: {
+            try BookMapPDFStore.removeMap(forID: bookID)
+        }) { errors.append(error) }
         errors.append(contentsOf: reconcileReferenceStores(
             in: context, copyStore: copyStore, settingsStore: settingsStore, abilityStore: abilityStore
         ))

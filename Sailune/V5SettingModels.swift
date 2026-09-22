@@ -1345,6 +1345,76 @@ enum V5SettingsSchemaV10: VersionedSchema {
     }
 }
 
+/// V11 gives places optional coordinates on the single V7 map. All other V10
+/// model snapshots remain unchanged so existing power and world-term data are
+/// migrated without reinterpretation.
+enum V5SettingsSchemaV11: VersionedSchema {
+    static var versionIdentifier = Schema.Version(11, 0, 0)
+
+    static var models: [any PersistentModel.Type] {
+        [
+            V5SettingsSchemaV9.BookSidebarSetting.self,
+            V5SettingsSchemaV9.PowerLevel.self,
+            V5SettingsSchemaV9.PowerUnit.self,
+            V5SettingsSchemaV9.PowerSubordination.self,
+            V5SettingsSchemaV9.PowerMember.self,
+            V5SettingsSchemaV9.PowerMemberRole.self,
+            V5SettingsSchemaV9.PowerLifecycleEvent.self,
+            V5SettingsSchemaV9.PowerSuccessionLink.self,
+            V5SettingsSchemaV9.PowerAssetLink.self,
+            V5SettingsSchemaV9.PowerAdvantage.self,
+            V5SettingsSchemaV10.PowerRelation.self,
+            Place.self,
+            V5SettingsSchemaV9.WorldTerm.self
+        ]
+    }
+}
+
+extension V5SettingsSchemaV11 {
+@Model
+final class Place {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID
+    var name: String
+    var alternateNames: String?
+    var placeType: String?
+    var placeDescription: String
+    var detailedDescription: String?
+    var notes: String?
+    var sortOrder: Int
+    /// Both values are nil for an unplaced notebook entry. A map marker exists
+    /// only when both coordinates are present and inside the fixed map bounds.
+    var coordinateX: Double?
+    var coordinateY: Double?
+
+    init(
+        id: UUID = UUID(),
+        bookID: UUID,
+        name: String = "",
+        alternateNames: String? = nil,
+        placeType: String? = nil,
+        placeDescription: String = "",
+        detailedDescription: String? = nil,
+        notes: String? = nil,
+        sortOrder: Int = 0,
+        coordinateX: Double? = nil,
+        coordinateY: Double? = nil
+    ) {
+        self.id = id
+        self.bookID = bookID
+        self.name = name
+        self.alternateNames = alternateNames
+        self.placeType = placeType
+        self.placeDescription = placeDescription
+        self.detailedDescription = detailedDescription
+        self.notes = notes
+        self.sortOrder = sortOrder
+        self.coordinateX = coordinateX
+        self.coordinateY = coordinateY
+    }
+}
+}
+
 extension V5SettingsSchemaV10 {
 enum PowerRelationKind: String, CaseIterable, Identifiable {
     case alliance, hostility, rivalry, trade, suzerainty, temporaryCooperation
@@ -1825,14 +1895,15 @@ final class WorldTerm {
 /// from legacy free text. V6 adds only a sidebar catalog revision marker. V7
 /// adds three optional world-term content fields without splitting old text. V8
 /// adds power aliases, asset links, and advantages. V9 adds lifecycle and roles.
-/// V10 adds structured non-subordination power relationships.
+/// V10 adds structured non-subordination power relationships. V11 adds only
+/// optional map coordinates to places; nil continues to mean not placed.
 enum V5SettingsMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
         [
             V5SettingsSchemaV1.self, V5SettingsSchemaV2.self, V5SettingsSchemaV3.self,
             V5SettingsSchemaV4.self, V5SettingsSchemaV5.self, V5SettingsSchemaV6.self,
             V5SettingsSchemaV7.self, V5SettingsSchemaV8.self, V5SettingsSchemaV9.self,
-            V5SettingsSchemaV10.self
+            V5SettingsSchemaV10.self, V5SettingsSchemaV11.self
         ]
     }
 
@@ -1901,6 +1972,10 @@ enum V5SettingsMigrationPlan: SchemaMigrationPlan {
             .lightweight(
                 fromVersion: V5SettingsSchemaV9.self,
                 toVersion: V5SettingsSchemaV10.self
+            ),
+            .lightweight(
+                fromVersion: V5SettingsSchemaV10.self,
+                toVersion: V5SettingsSchemaV11.self
             )
         ]
     }
@@ -1925,7 +2000,7 @@ typealias PowerLifecycleKind = V5SettingsSchemaV9.PowerLifecycleKind
 typealias PowerTransitionKind = V5SettingsSchemaV9.PowerTransitionKind
 typealias PowerRelation = V5SettingsSchemaV10.PowerRelation
 typealias PowerRelationKind = V5SettingsSchemaV10.PowerRelationKind
-typealias Place = V5SettingsSchemaV9.Place
+typealias Place = V5SettingsSchemaV11.Place
 typealias WorldTerm = V5SettingsSchemaV9.WorldTerm
 
 enum PowerHierarchyError: LocalizedError {
@@ -2111,6 +2186,44 @@ final class V5SettingsStore {
         context.insert(place)
         save()
         return place
+    }
+
+    /// Creates a placed notebook entry only after the marker editor confirms.
+    /// This keeps cancelled map clicks from leaving empty Place records behind.
+    @discardableResult
+    func createMapPlace(
+        bookID: UUID,
+        name: String,
+        placeType: String?,
+        coordinate: MapCoordinate
+    ) -> Place {
+        let nextSortOrder = (places(for: bookID).map(\.sortOrder).max() ?? -1) + 1
+        let place = Place(
+            bookID: bookID,
+            name: name,
+            placeType: placeType,
+            sortOrder: nextSortOrder,
+            coordinateX: coordinate.x,
+            coordinateY: coordinate.y
+        )
+        context.insert(place)
+        save()
+        return place
+    }
+
+    func updateMapPlace(
+        _ place: Place,
+        bookID: UUID,
+        name: String,
+        placeType: String?,
+        coordinate: MapCoordinate
+    ) {
+        guard place.bookID == bookID else { return }
+        place.name = name
+        place.placeType = placeType
+        place.coordinateX = coordinate.x
+        place.coordinateY = coordinate.y
+        save()
     }
 
     func deletePlace(_ place: Place, bookID: UUID) {

@@ -7,6 +7,7 @@
 - macOS 原生應用；SwiftUI 負責主要畫面，AppKit `NSTextView` 負責正文編輯。
 - SwiftData／`ModelContext` 持久化；正文使用 `AttributedString`。
 - TXT 與 EPUB 由專案內原生程式產生，不依賴外部壓縮套件。
+- 地圖模板、匯入正規化與畫面背景使用 Core Graphics／PDFKit；PDF 資產獨立於 SwiftData 座標資料。
 - `SailuneTests` 使用 XCTest，測試模型、投影、遷移、錨點、刪除與編輯器橋接。
 
 ## 執行結構
@@ -23,6 +24,7 @@ ContentView（書櫃）
 └─ BookOverviewView（書籍總覽、卷節、背景）
    └─ EditorWorkspaceView
       ├─ 正文工作區 + 設定集／右側大綱
+      ├─ MapWorkspaceView（單張 PDF 背景、固定座標、Place 點位）
       └─ BookPlanningWorkspaceView
          ├─ 敘事大綱畫布
          └─ 世界時間軸
@@ -34,12 +36,13 @@ ContentView（書櫃）
 - 主資料模型：`Book`、`Volume`、`Section`、`Character`、`Item`、`Timeline`、`Node`、`Event` 等。
 - `BookOutline.swift`／`StoryTag.swift`：故事規劃 schema V1–V6、文字錨點、故事線與階段、排序投影和 store 操作。
 - `EditorWorkspaceView`：讓正文與寬版大綱在同一書籍視窗中保留各自生命週期；切換前提交待存正文。
+- `MapPDFGenerator`／`BookMapPDFStore`／`MapWorkspaceView`：產生 4:3 模板、將單頁 PDF 完整補白正規化、保存每書背景，並以同一內容矩形疊加座標與 Place 標記。
 - `RichEditorView`／`EditorBridge`：文字輸入、CJK composition、選取與跨節跳轉、格式、右鍵工具、角色連結及規劃錨點協調。
 - `InspectorViews`、`CharacterSectionViews`、`RelationshipWorkspace`：設定集與角色／物品／能力／勢力／關係管理；V5 勢力不與角色或正文連結。
 - `OutlineViews`：故事背景、敘事畫布、故事線／階段／大綱項目管理，以及「由大綱加入世界時間軸」。
 - `TimelineViews`／`TimelineEngine`：紀元、日期投影、主副軸、節點與事件管理、卡片及正文跳轉。
 - `PersistentStoreRepair`／`CrossStoreDeletionCoordinator`：主 store 修復與 Book／Character／Item／Ability／Event／Node／Era／Timeline／Volume／Section 的跨 store 收斂。
-- `SailuneBackupService`：六個 SQLite online snapshot、封面、manifest／checksum 封裝，以及下次啟動前的驗證、現況安全備份、整組置換與失敗 rollback。
+- `SailuneBackupService`：六個 SQLite online snapshot、封面、地圖 PDF、manifest／checksum 封裝，以及下次啟動前的驗證、現況安全備份、整組置換與失敗 rollback。
 - `MigrationPlan` 與各 Backfill：歷史 schema 匯入及獨立 store 回填。
 
 ## 兩種「連動」

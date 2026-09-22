@@ -1,19 +1,19 @@
 # 資料模型與關聯
 
-> 依 2026-09-14 V5 實作與現行 schema、store 操作整理；V6.4 補充紀元刪除語意。
+> 依 2026-09-22 現行 schema、store 與 V7 單張地圖實作整理。
 
 ## Store 邊界
 
 | Store | Schema／主要模型 | 連結方式 |
 |---|---|---|
 | `Sailune-v5.store` | `NovelWriterSchemaV5`：Book、Volume、Section、Character、Ability、Item、Timeline、Node、Event 與舊 Organization 相容型別 | SwiftData relationship；V6.0c 不改此已發布 schema，Book 狀態目前為 transient |
-| `Sailune-v5-settings.store` | `V5SettingsSchemaV10`：BookSidebarSetting、PowerLevel、PowerUnit、PowerSubordination、PowerMember、PowerMemberRole、PowerLifecycleEvent、PowerSuccessionLink、PowerRelation、PowerAssetLink、PowerAdvantage、Place、WorldTerm | 只以 `bookID` 與穩定 UUID 連結其他 store；時間序以 `nodeID` 指向主 store Node；V1～V9 保留為不可變遷移快照 |
+| `Sailune-v5-settings.store` | `V5SettingsSchemaV11`：V10 全部模型加上具可選座標的 Place | 只以 `bookID` 與穩定 UUID 連結其他 store；時間序以 `nodeID` 指向主 store Node；V1～V10 保留為不可變遷移快照 |
 | `Sailune-v5-item-copies.store` | ItemCopy、ItemCopyHolding、ItemCopyHistory | `bookID`、`itemID`、`characterID`、`copyID` |
 | `Sailune-v5-item-copy-level-selections.store` | ItemCopyLevelSelection | `copyID`、`levelID` |
 | `Sailune-v5-ability-progress.store` | AbilityProgressRecord／History | `bookID`、`abilityID`、`characterID`、`nodeID` |
 | `Sailune-v5-story-planning.store` | `StoryPlanningSchemaV7`：V6 全部模型加上 PlanningRecordMetadata | `bookID`、`sectionID`、`eventID`、`outlineItemID`、來源種類與來源 UUID 等 |
 
-Book 封面不在 SwiftData，另存於 Application Support 的 `Sailune/Covers` PNG 檔。
+Book 封面與單張地圖背景不在 SwiftData，分別存於 Application Support 的 `Sailune/Covers` PNG 與 `Sailune/Maps/<bookID>.pdf`。
 
 ## 主關聯
 
@@ -40,7 +40,7 @@ PowerLevel（bookID、由高至低 sortOrder）
    └─ PowerMember ─ PowerMemberRole：加入／離開、多重職務、領導與任職狀態（可選 nodeID）
 
 BookSidebarSetting（bookID）→ 顯示項目、可見性、排序、側邊欄目錄版本
-Place（bookID）→ 名稱、其他名稱、類型、簡介、詳細描述、備註、排序
+Place（bookID）→ 名稱、其他名稱、類型、簡介、詳細描述、備註、排序、可選 coordinateX／coordinateY
 WorldTerm（bookID）→ 名稱、其他名稱、分類、簡介、核心定義、運作與表現、限制／差異／例外、世界影響、使用範例、備註、排序
 ```
 
@@ -60,6 +60,7 @@ TimelineEventCardMetadata ─ eventID + 可選 outlineItemID
 ## 重要不變條件
 
 - UUID 是跨 store、遷移與回填的穩定識別；`sortOrder` 只負責同父層顯示順序。
+- V7 每本書只有一張固定 `4000 × 3000` 地圖；Place 只有在 X／Y 兩個座標皆存在且合法時才顯示為標記。PDF 是可替換背景，替換或移除不改動 Place 座標。
 - 同一本書最多一條主線；主線可有多個階段。階段只屬主線。
 - 一筆大綱項目最多一個正文來源；手動項目可沒有來源。
 - 只有有正文來源的大綱項目可呈現「已完成」；手動項目使用背景、草稿或預定。
@@ -92,4 +93,4 @@ TimelineEventCardMetadata ─ eventID + 可選 outlineItemID
 - 六個 store 無共同 transaction，任何新增跨域關係都要定義保存順序、失敗狀態、修復與測試。
 - 伏筆目前沒有回收狀態或回收來源，不能從既有 StoryTag 推導「未回收」。
 - 物品正文引用是名稱掃描；重新命名或同名物品無穩定識別保證。
-- 備份必須同時包含六個 store 及封面檔，不能只複製主 store。
+- 備份必須同時包含六個 store、封面與地圖 PDF，不能只複製主 store。

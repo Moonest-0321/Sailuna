@@ -5,7 +5,7 @@ import AppKit
 import UniformTypeIdentifiers
 
 struct SailuneExportDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.plainText, .epub, .data] }
+    static var readableContentTypes: [UTType] { [.plainText, .epub, .pdf, .data] }
 
     let data: Data
 

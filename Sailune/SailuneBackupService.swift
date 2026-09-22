@@ -28,7 +28,7 @@ struct SailuneDataLocations {
     var stores: [(name: String, url: URL, schema: String)] {
         [
             ("main.store", mainStore, "NovelWriterSchemaV5"),
-            ("settings.store", settingsStore, "V5SettingsSchemaV10"),
+            ("settings.store", settingsStore, "V5SettingsSchemaV11"),
             ("item-copies.store", itemCopyStore, "ItemCopySchemaV1"),
             ("item-copy-level-selections.store", itemCopyLevelStore, "ItemCopyLevelSelectionSchemaV1"),
             ("ability-progress.store", abilityProgressStore, "AbilityProgressSchemaV1"),
@@ -38,6 +38,7 @@ struct SailuneDataLocations {
     var pendingRestoreURL: URL { directory.appendingPathComponent("Sailune.pending-restore.sailunebackup") }
     var recoveryDirectory: URL { directory.appendingPathComponent("Sailune/Recovery Backups", isDirectory: true) }
     var coversDirectory: URL { directory.appendingPathComponent("Sailune/Covers", isDirectory: true) }
+    var mapsDirectory: URL { directory.appendingPathComponent("Sailune/Maps", isDirectory: true) }
 }
 
 enum SailuneBackupService {
@@ -127,6 +128,7 @@ enum SailuneBackupService {
             .appendingPathComponent(".sailune-restore-rollback-\(UUID().uuidString)", isDirectory: true)
         try fm.createDirectory(at: rollback, withIntermediateDirectories: true)
         let coversURL = locations.coversDirectory
+        let mapsURL = locations.mapsDirectory
         var moved: [(original: URL, backup: URL)] = []
         do {
             for (_, storeURL, _) in locations.stores {
@@ -140,6 +142,11 @@ enum SailuneBackupService {
                 let backup = rollback.appendingPathComponent("Covers", isDirectory: true)
                 try fm.moveItem(at: coversURL, to: backup)
                 moved.append((coversURL, backup))
+            }
+            if fm.fileExists(atPath: mapsURL.path) {
+                let backup = rollback.appendingPathComponent("Maps", isDirectory: true)
+                try fm.moveItem(at: mapsURL, to: backup)
+                moved.append((mapsURL, backup))
             }
 
             let files = Dictionary(uniqueKeysWithValues: archive.files.map { ($0.path, $0.data) })
@@ -156,6 +163,13 @@ enum SailuneBackupService {
                     try file.data.write(to: coversURL.appendingPathComponent(URL(fileURLWithPath: file.path).lastPathComponent), options: .atomic)
                 }
             }
+            let mapFiles = archive.files.filter { $0.path.hasPrefix("maps/") }
+            if !mapFiles.isEmpty {
+                try fm.createDirectory(at: mapsURL, withIntermediateDirectories: true)
+                for file in mapFiles {
+                    try file.data.write(to: mapsURL.appendingPathComponent(URL(fileURLWithPath: file.path).lastPathComponent), options: .atomic)
+                }
+            }
             try fm.removeItem(at: pending)
             try fm.removeItem(at: rollback)
         } catch {
@@ -163,6 +177,7 @@ enum SailuneBackupService {
                 for url in sqliteFamily(for: storeURL) where fm.fileExists(atPath: url.path) { try? fm.removeItem(at: url) }
             }
             if fm.fileExists(atPath: coversURL.path) { try? fm.removeItem(at: coversURL) }
+            if fm.fileExists(atPath: mapsURL.path) { try? fm.removeItem(at: mapsURL) }
             for pair in moved.reversed() where fm.fileExists(atPath: pair.backup.path) {
                 try? fm.moveItem(at: pair.backup, to: pair.original)
             }
@@ -192,6 +207,12 @@ enum SailuneBackupService {
                 files.append(ArchiveFile(path: "covers/\(url.lastPathComponent)", data: try Data(contentsOf: url)))
             }
         }
+        let maps = locations.mapsDirectory
+        if let urls = try? fm.contentsOfDirectory(at: maps, includingPropertiesForKeys: nil) {
+            for url in urls where url.pathExtension.lowercased() == "pdf" {
+                files.append(ArchiveFile(path: "maps/\(url.lastPathComponent)", data: try Data(contentsOf: url)))
+            }
+        }
         let entries = files.map { Manifest.FileEntry(path: $0.path, byteCount: $0.data.count, sha256: checksum($0.data)) }
         let info = Bundle.main.infoDictionary
         let manifest = Manifest(
@@ -213,7 +234,9 @@ enum SailuneBackupService {
             throw BackupError.invalidArchive("不支援的格式版本 \(archive.manifest.archiveVersion)")
         }
         let expectedSchemas = Dictionary(uniqueKeysWithValues: SailuneDataLocations.current.stores.map { ($0.name, $0.schema) })
-        guard archive.manifest.schemas == expectedSchemas else { throw BackupError.invalidArchive("schema 版本不相容") }
+        guard schemasAreRestorable(archive.manifest.schemas, expected: expectedSchemas) else {
+            throw BackupError.invalidArchive("schema 版本不相容")
+        }
         let files = Dictionary(uniqueKeysWithValues: archive.files.map { ($0.path, $0.data) })
         guard files.count == archive.files.count else { throw BackupError.invalidArchive("檔案路徑重複") }
         for entry in archive.manifest.files {
@@ -224,6 +247,21 @@ enum SailuneBackupService {
         let listed = Set(archive.manifest.files.map(\.path))
         guard listed == Set(files.keys) else { throw BackupError.invalidArchive("manifest 檔案清單不一致") }
         return archive
+    }
+
+    /// V10 backups remain restorable because the settings store can migrate to
+    /// V11 on the next app launch. Every other store schema must match exactly.
+    private static func schemasAreRestorable(_ archived: [String: String], expected: [String: String]) -> Bool {
+        guard Set(archived.keys) == Set(expected.keys) else { return false }
+        for (name, expectedSchema) in expected {
+            let archivedSchema = archived[name]
+            if name == "settings.store" {
+                guard archivedSchema == expectedSchema || archivedSchema == "V5SettingsSchemaV10" else { return false }
+            } else if archivedSchema != expectedSchema {
+                return false
+            }
+        }
+        return true
     }
 
     private static func sqliteSnapshot(from source: URL, to destination: URL) throws {
