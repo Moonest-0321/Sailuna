@@ -1,10 +1,82 @@
 # 當前聊天交接
 
-> 整體狀態：active
+> 整體狀態：closed
 >
-> 目前階段：V7.4 地點標記跨層級地圖跳轉 R／U／I approved；實作與自動驗證完成
+> 目前階段：V8 每書 AI 對話管理完成
 >
-> 唯一下一步：以隔離資料冒煙 V7.4 標記表單跳轉、同名圖綁定與新建圖流程；V7.2 最新建置 UI 冒煙仍待執行。
+> 唯一下一步：無；新需求另開工作單。
+
+## 2026-09-23 V8 每書 AI 對話管理
+
+- 已決定：使用者要求切換與刪除對話，並明確選擇關閉 App 後依每本書保存。側欄清單提供新建、切換與確認刪除；第一則提問作為標題，切換或刪除目前對話會取消正在生成的回覆。
+- 理由：既有對話只在工作區記憶體，離開即清空；每書獨立 JSON 可保存含節次快照的訊息，不改 SwiftData schema。檔案納入完整備份／還原與書籍刪除清理，舊備份沒有對話檔仍可還原。
+- 暫時假設：對話標題以首則提問前 32 字及更新時間辨識；草稿與未送出節次在切換時清空。未要求跨裝置同步、逐則刪訊息或 AI 自動命名。
+- 被否決方案：僅在記憶體切換、將大段對話及節次快照塞入 UserDefaults 或主 SwiftData schema。
+- 工作樹邊界：保留先前未提交的 V8 功能與文件；本輪新建 `SailuneAIConversationStore.swift`，修改對話 ViewModel／側欄、編輯工作區、備份服務、刪書協調、AI／備份測試及相關文件。未操作正式作者資料。
+- 驗證：無簽章 Debug 建置、AI 專項 14 項及備份專項 2 項 XCTest、Swift parse、`git diff --check` 通過。測試使用臨時目錄，涵蓋重開、跨書隔離、節次快照、整段對話刪除、損壞檔不覆蓋、切換取消請求、舊備份清除現有對話。隔離 App 使用 `/private/tmp/sailune-ai-conversations-ui` 建立虛構書籍，實際確認新對話空白、切回舊訊息、刪除確認視窗及取消後訊息保留。沙盒中的 SwiftData macro 服務無法啟動，主機環境建置及測試成功。
+- 尚未驗證：完整 XCTest／Release 建置，以及 GUI 按下永久刪除後的結果（ViewModel 層已有資料刪除測試）。唯一下一步：無；後續新需求另開工作單。
+
+## 2026-09-23 V8 可選節次聊天輸入
+
+- 已決定：使用者要求移除 Gemini 使用入口；聊天輸入框左側增加「＋」以選取目前書籍的一個節次，然後用自然語言提問。未選節次維持純聊天；選中節次只在送出時擷取最新內文快照。切換目前編輯節次不會自動附加或替換快照。
+- 理由：目前 App 直接走 Apple 裝置端模型；書籍、卷與節次已有排序投影。以明確選擇避免自動讀稿，並在輸入區與送出訊息顯示附加節次供作者核對。單次提問選一節是本輪暫時假設；多節選擇屬未來需求。
+- 被否決方案：沿用目前編輯節次自動注入；保留 Gemini 作為首頁可選入口。舊個人 Keychain 金鑰與本機開發後端保留，無使用通路，不擅自刪除。
+- 工作樹邊界：保留先前未提交 V8 功能與文件；本輪修改首頁設定、編輯工作區、聊天側欄、AI DTO／client／ViewModel、測試及 V8 文件；不改 schema、作者資料或備份。
+- 驗證：AI 專項 11 項 XCTest 通過，無簽章 Debug 建置、Swift parse 與 `git diff --check` 通過。隔離 App 使用 `/private/tmp/sailune-v8-attach-ui-20260923` 獨立 store：建立兩個虛構節次，在編輯第二節時從「＋」選第一節，模型回答第一節的「藍色鑰匙」；展開對話確認第一節快照，移除另一次節次選擇後可一般聊天，首頁設定沒有 Gemini 入口。未操作正式作者資料。
+- 尚未驗證：完整 XCTest 與 Release 建置未重跑；本輪核心 AI 專項與隔離 UI 流程已覆蓋。舊個人 Keychain 金鑰資料保留但無目前使用入口。
+
+## 2026-09-23 V8 免金鑰裝置端模型
+
+- 已決定：使用者要求接入不需金鑰、可直接使用的模型，效能非優先；隨後明確校正 Apple 模型先只做聊天，不接入節次。Apple Foundation Models 為預設純聊天通路，Gemini 個人金鑰通路保留原本節次分析。此為具體變更授權，略過重複批准關卡。
+- 理由：專案最低 macOS 26.5，Foundation Models SDK 可用，無需模型服務申請或獨立後端。Mac 必須支援且啟用 Apple Intelligence；不可用時顯示裝置、啟用或準備狀態錯誤，不暗中改傳雲端。Apple 送出流程不讀取 `Section.content`、不做待存正文提交，提示只包含對話；長對話超出上下文限制時由模型錯誤回饋。
+- 被否決方案：以公開無金鑰第三方接口作正式通路；此類接口不能保證穩定性或稿件隱私。登入仍暫緩。
+- 工作樹邊界：保留既有未提交 V8 App／後端修改；本輪增補 provider 選擇、Apple 本機生成及文件，未操作正式作者資料。
+- 驗證：本機 Apple 模型回報 available；以虛構短文已成功產生繁體中文回答。純聊天校正後無簽章 Debug 建置與 AI 專項 9 項 XCTest 通過；測試確認 Apple 提示忽略節次且純聊天請求不含 `sectionContent`，Gemini 節次請求仍通過。`swiftc -frontend -parse`、`git diff --check` 通過。隔離 App UI 冒煙尚未完成。
+
+## 2026-09-23 V8 App 金鑰設定補正
+
+- 已決定：使用者明確要求 App 內有地方設定金鑰；首頁設定增加 Gemini API 金鑰、模型名稱與 API 接口，Google 登入仍暫緩。此前「設定頁也暫緩」的紀錄已被最新要求取代。
+- 理由：原本只依本機後端環境變數讀取金鑰，作者無法從 App 設定並直接呼叫模型。個人金鑰保存於 macOS Keychain，模型與接口保存於 UserDefaults；不改書籍資料、schema、備份。接口限 Google 官方 HTTPS Interactions 網址，避免誤送金鑰至第三方主機。
+- 被否決方案：用 Google 登入代替 API key；要求作者只透過終端機設定環境變數。暫時假設：第一階段只支援 Gemini Interactions 協定，後續供應商另議。
+- 工作樹邊界：保留原有未提交 V8 App／後端與文件修改；本輪新增 `SailuneAISettings.swift`，修改首頁設定、AI client、AI tests 與相關文件；未操作正式作者資料。
+- 驗證：無簽章 Debug 建置及 AI 專項 8 項 XCTest 於主機環境通過，`swiftc -frontend -parse`、`git diff --check` 通過。沙盒內 Xcode 因 SwiftData macro 外掛 malformed response 無法編譯，主機環境完成驗證。沒有個人有效金鑰，真實 Google 呼叫及設定頁人工 UI 操作仍未驗證。
+
+## 2026-09-23 V8 真實 API 呼叫補強
+
+- 使用者校正：Google 登入不能作為 AI 服務授權，先不做登入；模型名稱與 API 接口的首頁設定也暫緩，優先接通目前 Gemini 路徑。此前提出的 V8.1 Google 登入／設定草案保留於工作單，但 R／U／I 均改為 deferred。
+- 已有 App → 本機後端 → Google GenAI SDK → Gemini 的呼叫路徑；環境中 `GEMINI_API_KEY` 未設定，後端 `.env` 不存在，因此不能宣稱已對真實模型完成呼叫。
+- Google 官方文件指出 Interactions API 預設保存請求；目前 App 已自行傳完整對話，無需服務端 Interaction。後端呼叫加 `store: false`，SDK 更新至 `@google/genai` 2.24.0 並採目前的 `output_text` 回應欄位；假 SDK 測試模型、JSON schema、傳入內容與 stateless 旗標。新增 `npm run smoke:live`，只傳固定虛構測試節次；缺 key 時明確失敗。`npm run typecheck` 與後端 3 項契約測試通過。
+- 本輪只改後端呼叫／測試／說明與工作紀錄；既有未提交 V8 App 程式、Xcode 設定、作者資料均未更動。
+
+## 2026-09-23 V8.1 新需求檢查點
+
+- 使用者新增兩項要求：登入選項增加 Google；首頁設定增加使用模型名稱與 API 接口輸入。
+- 已核對目前程式：首頁帳號 popover 的帳號／切換／退出是佔位互動；首頁設定頁只有開發階段資訊。V8 App endpoint 由 build 設定供應，模型由後端環境變數選擇，沒有使用者設定或正式帳號。
+- 暫時假設：Google 用於帆夢帳號識別，API 接口指向帆夢後端；目前本地書籍仍可離線使用。以上並非使用者已決定，已發出釐清問題。
+- 技術界線：Google 官方 macOS SDK 需要 OAuth 設定；後端需驗證 ID token 才能把登入用於服務授權。共用 Gemini key 仍留後端。若使用者要的是自備模型服務與金鑰，需改寫資料流與設定設計。
+- 工作樹：上一輪 V8 第一階段的未提交 App／後端／文件修改保持原樣；本輪只新增工作單與交接紀錄，未改功能程式。
+
+## 2026-09-23 V8 本機實作檢查點
+
+- 已決定：第一階段只把目前 `Section.content` 的純文字及記憶體對話送到 AI 服務；點擊入口不傳資料。兩側欄順序為中央工作區、AI、設定集，各自開關；不寫入 SwiftData。理由與被否決的擴大範圍見 `docs/work-items/current.md`、`docs/spec-ai-v8.md`。
+- 實作：`EditorWorkspaceView`、4 個 `SailuneAI*` Swift 檔、`Config/Sailune-Info.plist`、Xcode outgoing entitlement；後端為 `SailuneAIBackend/src/server.ts`。Debug 預設 loopback，Release URL 為空。`gemini-3.8-flash` 是後端可覆寫預設，正式選型仍可調整。
+- 驗證：`npm run typecheck`、`npm test`（2 項）、`xcodebuild build` Debug／Release、AI 專項 6 項與完整 macOS XCTest 200 項通過，`git diff --check` 通過。完整套件的平行執行曾兩次在既有角色預覽測試遭 test host abort；該測試單獨通過，`-parallel-testing-enabled NO` 的完整 200 項為 0 失敗。隔離 Debug App 實測工具列入口、AI／設定集兩種開啟順序與獨立關閉、空節錯誤，以及本機 mock 回覆與逐字引文顯示。真實 Gemini 呼叫未驗證，因本次沒有 API key。
+- 工作樹：起點 `main` HEAD `deeb47d` 乾淨；本輪只改 AI 相關 App、Xcode 設定、新後端／測試與文件。UI 冒煙使用 `/private/tmp` 隔離 store，未讀寫正式作者資料。
+- 技術發現：Xcode `INFOPLIST_KEY_SailuneAIBaseURL` 沒有進入產出 Info.plist，已改為 `Config/Sailune-Info.plist` 並核對 Debug bundle。第一次重新啟動隔離測試 store 遇到既有主 store 的 `duplicate column name: Z16CHARACTERS` 遷移錯誤；改用全新隔離 store 完成 V8 UI 驗收。此重開問題尚未釐清，不能宣稱隔離 store 的重啟通過。
+- 下一步：以取得的後端金鑰和非作者測試節次驗證真實 Gemini 回覆；若要公開使用，先設計登入、配額與隱私政策。V7.4 UI 冒煙可另行接續。
+
+## 2026-09-23 V8 AI 助手入口方向與需求起點
+
+- 使用者要求 V8 加入 AI 功能；可存取的其他任務紀錄提及設定集整理、文本閱讀、閱讀後建議，以及取名／修訂／資訊擷取等候選能力。這些既有討論是需求線索，不等於完整 V8 範圍已批准。
+- 使用者校正範圍：目前先做「目前節次的內文」接入；不應把選取片段、卷、全書或設定集資料擴進第一階段。先前 R 草案列出多種內容範圍，是過度擴大，已更正工作單。設定集整理與更廣分析留待後續工作單。
+- 使用者要求入口置於「編輯」與「大綱」按鈕之間；點擊後從 App 右側滑入聊天側欄。使用者進一步校正：若同時開啟設定集側欄，設定集必須在 AI 側欄右側。修正版順序「編輯器／大綱 → AI 助手 → 設定集」已獲使用者「是的」確認。
+- 已核對目前實作：`EditorWorkspaceView` 使用編輯／大綱／地圖 segmented picker，右側設定集寬 300 pt。新增 AI 入口會涉及工具列排列調整；雙側欄需佔用可用寬度，實作時依父容器約束排版。
+- 既有討論方向是 App → Sailune AI 後端 → Gemini API，避免將服務共用 API key 放入 App；付費 API 才適合作為未公開稿件的預設候選。Gemini Flash 是原型候選，並非已批准的正式模型。使用者明確要求先不使用中國大陸模型。
+- 使用者於 2026-09-23 回覆「確認」，批准 R：作者送出問題／要求後，AI 閱讀目前節次完整內文，在聊天窗回覆或提出建議並附原文依據；不含設定集整理、結構化擷取、其他節／卷／全書分析，也不自動寫入資料。
+- U approved：使用者確認入口／側欄位置及 AI 與設定集並存順序。工作單已記錄批准依據。
+- I 提案：拆成 toolbar／雙側欄、App client／對話狀態、來源驗證、Node.js TypeScript 後端 Gemini 串接、本機啟動與驗證。Repo 目前沒有後端或網路 API；方案不部署公開服務，正式公用部署需另行設定認證、額度及隱私政策。對話保存尚未明確決定，提案採不新增 schema 的工作階段記憶體暫存。
+- 使用者於 2026-09-23 回覆「確認」，批准 I 計畫並開始實作。查證 Xcode Release 設定目前禁止 outgoing network，必須在本工作開啟對外連線 entitlement，否則正式建置無法使用 AI client。
+- 此節記錄批准當時的起點；目前實作與測試結果見上方 V8 本機實作檢查點。
 
 ## 2026-09-23 V7.4 跨層級跳轉需求起點
 

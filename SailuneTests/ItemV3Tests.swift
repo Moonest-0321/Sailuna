@@ -850,6 +850,15 @@ final class ItemV3Tests: XCTestCase {
         try FileManager.default.createDirectory(at: nestedMapURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         let nestedMapData = Data([8, 7, 6, 5])
         try nestedMapData.write(to: nestedMapURL)
+        let conversationBookID = UUID()
+        let conversationStore = SailuneAIConversationStore(directory: locations.aiConversationsDirectory)
+        let conversation = SailuneAIConversation(title: "備份前的提問", messages: [
+            SailuneAIMessage(role: .user, text: "備份前的提問")
+        ])
+        try conversationStore.save(
+            SailuneAIConversationArchive(selectedConversationID: conversation.id, conversations: [conversation]),
+            bookID: conversationBookID
+        )
         let backup = root.appendingPathComponent("test.sailunebackup")
 
         try SailuneBackupService.createBackup(at: backup, locations: locations)
@@ -857,6 +866,7 @@ final class ItemV3Tests: XCTestCase {
         try Data([9]).write(to: locations.coversDirectory.appendingPathComponent("cover.png"))
         try Data([9]).write(to: locations.mapsDirectory.appendingPathComponent("map.pdf"))
         try Data([9]).write(to: nestedMapURL)
+        try conversationStore.removeBook(bookID: conversationBookID)
         try SailuneBackupService.scheduleRestore(from: backup, locations: locations)
         try SailuneBackupService.applyPendingRestoreIfNeeded(locations: locations)
 
@@ -866,6 +876,7 @@ final class ItemV3Tests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: locations.coversDirectory.appendingPathComponent("cover.png")), coverData)
         XCTAssertEqual(try Data(contentsOf: locations.mapsDirectory.appendingPathComponent("map.pdf")), mapData)
         XCTAssertEqual(try Data(contentsOf: nestedMapURL), nestedMapData)
+        XCTAssertEqual(try conversationStore.load(bookID: conversationBookID)?.conversations.first?.messages.first?.text, "備份前的提問")
         XCTAssertFalse(FileManager.default.fileExists(atPath: locations.pendingRestoreURL.path))
         XCTAssertFalse((try FileManager.default.contentsOfDirectory(atPath: locations.recoveryDirectory.path)).isEmpty)
     }
@@ -884,10 +895,18 @@ final class ItemV3Tests: XCTestCase {
 
         try FileManager.default.createDirectory(at: locations.mapsDirectory, withIntermediateDirectories: true)
         try Data([1, 2, 3]).write(to: locations.mapsDirectory.appendingPathComponent("current.pdf"))
+        let conversationBookID = UUID()
+        let conversationStore = SailuneAIConversationStore(directory: locations.aiConversationsDirectory)
+        let conversation = SailuneAIConversation()
+        try conversationStore.save(
+            SailuneAIConversationArchive(selectedConversationID: conversation.id, conversations: [conversation]),
+            bookID: conversationBookID
+        )
         try SailuneBackupService.scheduleRestore(from: backup, locations: locations)
         try SailuneBackupService.applyPendingRestoreIfNeeded(locations: locations)
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: locations.mapsDirectory.path))
+        XCTAssertNil(try conversationStore.load(bookID: conversationBookID))
     }
 
     func testV10ThroughV12SettingsBackupManifestsRemainRestorableAfterV13Upgrade() throws {

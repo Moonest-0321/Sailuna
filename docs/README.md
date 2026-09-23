@@ -30,6 +30,7 @@
 
 - [V4.2 全書大綱 PRD](prd-v4.2-outline.md)
 - [文字編輯器](spec-editor.md)
+- [V8 AI 助手：目前節次內文閱讀](spec-ai-v8.md)
 - [角色設定](spec-character.md)
 - [物品系統](spec-item.md)
 - [時間軸](spec-timeline.md)

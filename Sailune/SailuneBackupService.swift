@@ -39,6 +39,7 @@ struct SailuneDataLocations {
     var recoveryDirectory: URL { directory.appendingPathComponent("Sailune/Recovery Backups", isDirectory: true) }
     var coversDirectory: URL { directory.appendingPathComponent("Sailune/Covers", isDirectory: true) }
     var mapsDirectory: URL { directory.appendingPathComponent("Sailune/Maps", isDirectory: true) }
+    var aiConversationsDirectory: URL { directory.appendingPathComponent("Sailune/AI Conversations", isDirectory: true) }
 }
 
 enum SailuneBackupService {
@@ -129,6 +130,7 @@ enum SailuneBackupService {
         try fm.createDirectory(at: rollback, withIntermediateDirectories: true)
         let coversURL = locations.coversDirectory
         let mapsURL = locations.mapsDirectory
+        let aiConversationsURL = locations.aiConversationsDirectory
         var moved: [(original: URL, backup: URL)] = []
         do {
             for (_, storeURL, _) in locations.stores {
@@ -147,6 +149,11 @@ enum SailuneBackupService {
                 let backup = rollback.appendingPathComponent("Maps", isDirectory: true)
                 try fm.moveItem(at: mapsURL, to: backup)
                 moved.append((mapsURL, backup))
+            }
+            if fm.fileExists(atPath: aiConversationsURL.path) {
+                let backup = rollback.appendingPathComponent("AI Conversations", isDirectory: true)
+                try fm.moveItem(at: aiConversationsURL, to: backup)
+                moved.append((aiConversationsURL, backup))
             }
 
             let files = Dictionary(uniqueKeysWithValues: archive.files.map { ($0.path, $0.data) })
@@ -173,6 +180,14 @@ enum SailuneBackupService {
                     try file.data.write(to: destination, options: .atomic)
                 }
             }
+            let conversationFiles = archive.files.filter { $0.path.hasPrefix("ai-conversations/") }
+            if !conversationFiles.isEmpty {
+                try fm.createDirectory(at: aiConversationsURL, withIntermediateDirectories: true)
+                for file in conversationFiles {
+                    let name = String(file.path.dropFirst("ai-conversations/".count))
+                    try file.data.write(to: aiConversationsURL.appendingPathComponent(name), options: .atomic)
+                }
+            }
             try fm.removeItem(at: pending)
             try fm.removeItem(at: rollback)
         } catch {
@@ -181,6 +196,7 @@ enum SailuneBackupService {
             }
             if fm.fileExists(atPath: coversURL.path) { try? fm.removeItem(at: coversURL) }
             if fm.fileExists(atPath: mapsURL.path) { try? fm.removeItem(at: mapsURL) }
+            if fm.fileExists(atPath: aiConversationsURL.path) { try? fm.removeItem(at: aiConversationsURL) }
             for pair in moved.reversed() where fm.fileExists(atPath: pair.backup.path) {
                 try? fm.moveItem(at: pair.backup, to: pair.original)
             }
@@ -215,6 +231,16 @@ enum SailuneBackupService {
             for relativePath in relativePaths where URL(fileURLWithPath: relativePath).pathExtension.lowercased() == "pdf" {
                 let url = maps.appendingPathComponent(relativePath)
                 files.append(ArchiveFile(path: "maps/\(relativePath)", data: try Data(contentsOf: url)))
+            }
+        }
+        let conversations = locations.aiConversationsDirectory
+        if fm.fileExists(atPath: conversations.path) {
+            for url in try fm.contentsOfDirectory(at: conversations, includingPropertiesForKeys: nil)
+                where url.pathExtension.lowercased() == "json" {
+                guard UUID(uuidString: url.deletingPathExtension().lastPathComponent) != nil else {
+                    throw BackupError.invalidArchive("AI 對話檔案名稱無效")
+                }
+                files.append(ArchiveFile(path: "ai-conversations/\(url.lastPathComponent)", data: try Data(contentsOf: url)))
             }
         }
         let entries = files.map { Manifest.FileEntry(path: $0.path, byteCount: $0.data.count, sha256: checksum($0.data)) }
@@ -255,6 +281,13 @@ enum SailuneBackupService {
                 relativePath: String(path.dropFirst("maps/".count)),
                 root: FileManager.default.temporaryDirectory.appendingPathComponent("SailuneMapValidation", isDirectory: true)
             )
+        }
+        for path in files.keys where path.hasPrefix("ai-conversations/") {
+            let name = String(path.dropFirst("ai-conversations/".count))
+            guard name.hasSuffix(".json"), UUID(uuidString: String(name.dropLast(5))) != nil,
+                  !name.contains("/") else {
+                throw BackupError.invalidArchive("AI 對話檔案路徑不安全")
+            }
         }
         return archive
     }

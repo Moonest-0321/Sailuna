@@ -541,6 +541,7 @@ private struct StartSettingsView: View {
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
+
 }
 
 private struct AboutMeView: View {

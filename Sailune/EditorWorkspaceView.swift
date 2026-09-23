@@ -62,11 +62,15 @@ struct EditorWorkspaceView: View {
         static let minimumEditorWidth: CGFloat = 360
         static let minimumEditorHeight: CGFloat = 320
         static let inspectorWidth: CGFloat = 300
+        static let minimumDirectoryWidth: CGFloat = 220
+        static let minimumAISidebarWidth: CGFloat = 260
     }
 
     let book: Book
     @State private var selectedSection: Section?
     @State private var showInspector = false
+    @State private var showAIAssistant = false
+    @State private var aiChatModel: SailuneAIChatViewModel
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
     @State private var bridge = EditorBridge()
     @State private var showingCommandPalette = false
@@ -101,9 +105,14 @@ struct EditorWorkspaceView: View {
     init(book: Book, initialSection: Section) {
         self.book = book
         _selectedSection = State(initialValue: initialSection)
+        _aiChatModel = State(initialValue: SailuneAIChatViewModel(
+            bookID: book.id,
+            store: SailuneAIConversationStore()
+        ))
     }
 
     var body: some View {
+        GeometryReader { geometry in
         HStack(spacing: 0) {
             ZStack {
                 NavigationSplitView(columnVisibility: $columnVisibility) {
@@ -160,6 +169,21 @@ struct EditorWorkspaceView: View {
                 }
             }
 
+            if showAIAssistant {
+                HStack(spacing: 0) {
+                    Divider()
+                    SailuneAIChatSidebarView(
+                        book: book,
+                        model: aiChatModel,
+                        onSend: sendAIMessage,
+                        onClose: { setAIAssistantPresented(false) }
+                    )
+                    .workspaceFloatingPanel()
+                    .frame(width: aiSidebarWidth(for: geometry.size.width))
+                }
+                .transition(.move(edge: .trailing))
+            }
+
             if showInspector {
                 HStack(spacing: 0) {
                     Divider()
@@ -197,8 +221,9 @@ struct EditorWorkspaceView: View {
                 .transition(.move(edge: .trailing))
             }
         }
+        }
         .navigationTitle("")
-        .frame(minWidth: Layout.minimumWorkspaceWidth, minHeight: Layout.minimumWorkspaceHeight)
+        .frame(minWidth: minimumWorkspaceWidth, minHeight: Layout.minimumWorkspaceHeight)
         .sheet(isPresented: $showingCommandPalette) {
             CommandPaletteView { command in
                 showingCommandPalette = false
@@ -229,7 +254,10 @@ struct EditorWorkspaceView: View {
             bridge.reloadVisibleContent()
         }
         .onAppear { keyboardMonitor.start() }
-        .onDisappear { keyboardMonitor.stop() }
+        .onDisappear {
+            keyboardMonitor.stop()
+            aiChatModel.reset()
+        }
         .sailuneFileExporter(request: $exportRequest)
     }
 
@@ -250,19 +278,29 @@ struct EditorWorkspaceView: View {
                 } label: { Label("匯出 TXT", systemImage: "doc.text") }
                 Button { exportRequest = EpubExporter.exportRequest(book: book) } label: { Label("匯出 EPUB", systemImage: "book.closed") }
             } label: { Label("更多", systemImage: "ellipsis.circle") }
-            Picker("工作模式", selection: Binding(
-                get: { workspaceMode },
-                set: switchWorkspace
-            )) {
-                ForEach(EditorWorkspaceMode.allCases) { mode in
-                    Label(mode.title, systemImage: mode.systemImage)
-                        .labelStyle(.iconOnly)
-                        .tag(mode)
+            ControlGroup {
+                Button { switchWorkspace(to: .writing) } label: {
+                    Label("編輯", systemImage: EditorWorkspaceMode.writing.systemImage)
+                        .foregroundStyle(workspaceMode == .writing ? Color.accentColor : Color.primary)
                 }
+                .help("編輯")
+                Button { setAIAssistantPresented(!showAIAssistant) } label: {
+                    Label("AI 助手", systemImage: "sparkles")
+                        .foregroundStyle(showAIAssistant ? Color.accentColor : Color.primary)
+                }
+                .help("顯示／隱藏 AI 助手")
+                Button { switchWorkspace(to: .planning) } label: {
+                    Label("大綱", systemImage: EditorWorkspaceMode.planning.systemImage)
+                        .foregroundStyle(workspaceMode == .planning ? Color.accentColor : Color.primary)
+                }
+                .help("大綱")
+                Button { switchWorkspace(to: .map) } label: {
+                    Label("地圖", systemImage: EditorWorkspaceMode.map.systemImage)
+                        .foregroundStyle(workspaceMode == .map ? Color.accentColor : Color.primary)
+                }
+                .help("地圖")
             }
-            .pickerStyle(.segmented)
             .labelsHidden()
-            .help("切換編輯、大綱或地圖工作模式")
             Button { setInspectorPresented(!showInspector) } label: {
                 Label("設定集", systemImage: "sidebar.right")
             }
@@ -348,6 +386,41 @@ struct EditorWorkspaceView: View {
         withAnimation {
             showInspector = presented
         }
+    }
+
+    private func setAIAssistantPresented(_ presented: Bool) {
+        NSApp.keyWindow?.makeFirstResponder(nil)
+        withAnimation {
+            showAIAssistant = presented
+        }
+    }
+
+    private func aiSidebarWidth(for availableWidth: CGFloat) -> CGFloat {
+        min(340, max(Layout.minimumAISidebarWidth, availableWidth * 0.28))
+    }
+
+    private var minimumWorkspaceWidth: CGFloat {
+        guard showAIAssistant && showInspector else { return Layout.minimumWorkspaceWidth }
+        return Layout.minimumDirectoryWidth + Layout.minimumEditorWidth
+            + Layout.minimumAISidebarWidth + Layout.inspectorWidth
+    }
+
+    private func sendAIMessage(_ prompt: String, sectionID: UUID?) -> Bool {
+        guard let sectionID else {
+            return aiChatModel.send(prompt: prompt)
+        }
+        bridge.flushPendingSave()
+        guard let section = BookStructure.orderedSections(in: book).first(where: { $0.id == sectionID }) else {
+            return aiChatModel.rejectUnavailableSection()
+        }
+        let volumeTitle = section.volume.map { $0.title.isEmpty ? "未命名卷" : $0.title } ?? "未命名卷"
+        let sectionTitle = section.title.isEmpty ? "未命名節" : section.title
+        let attachment = SailuneAISectionAttachment(
+            id: section.id,
+            title: "\(volumeTitle)／\(sectionTitle)",
+            content: String(section.content.characters)
+        )
+        return aiChatModel.send(prompt: prompt, attachment: attachment)
     }
 
     private func openSettings(_ destination: EditorSettingsDestination) {

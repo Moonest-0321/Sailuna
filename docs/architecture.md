@@ -9,6 +9,7 @@
 - TXT 與 EPUB 由專案內原生程式產生，不依賴外部壓縮套件。
 - 地圖模板、匯入正規化與畫面背景使用 Core Graphics／PDFKit；PDF 資產獨立於 SwiftData 座標資料。
 - `SailuneTests` 使用 XCTest，測試模型、投影、遷移、錨點、刪除與編輯器橋接。
+- V8 AI 助手使用 Apple Foundation Models 裝置端生成，不需要金鑰或後端；作者明確選取節次後才把該節次純文字快照加入目前對話。對話依書籍 UUID 另存 JSON，並納入完整備份。首頁 Gemini 使用入口已移除。既有 Node.js／TypeScript 本機後端保留作開發資產。
 
 ## 執行結構
 
@@ -23,7 +24,7 @@ SailuneApp
 ContentView（書櫃）
 └─ BookOverviewView（書籍總覽、卷節、背景）
    └─ EditorWorkspaceView
-      ├─ 正文工作區 + 設定集／右側大綱
+      ├─ 正文工作區 + AI 助手側欄 + 設定集側欄
       ├─ MapWorkspaceView（平面層級、多張具體地圖、替代背景版本、map-local placement）
       └─ BookPlanningWorkspaceView
          ├─ 敘事大綱畫布
@@ -36,13 +37,14 @@ ContentView（書櫃）
 - 主資料模型：`Book`、`Volume`、`Section`、`Character`、`Item`、`Timeline`、`Node`、`Event` 等。
 - `BookOutline.swift`／`StoryTag.swift`：故事規劃 schema V1–V6、文字錨點、故事線與階段、排序投影和 store 操作。
 - `EditorWorkspaceView`：讓正文與寬版大綱在同一書籍視窗中保留各自生命週期；切換前提交待存正文。
+- `SailuneAIChatViewModel`／`SailuneAIClient`：管理每書多段對話；選節後才加入指定節次純文字快照，處理取消與錯誤，不寫入 SwiftData。`SailuneAIConversationStore` 原子寫入每書 JSON；切換與刪除由 ViewModel 協調。Gemini 使用介面已移除；先前的 Keychain 設定與 `SailuneAIBackend` 本機開發服務不參與目前使用流程。
 - `MapCatalog`／`MapPDFGenerator`／`BookMapPDFStore`／`MapWorkspaceView`：管理平面地圖分類、替代背景版本、map-local placement 與標記到下層地圖的 UUID 綁定，產生 4:3 模板、正規化輸入並以同一內容矩形疊加座標與標記。
 - `RichEditorView`／`EditorBridge`：文字輸入、CJK composition、選取與跨節跳轉、格式、右鍵工具、角色連結及規劃錨點協調。
 - `InspectorViews`、`CharacterSectionViews`、`RelationshipWorkspace`：設定集與角色／物品／能力／勢力／關係管理；V5 勢力不與角色或正文連結。
 - `OutlineViews`：故事背景、敘事畫布、故事線／階段／大綱項目管理，以及「由大綱加入世界時間軸」。
 - `TimelineViews`／`TimelineEngine`：紀元、日期投影、主副軸、節點與事件管理、卡片及正文跳轉。
 - `PersistentStoreRepair`／`CrossStoreDeletionCoordinator`：主 store 修復與 Book／Character／Item／Ability／Event／Node／Era／Timeline／Volume／Section 的跨 store 收斂。
-- `SailuneBackupService`：六個 SQLite online snapshot、封面、地圖 PDF、manifest／checksum 封裝，以及下次啟動前的驗證、現況安全備份、整組置換與失敗 rollback。
+- `SailuneBackupService`：六個 SQLite online snapshot、封面、地圖 PDF、每書 AI 對話 JSON、manifest／checksum 封裝，以及下次啟動前的驗證、現況安全備份、整組置換與失敗 rollback。
 - `MigrationPlan` 與各 Backfill：歷史 schema 匯入及獨立 store 回填。
 
 ## 兩種「連動」
