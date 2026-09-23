@@ -22,6 +22,14 @@ enum MapLevel: String, CaseIterable, Identifiable {
     var supportsMultipleVersions: Bool {
         self == .overview || self == .country || self == .province
     }
+
+    var destinationLevel: Self? {
+        switch self {
+        case .overview, .country, .province: .city
+        case .city: .closeUp
+        case .closeUp: nil
+        }
+    }
 }
 
 enum MapCatalogError: LocalizedError {
@@ -31,6 +39,7 @@ enum MapCatalogError: LocalizedError {
     case duplicateVersionName(String)
     case lastVersion
     case invalidCoordinate
+    case invalidNavigationSource
 
     var errorDescription: String? {
         switch self {
@@ -40,6 +49,7 @@ enum MapCatalogError: LocalizedError {
         case .duplicateVersionName(let name): "此地圖已有「\(name)」版本。"
         case .lastVersion: "每張地圖至少要保留一個版本。"
         case .invalidCoordinate: "地圖座標超出有效範圍。"
+        case .invalidNavigationSource: "此地圖標記無法跳轉至下一層級地圖。"
         }
     }
 }
@@ -158,9 +168,51 @@ extension V5SettingsStore {
     func deleteMap(_ map: BookMap) throws {
         versions(for: map).forEach(context.delete)
         placements(for: map).forEach(context.delete)
+        // A destination can be shared by markers on several source maps.
+        let linkedPlacements = try context.fetch(FetchDescriptor<MapPlacement>())
+            .filter { $0.bookID == map.bookID && $0.targetMapID == map.id }
+        linkedPlacements.forEach { $0.targetMapID = nil }
         context.delete(map)
         try context.save(); didSave()
         try BookMapPDFStore.removeMap(bookID: map.bookID, mapID: map.id)
+    }
+
+    /// Resolves one marker's lower-level map. Map creation and binding share
+    /// one settings-store save so a failed operation cannot leave a new map.
+    func destinationMap(for place: Place, placement: MapPlacement, on source: BookMap) throws -> BookMap {
+        guard place.bookID == source.bookID, placement.bookID == source.bookID,
+              placement.mapID == source.id, placement.placeID == place.id,
+              let sourceLevel = MapLevel(rawValue: source.levelRawValue),
+              let targetLevel = sourceLevel.destinationLevel else {
+            throw MapCatalogError.invalidNavigationSource
+        }
+        let destinationMaps = maps(for: source.bookID, level: targetLevel)
+        if let targetID = placement.targetMapID,
+           let boundMap = destinationMaps.first(where: { $0.id == targetID }) {
+            return boundMap
+        }
+
+        let name = place.name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { throw MapCatalogError.invalidName }
+        let existing = destinationMaps.first { $0.name.localizedCaseInsensitiveCompare(name) == .orderedSame }
+        let destination = existing ?? BookMap(
+            bookID: source.bookID,
+            levelRawValue: targetLevel.rawValue,
+            name: name,
+            sortOrder: (destinationMaps.map(\.sortOrder).max() ?? -1) + 1
+        )
+        do {
+            if existing == nil {
+                context.insert(destination)
+                context.insert(BookMapVersion(bookID: source.bookID, mapID: destination.id, name: "地圖"))
+            }
+            placement.targetMapID = destination.id
+            try context.save(); didSave()
+            return destination
+        } catch {
+            context.rollback()
+            throw error
+        }
     }
 
     @discardableResult

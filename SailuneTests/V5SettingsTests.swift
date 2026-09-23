@@ -384,7 +384,7 @@ final class V5SettingsTests: XCTestCase {
             try container.mainContext.save()
         }
 
-        let schema = Schema(versionedSchema: V5SettingsSchemaV12.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV13.self)
         let migrated = try ModelContainer(
             for: schema,
             migrationPlan: V5SettingsMigrationPlan.self,
@@ -451,7 +451,7 @@ final class V5SettingsTests: XCTestCase {
             try container.mainContext.save()
         }
 
-        let schema = Schema(versionedSchema: V5SettingsSchemaV12.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV13.self)
         let migrated = try ModelContainer(
             for: schema,
             migrationPlan: V5SettingsMigrationPlan.self,
@@ -714,7 +714,7 @@ final class V5SettingsTests: XCTestCase {
             try context.save()
         }
 
-        let schema = Schema(versionedSchema: V5SettingsSchemaV12.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV13.self)
         let migrated = try ModelContainer(
             for: schema,
             migrationPlan: V5SettingsMigrationPlan.self,
@@ -752,7 +752,7 @@ final class V5SettingsTests: XCTestCase {
             try context.save()
         }
 
-        let schema = Schema(versionedSchema: V5SettingsSchemaV12.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV13.self)
         let migrated = try ModelContainer(
             for: schema,
             migrationPlan: V5SettingsMigrationPlan.self,
@@ -803,7 +803,7 @@ final class V5SettingsTests: XCTestCase {
             try context.save()
         }
 
-        let schema = Schema(versionedSchema: V5SettingsSchemaV12.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV13.self)
         let migrated = try ModelContainer(
             for: schema,
             migrationPlan: V5SettingsMigrationPlan.self,
@@ -995,7 +995,7 @@ final class V5SettingsTests: XCTestCase {
 
         do {
             let mainSchema = Schema(versionedSchema: NovelWriterSchemaV5.self)
-            let settingsSchema = Schema(versionedSchema: V5SettingsSchemaV12.self)
+            let settingsSchema = Schema(versionedSchema: V5SettingsSchemaV13.self)
             let mainContainer = try ModelContainer(
                 for: mainSchema,
                 configurations: [ModelConfiguration(schema: mainSchema, url: mainURL)]
@@ -1179,7 +1179,7 @@ final class V5SettingsTests: XCTestCase {
             container.mainContext.insert(V5SettingsSchemaV9.PowerUnit(id: powerID, bookID: bookID, name: "舊勢力", relationshipNotes: "既有外交筆記"))
             try container.mainContext.save()
         }
-        let schema = Schema(versionedSchema: V5SettingsSchemaV12.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV13.self)
         let migrated = try ModelContainer(for: schema, migrationPlan: V5SettingsMigrationPlan.self, configurations: [ModelConfiguration(schema: schema, url: storeURL)])
         let power = try XCTUnwrap(migrated.mainContext.fetch(FetchDescriptor<PowerUnit>()).first)
         XCTAssertEqual(power.id, powerID)
@@ -1219,7 +1219,7 @@ final class V5SettingsTests: XCTestCase {
         }
 
         do {
-            let schema = Schema(versionedSchema: V5SettingsSchemaV12.self)
+            let schema = Schema(versionedSchema: V5SettingsSchemaV13.self)
             let container = try ModelContainer(
                 for: schema,
                 migrationPlan: V5SettingsMigrationPlan.self,
@@ -1248,7 +1248,7 @@ final class V5SettingsTests: XCTestCase {
             )
         }
 
-        let schema = Schema(versionedSchema: V5SettingsSchemaV12.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV13.self)
         let reopened = try ModelContainer(
             for: schema,
             migrationPlan: V5SettingsMigrationPlan.self,
@@ -1340,7 +1340,7 @@ final class V5SettingsTests: XCTestCase {
             container.mainContext.insert(V5SettingsSchemaV8.PowerMember(id: memberID, bookID: bookID, powerID: powerID, characterID: UUID(), title: "舊領袖"))
             try container.mainContext.save()
         }
-        let schema = Schema(versionedSchema: V5SettingsSchemaV12.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV13.self)
         let migrated = try ModelContainer(for: schema, migrationPlan: V5SettingsMigrationPlan.self, configurations: [ModelConfiguration(schema: schema, url: storeURL)])
         let role = try XCTUnwrap(migrated.mainContext.fetch(FetchDescriptor<PowerMemberRole>()).first)
         let power = try XCTUnwrap(migrated.mainContext.fetch(FetchDescriptor<PowerUnit>()).first)
@@ -1424,7 +1424,7 @@ final class V5SettingsTests: XCTestCase {
     }
 
     private func makeMainContainer(at url: URL? = nil) throws -> ModelContainer {
-        let schema = Schema(versionedSchema: V5SettingsSchemaV12.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV13.self)
         let configuration = if let url {
             ModelConfiguration(schema: schema, url: url)
         } else {

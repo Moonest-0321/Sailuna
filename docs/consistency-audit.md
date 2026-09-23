@@ -6,7 +6,7 @@
 
 - 主資料使用 `NovelWriterSchemaV5`；故事規劃使用 `StoryPlanningSchemaV7`，產品版本與 schema 版本分離。
 - 應用建立一個既有主 store 與五個獨立功能 store；V5 settings store 只以 UUID 連結，不遷移主資料。
-- V5 settings schema V12 保存 V11 全部資料，新增平面地圖、版本、placement 與初始化 profile；跨主 store 資料仍只保存 UUID。V1～V11 快照保持不可變。
+- V5 settings schema V13 保存 V12 全部資料，另以可空目標地圖 UUID 記錄來源 placement 的跨層級跳轉；刪目標圖清除來源綁定但保留 Place 與來源 placement。跨主 store 資料仍只保存 UUID。V1～V12 快照保持不可變。
 - V7.2 地圖 PDF 與 placement 分離：每版本 PDF 保存於 `Sailune/Maps/<book>/<map>/<version>.pdf`，切換背景不重設座標；匯入非 4:3 單頁 PDF 時完整等比例補白，白邊也屬於 `4000 × 3000` 座標平面。
 - V5.0「不連接角色、物品、能力等」是第一版歷史邊界；V5.2～V5.6 的成員、資產、生命週期與結構化關係是後續增量能力。長期文件不得把 V5.0 邊界誤寫成目前產品限制。
 - 勢力 WorldTerm 連接由欄位語意限制：宗教只能連「信仰」、政體只能連「制度」；核心／範圍目前不連 WorldTerm，既有欄位只作相容保留，後續改接地點／地圖。
@@ -30,7 +30,7 @@ EPUB 匯出會使用畫面目前顯示的封面：優先直接讀取書籍 UUID 
 - Book／Character／Item／Ability／Node／Timeline／Event 的破壞性操作已透過 `CrossStoreDeletionCoordinator` 協調；Volume／Section 的五秒 Undo 保留，但標記與最終儲存也改由協調服務進入。
 - 啟動與刪除後會以主 store UUID／book 對照冪等修復 V5 settings、ItemCopy 與 AbilityProgress；失效 Node 只清除定位，保留歷史文字。
 
-已提供單檔 `.sailunebackup`，內含六個 SQLite online snapshot、封面、遞迴地圖 PDF、schema manifest 與 SHA-256；還原保留安全相對路徑並拒絕路徑穿越，先建安全備份且可 rollback。沒有地圖的舊備份可還原並清除目前地圖；settings V10／V11 manifest 可交由現行 V12 migration 升級，其他 store schema 仍須完全相符。
+已提供單檔 `.sailunebackup`，內含六個 SQLite online snapshot、封面、遞迴地圖 PDF、schema manifest 與 SHA-256；還原保留安全相對路徑並拒絕路徑穿越，先建安全備份且可 rollback。沒有地圖的舊備份可還原並清除目前地圖；settings V10／V11／V12 manifest 可交由現行 V13 migration 升級，其他 store schema 仍須完全相符。
 
 ## P1：產品宣稱邊界
 

@@ -28,7 +28,7 @@ struct SailuneDataLocations {
     var stores: [(name: String, url: URL, schema: String)] {
         [
             ("main.store", mainStore, "NovelWriterSchemaV5"),
-            ("settings.store", settingsStore, "V5SettingsSchemaV12"),
+            ("settings.store", settingsStore, "V5SettingsSchemaV13"),
             ("item-copies.store", itemCopyStore, "ItemCopySchemaV1"),
             ("item-copy-level-selections.store", itemCopyLevelStore, "ItemCopyLevelSelectionSchemaV1"),
             ("ability-progress.store", abilityProgressStore, "AbilityProgressSchemaV1"),
@@ -270,14 +270,15 @@ enum SailuneBackupService {
         }
     }
 
-    /// V10 and V11 backups remain restorable because the settings store can
-    /// migrate to V12 on the next app launch. Every other schema must match.
+    /// V10–V12 backups remain restorable because the settings store can
+    /// migrate to V13 on the next app launch. Every other schema must match.
     private static func schemasAreRestorable(_ archived: [String: String], expected: [String: String]) -> Bool {
         guard Set(archived.keys) == Set(expected.keys) else { return false }
         for (name, expectedSchema) in expected {
             let archivedSchema = archived[name]
             if name == "settings.store" {
                 guard archivedSchema == expectedSchema
+                    || archivedSchema == "V5SettingsSchemaV12"
                     || archivedSchema == "V5SettingsSchemaV11"
                     || archivedSchema == "V5SettingsSchemaV10"
                 else { return false }

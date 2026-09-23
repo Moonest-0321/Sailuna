@@ -1477,6 +1477,54 @@ final class MapCatalogProfile {
 }
 }
 
+/// V13 keeps every V12 entity except MapPlacement unchanged. A marker can
+/// remember the map opened from that marker without linking map hierarchies.
+enum V5SettingsSchemaV13: VersionedSchema {
+    static var versionIdentifier = Schema.Version(13, 0, 0)
+
+    static var models: [any PersistentModel.Type] {
+        [
+            V5SettingsSchemaV9.BookSidebarSetting.self,
+            V5SettingsSchemaV9.PowerLevel.self,
+            V5SettingsSchemaV9.PowerUnit.self,
+            V5SettingsSchemaV9.PowerSubordination.self,
+            V5SettingsSchemaV9.PowerMember.self,
+            V5SettingsSchemaV9.PowerMemberRole.self,
+            V5SettingsSchemaV9.PowerLifecycleEvent.self,
+            V5SettingsSchemaV9.PowerSuccessionLink.self,
+            V5SettingsSchemaV9.PowerAssetLink.self,
+            V5SettingsSchemaV9.PowerAdvantage.self,
+            V5SettingsSchemaV10.PowerRelation.self,
+            V5SettingsSchemaV12.Place.self,
+            V5SettingsSchemaV9.WorldTerm.self,
+            V5SettingsSchemaV12.BookMap.self,
+            V5SettingsSchemaV12.BookMapVersion.self,
+            MapPlacement.self,
+            V5SettingsSchemaV12.MapCatalogProfile.self
+        ]
+    }
+}
+
+extension V5SettingsSchemaV13 {
+@Model
+final class MapPlacement {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID
+    var mapID: UUID
+    var placeID: UUID
+    var coordinateX: Double
+    var coordinateY: Double
+    /// nil means this marker has not selected a lower-level map yet.
+    var targetMapID: UUID?
+
+    init(id: UUID = UUID(), bookID: UUID, mapID: UUID, placeID: UUID, coordinateX: Double, coordinateY: Double, targetMapID: UUID? = nil) {
+        self.id = id; self.bookID = bookID; self.mapID = mapID; self.placeID = placeID
+        self.coordinateX = coordinateX; self.coordinateY = coordinateY
+        self.targetMapID = targetMapID
+    }
+}
+}
+
 extension V5SettingsSchemaV11 {
 @Model
 final class Place {
@@ -2011,7 +2059,8 @@ enum V5SettingsMigrationPlan: SchemaMigrationPlan {
             V5SettingsSchemaV1.self, V5SettingsSchemaV2.self, V5SettingsSchemaV3.self,
             V5SettingsSchemaV4.self, V5SettingsSchemaV5.self, V5SettingsSchemaV6.self,
             V5SettingsSchemaV7.self, V5SettingsSchemaV8.self, V5SettingsSchemaV9.self,
-            V5SettingsSchemaV10.self, V5SettingsSchemaV11.self, V5SettingsSchemaV12.self
+            V5SettingsSchemaV10.self, V5SettingsSchemaV11.self, V5SettingsSchemaV12.self,
+            V5SettingsSchemaV13.self
         ]
     }
 
@@ -2088,6 +2137,10 @@ enum V5SettingsMigrationPlan: SchemaMigrationPlan {
             .lightweight(
                 fromVersion: V5SettingsSchemaV11.self,
                 toVersion: V5SettingsSchemaV12.self
+            ),
+            .lightweight(
+                fromVersion: V5SettingsSchemaV12.self,
+                toVersion: V5SettingsSchemaV13.self
             )
         ]
     }
@@ -2115,7 +2168,7 @@ typealias PowerRelationKind = V5SettingsSchemaV10.PowerRelationKind
 typealias Place = V5SettingsSchemaV12.Place
 typealias BookMap = V5SettingsSchemaV12.BookMap
 typealias BookMapVersion = V5SettingsSchemaV12.BookMapVersion
-typealias MapPlacement = V5SettingsSchemaV12.MapPlacement
+typealias MapPlacement = V5SettingsSchemaV13.MapPlacement
 typealias MapCatalogProfile = V5SettingsSchemaV12.MapCatalogProfile
 typealias WorldTerm = V5SettingsSchemaV9.WorldTerm
 

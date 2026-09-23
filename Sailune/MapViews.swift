@@ -155,7 +155,9 @@ struct MapWorkspaceView: View {
                     }
                     .labelsHidden()
                     .fixedSize(horizontal: true, vertical: false)
-                    .onChange(of: selectedLevel) { _, _ in selectFirstMap() }
+                    .onChange(of: selectedLevel) { _, _ in
+                        if !visibleMaps.contains(where: { $0.id == selectedMapID }) { selectFirstMap() }
+                    }
 
                     Picker("地圖", selection: Binding(
                         get: { selectedMapID },
@@ -282,6 +284,10 @@ struct MapWorkspaceView: View {
                             onOpenPlaceSettings(placeID)
                         }
                     }
+                },
+                destinationTitle: selectedLevel.destinationLevel.map { "前往\($0.title)地圖" },
+                onNavigate: draft.placeID == nil ? nil : {
+                    try navigateFromMarker(draft)
                 }
             )
         }
@@ -474,6 +480,17 @@ struct MapWorkspaceView: View {
         guard let currentMap else { return }
         do { try settingsStore.updatePlacement(marker.placement, for: marker.place, on: currentMap, coordinate: coordinate) }
         catch { errorMessage = error.localizedDescription }
+    }
+
+    private func navigateFromMarker(_ draft: MapMarkerDraft) throws {
+        guard let currentMap, let placeID = draft.placeID, let placementID = draft.placementID,
+              let place = settingsStore.places(for: book.id).first(where: { $0.id == placeID }),
+              let placement = settingsStore.placements(for: currentMap).first(where: { $0.id == placementID })
+        else { throw MapCatalogError.invalidNavigationSource }
+        let destination = try settingsStore.destinationMap(for: place, placement: placement, on: currentMap)
+        markerDraft = nil
+        selectedLevel = MapLevel(rawValue: destination.levelRawValue) ?? selectedLevel
+        selectMap(destination.id)
     }
 
     private func bootstrapMapCatalog() {
@@ -797,6 +814,8 @@ private struct MapMarkerEditorView: View {
     let onSave: (String, String?, MapCoordinate) -> Void
     let onDelete: (() -> Void)?
     let onOpenSettings: (() -> Void)?
+    let destinationTitle: String?
+    let onNavigate: (() throws -> Void)?
 
     @Environment(\.dismiss) private var dismiss
     @State private var name: String
@@ -804,18 +823,23 @@ private struct MapMarkerEditorView: View {
     @State private var xCoordinate: String
     @State private var yCoordinate: String
     @State private var showingDeleteConfirmation = false
+    @State private var navigationError: String?
     @FocusState private var nameFocused: Bool
 
     init(
         draft: MapMarkerDraft,
         onSave: @escaping (String, String?, MapCoordinate) -> Void,
         onDelete: (() -> Void)? = nil,
-        onOpenSettings: (() -> Void)? = nil
+        onOpenSettings: (() -> Void)? = nil,
+        destinationTitle: String? = nil,
+        onNavigate: (() throws -> Void)? = nil
     ) {
         self.draft = draft
         self.onSave = onSave
         self.onDelete = onDelete
         self.onOpenSettings = onOpenSettings
+        self.destinationTitle = destinationTitle
+        self.onNavigate = onNavigate
         _name = State(initialValue: draft.initialName)
         _placeType = State(initialValue: draft.initialPlaceType)
         _xCoordinate = State(initialValue: draft.initialCoordinate.map { String(Int($0.x.rounded())) } ?? "")
@@ -854,6 +878,23 @@ private struct MapMarkerEditorView: View {
                 .focused($nameFocused)
                 .onSubmit(save)
             TextField("地點類型（例如城市）", text: $placeType)
+
+            if let destinationTitle, let onNavigate {
+                Button(destinationTitle) {
+                    do {
+                        try onNavigate()
+                        dismiss()
+                    } catch {
+                        navigationError = error.localizedDescription
+                    }
+                }
+            }
+
+            if let navigationError {
+                Text(navigationError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
 
             HStack {
                 if onDelete != nil {

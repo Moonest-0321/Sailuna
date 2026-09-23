@@ -7,7 +7,7 @@
 | Store | Schema／主要模型 | 連結方式 |
 |---|---|---|
 | `Sailune-v5.store` | `NovelWriterSchemaV5`：Book、Volume、Section、Character、Ability、Item、Timeline、Node、Event 與舊 Organization 相容型別 | SwiftData relationship；V6.0c 不改此已發布 schema，Book 狀態目前為 transient |
-| `Sailune-v5-settings.store` | `V5SettingsSchemaV12`：V11 全部模型加上 BookMap、BookMapVersion、MapPlacement、MapCatalogProfile | 只以 `bookID` 與穩定 UUID 連結其他 store；地圖與 Place 以 UUID placement 連接；V1～V11 保留為不可變遷移快照 |
+| `Sailune-v5-settings.store` | `V5SettingsSchemaV13`：V12 模型加上 MapPlacement 可空目標地圖 ID | 只以 `bookID` 與穩定 UUID 連結其他 store；地圖與 Place 以 UUID placement 連接；V1～V12 保留為不可變遷移快照 |
 | `Sailune-v5-item-copies.store` | ItemCopy、ItemCopyHolding、ItemCopyHistory | `bookID`、`itemID`、`characterID`、`copyID` |
 | `Sailune-v5-item-copy-level-selections.store` | ItemCopyLevelSelection | `copyID`、`levelID` |
 | `Sailune-v5-ability-progress.store` | AbilityProgressRecord／History | `bookID`、`abilityID`、`characterID`、`nodeID` |
@@ -43,7 +43,7 @@ BookSidebarSetting（bookID）→ 顯示項目、可見性、排序、側邊欄�
 Place（bookID）→ 名稱、其他名稱、類型、簡介、詳細描述、備註、排序、可選 coordinateX／coordinateY
 BookMap（bookID、平面 level、名稱、排序）
 ├─ BookMapVersion（mapID、名稱、排序）→ 對應獨立 PDF 背景
-└─ MapPlacement（mapID、placeID、X、Y）→ 同一 Place 可跨地圖使用不同座標
+└─ MapPlacement（mapID、placeID、X、Y、可空 targetMapID）→ 同一 Place 可跨地圖使用不同座標；每個來源標記可指向下一層級地圖
 WorldTerm（bookID）→ 名稱、其他名稱、分類、簡介、核心定義、運作與表現、限制／差異／例外、世界影響、使用範例、備註、排序
 ```
 

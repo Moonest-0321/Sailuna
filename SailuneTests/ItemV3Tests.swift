@@ -890,7 +890,7 @@ final class ItemV3Tests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: locations.mapsDirectory.path))
     }
 
-    func testV10SettingsBackupManifestRemainsRestorableAfterV12Upgrade() throws {
+    func testV10ThroughV12SettingsBackupManifestsRemainRestorableAfterV13Upgrade() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("SailuneBackupV10ManifestTest-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
@@ -907,14 +907,16 @@ final class ItemV3Tests: XCTestCase {
         )
         var manifest = try XCTUnwrap(archive["manifest"] as? [String: Any])
         var schemas = try XCTUnwrap(manifest["schemas"] as? [String: String])
-        schemas["settings.store"] = "V5SettingsSchemaV10"
-        manifest["schemas"] = schemas
-        archive["manifest"] = manifest
-        try JSONSerialization.data(withJSONObject: archive, options: [.sortedKeys])
-            .write(to: backup, options: .atomic)
-
-        XCTAssertNoThrow(try SailuneBackupService.scheduleRestore(from: backup, locations: locations))
-        XCTAssertTrue(FileManager.default.fileExists(atPath: locations.pendingRestoreURL.path))
+        for version in 10...12 {
+            schemas["settings.store"] = "V5SettingsSchemaV\(version)"
+            manifest["schemas"] = schemas
+            archive["manifest"] = manifest
+            try JSONSerialization.data(withJSONObject: archive, options: [.sortedKeys])
+                .write(to: backup, options: .atomic)
+            XCTAssertNoThrow(try SailuneBackupService.scheduleRestore(from: backup, locations: locations))
+            XCTAssertTrue(FileManager.default.fileExists(atPath: locations.pendingRestoreURL.path))
+            try FileManager.default.removeItem(at: locations.pendingRestoreURL)
+        }
     }
 
     func testDeletingBookImmediatelyRemovesItsCopies() throws {

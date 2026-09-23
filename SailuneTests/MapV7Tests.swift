@@ -115,7 +115,7 @@ final class MapV7Tests: XCTestCase {
     }
 
     func testMovingMapPlaceChangesOnlyItsCoordinatesAndStaysBookScoped() throws {
-        let schema = Schema(versionedSchema: V5SettingsSchemaV12.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV13.self)
         let container = try ModelContainer(
             for: schema,
             migrationPlan: V5SettingsMigrationPlan.self,
@@ -270,7 +270,7 @@ final class MapV7Tests: XCTestCase {
     }
 
     func testDeletingPlacedPlaceKeepsOtherPlacesAndBooks() throws {
-        let schema = Schema(versionedSchema: V5SettingsSchemaV12.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV13.self)
         let container = try ModelContainer(
             for: schema,
             migrationPlan: V5SettingsMigrationPlan.self,
@@ -346,7 +346,7 @@ final class MapV7Tests: XCTestCase {
         }
         BookMapPDFStore.setDirectoryOverrideForTesting(directory)
 
-        let schema = Schema(versionedSchema: V5SettingsSchemaV12.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV13.self)
         let container = try ModelContainer(
             for: schema,
             migrationPlan: V5SettingsMigrationPlan.self,
@@ -385,7 +385,7 @@ final class MapV7Tests: XCTestCase {
     }
 
     func testV12DefaultMapBackfillsLegacyCoordinatesOnlyOnce() throws {
-        let schema = Schema(versionedSchema: V5SettingsSchemaV12.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV13.self)
         let container = try ModelContainer(
             for: schema,
             migrationPlan: V5SettingsMigrationPlan.self,
@@ -431,7 +431,7 @@ final class MapV7Tests: XCTestCase {
             try container.mainContext.save()
         }
 
-        let schema = Schema(versionedSchema: V5SettingsSchemaV12.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV13.self)
         let container = try ModelContainer(
             for: schema,
             migrationPlan: V5SettingsMigrationPlan.self,
@@ -448,7 +448,7 @@ final class MapV7Tests: XCTestCase {
     }
 
     func testSamePlaceCanUseDifferentCoordinatesOnIndependentMaps() throws {
-        let schema = Schema(versionedSchema: V5SettingsSchemaV12.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV13.self)
         let container = try ModelContainer(
             for: schema,
             migrationPlan: V5SettingsMigrationPlan.self,
@@ -476,7 +476,7 @@ final class MapV7Tests: XCTestCase {
     }
 
     func testDeletingMapKeepsPlacesAndDeletingPlaceClearsAllPlacements() throws {
-        let schema = Schema(versionedSchema: V5SettingsSchemaV12.self)
+        let schema = Schema(versionedSchema: V5SettingsSchemaV13.self)
         let container = try ModelContainer(
             for: schema,
             migrationPlan: V5SettingsMigrationPlan.self,
@@ -568,6 +568,90 @@ final class MapV7Tests: XCTestCase {
             using: .jpeg,
             properties: [.compressionFactor: 0.95]
         ))
+    }
+
+    func testMarkerNavigationCreatesThenKeepsBoundMapAfterRename() throws {
+        let schema = Schema(versionedSchema: V5SettingsSchemaV13.self)
+        let container = try ModelContainer(for: schema, migrationPlan: V5SettingsMigrationPlan.self,
+            configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
+        let store = V5SettingsStore(container: container)
+        let bookID = UUID()
+        let province = try store.createMap(bookID: bookID, level: .province, name: "中央省").0
+        let place = try store.createMapPlace(bookID: bookID, map: province, name: "王都", placeType: "城市", coordinate: MapCoordinate(x: 100, y: 200))
+        let placement = try XCTUnwrap(store.placements(for: province).first)
+
+        let city = try store.destinationMap(for: place, placement: placement, on: province)
+        XCTAssertEqual(city.levelRawValue, MapLevel.city.rawValue)
+        XCTAssertEqual(city.name, "王都")
+        XCTAssertEqual(placement.targetMapID, city.id)
+        XCTAssertEqual(store.versions(for: city).count, 1)
+        try store.renameMap(city, to: "新王都")
+        let again = try store.destinationMap(for: place, placement: placement, on: province)
+        XCTAssertEqual(again.id, city.id)
+        XCTAssertEqual(store.maps(for: bookID, level: .city).count, 1)
+
+        let district = try store.createMapPlace(bookID: bookID, map: city, name: "舊城區", placeType: nil, coordinate: MapCoordinate(x: 300, y: 400))
+        let closeUp = try store.destinationMap(for: district, placement: XCTUnwrap(store.placements(for: city).first), on: city)
+        XCTAssertEqual(closeUp.levelRawValue, MapLevel.closeUp.rawValue)
+        XCTAssertThrowsError(try store.destinationMap(for: district, placement: MapPlacement(bookID: bookID, mapID: closeUp.id, placeID: district.id, coordinateX: 1, coordinateY: 1), on: closeUp))
+    }
+
+    func testMarkerNavigationBindsExistingMapAndRebindsAfterDeletion() throws {
+        let schema = Schema(versionedSchema: V5SettingsSchemaV13.self)
+        let container = try ModelContainer(for: schema, migrationPlan: V5SettingsMigrationPlan.self,
+            configurations: [ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)])
+        let store = V5SettingsStore(container: container)
+        let bookID = UUID()
+        let source = try store.createMap(bookID: bookID, level: .overview, name: "總體").0
+        let existing = try store.createMap(bookID: bookID, level: .city, name: "王都").0
+        let place = try store.createMapPlace(bookID: bookID, map: source, name: "王都", placeType: nil, coordinate: MapCoordinate(x: 100, y: 200))
+        let placement = try XCTUnwrap(store.placements(for: source).first)
+
+        XCTAssertEqual(try store.destinationMap(for: place, placement: placement, on: source).id, existing.id)
+        XCTAssertEqual(store.maps(for: bookID, level: .city).count, 1)
+        try store.deleteMap(existing)
+        XCTAssertNil(placement.targetMapID)
+        XCTAssertEqual(store.places(for: bookID).first?.id, place.id)
+        let replacement = try store.destinationMap(for: place, placement: placement, on: source)
+        XCTAssertNotEqual(replacement.id, existing.id)
+        XCTAssertEqual(replacement.name, "王都")
+
+        let otherBook = try store.createMap(bookID: UUID(), level: .city, name: "別書").0
+        placement.targetMapID = otherBook.id
+        try container.mainContext.save()
+        XCTAssertEqual(try store.destinationMap(for: place, placement: placement, on: source).id, replacement.id)
+        XCTAssertThrowsError(try store.destinationMap(for: place, placement: placement, on: otherBook))
+
+        let blank = try store.createMapPlace(bookID: bookID, map: source, name: "   ", placeType: nil, coordinate: MapCoordinate(x: 400, y: 500))
+        let blankPlacement = try XCTUnwrap(store.placements(for: source).first { $0.placeID == blank.id })
+        XCTAssertThrowsError(try store.destinationMap(for: blank, placement: blankPlacement, on: source))
+        XCTAssertEqual(store.maps(for: bookID, level: .city).count, 1)
+    }
+
+    func testV12MapPlacementMigratesToV13WithoutChangingCoordinates() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("Sailune-settings-v13-\(UUID())", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let url = directory.appendingPathComponent("settings.store")
+        let bookID = UUID(), mapID = UUID(), placeID = UUID(), placementID = UUID()
+        do {
+            let oldSchema = Schema(versionedSchema: V5SettingsSchemaV12.self)
+            let old = try ModelContainer(for: oldSchema, configurations: [ModelConfiguration(schema: oldSchema, url: url)])
+            old.mainContext.insert(V5SettingsSchemaV12.BookMap(id: mapID, bookID: bookID, levelRawValue: MapLevel.province.rawValue, name: "中央省"))
+            old.mainContext.insert(V5SettingsSchemaV12.Place(id: placeID, bookID: bookID, name: "王都"))
+            old.mainContext.insert(V5SettingsSchemaV12.MapPlacement(id: placementID, bookID: bookID, mapID: mapID, placeID: placeID, coordinateX: 123, coordinateY: 456))
+            try old.mainContext.save()
+        }
+        let schema = Schema(versionedSchema: V5SettingsSchemaV13.self)
+        let current = try ModelContainer(for: schema, migrationPlan: V5SettingsMigrationPlan.self,
+            configurations: [ModelConfiguration(schema: schema, url: url)])
+        let placements = try current.mainContext.fetch(FetchDescriptor<MapPlacement>())
+        let placement = try XCTUnwrap(placements.first)
+        XCTAssertEqual(placements.count, 1)
+        XCTAssertEqual(placement.id, placementID)
+        XCTAssertEqual(placement.coordinateX, 123)
+        XCTAssertEqual(placement.coordinateY, 456)
+        XCTAssertNil(placement.targetMapID)
     }
 
     private func render(page: PDFPage, size: CGSize) throws -> NSBitmapImageRep {

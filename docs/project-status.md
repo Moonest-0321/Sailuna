@@ -13,18 +13,18 @@
 | 項目 | 現況 |
 |---|---|
 | 已發布版本 | V4.2.1 |
-| 目前開發內容 | V7.2 多地圖平面層級、具體地圖、替代背景版本、map-local placement、V12 遷移與巢狀備份已完成自動驗證；最新建置 UI 冒煙待完成。 |
+| 目前開發內容 | V7.4 跨層級地圖跳轉已加入同名查找／建立、來源標記綁定與 settings V13 遷移；自動驗證完成，最新建置 UI 冒煙待完成。 |
 | 平台 | macOS、SwiftUI、AppKit `NSTextView`、SwiftData |
 | 正文 | 卷次 → 節次；富文字、幕標題、字數、自動儲存、查找替換、TXT／EPUB 匯出 |
 | 正文連動 | 角色使用穩定連結與別名同步；大綱與故事標籤使用文字錨點；物品正文引用仍是名稱掃描 |
 | 故事規劃 | 全書背景、四類故事線、主線階段、正文／手動大綱、橫向敘事畫布、正文跳轉 |
 | 世界時間軸 | 紀元、年月日、主／副軸、事件及設定時間序唯讀投影；可由既有敘事大綱建立事件 |
 | 設定集 | 角色、別名、勢力、能力、外觀、心理、物品、一般／血緣關係、事件與歷史；每本書可管理側邊欄顯示 |
-| 資料 | 一個既有主 store 加五個獨立功能 store；settings V12 保存地圖、版本與 placement，背景 PDF 另存巢狀 `Sailune/Maps`，不遷移主資料 |
-| 自動測試 | 完整 191 項 XCTest 通過、0 失敗／0 跳過；無簽章 Debug build 通過。新增涵蓋 V11→V12、跨地圖座標、刪除語意、版本資產與巢狀備份 |
+| 資料 | 一個既有主 store 加五個獨立功能 store；settings V13 保存地圖、版本、placement 與可空目標地圖綁定，背景 PDF 另存巢狀 `Sailune/Maps`，不遷移主資料 |
+| 自動測試 | 完整 194 項 XCTest 通過、0 失敗／0 跳過；無簽章 Debug 測試建置通過。新增涵蓋 V12→V13、跨層級配對／建立／刪除及 V10～V12 備份 manifest 相容 |
 | 人工驗收 | V7.1／V7.2 已以隔離資料驗證圖片補白、座標輸入、工具列直接建立、刪除確認與取消保留；永久刪除由隔離自動測試驗證。既有 V5 預設與勢力流程已冒煙；V6.4 紀元刪除 alert 取消仍待完成 |
 
-產品版本與資料 schema 版本分開：V7 地圖保持主資料的 `NovelWriterSchemaV5`；設定集使用 `V5SettingsSchemaV12`（保留不可變的 V1～V11 遷移快照），勢力關係、資產及時間序以 UUID 連接既有來源，故事規劃為 `StoryPlanningSchemaV7`。
+產品版本與資料 schema 版本分開：V7 地圖保持主資料的 `NovelWriterSchemaV5`；設定集使用 `V5SettingsSchemaV13`（保留不可變的 V1～V12 遷移快照），勢力關係、資產及時間序以 UUID 連接既有來源，故事規劃為 `StoryPlanningSchemaV7`。
 
 ## 可宣傳與不可宣傳的邊界
 
@@ -37,8 +37,8 @@
 ## 目前工作樹與基線
 
 - 分支：`main`
-- HEAD：`5ed23dc`（2026-09-22，V6.4a）。
-- 工作樹在乾淨基線上加入本次 V7 地圖程式、測試與文件；未操作正式作者資料。
+- HEAD：`bf14ca3`（2026-09-23，V7.3）。
+- 工作樹在乾淨基線上加入本次 V7.4 跨層級地圖跳轉程式、測試與文件；未操作正式作者資料。
 - Xcode 專案設定：Swift 5 language mode、macOS 26.5 deployment target、產品與測試 bundle 版本皆為 1.0（build 1）。
 - 文件入口：`docs/README.md`；實作與文件差異：`docs/consistency-audit.md`。
 
@@ -74,6 +74,12 @@
 - 背景資產改用三層 UUID 路徑；備份遞迴保存並安全還原相對路徑，接受 V10／V11 settings 舊備份。
 - 完整 191 項 XCTest、無簽章 Debug build通過；最新建置實際 UI 操作待冒煙。
 
+## 2026-09-23 V7.4 地點跨層級地圖跳轉
+
+- 既有標記從總體／國家／省份圖可進入城市圖，從城市圖可進入特寫圖。首次依已保存的地點名稱查找同層唯一同名圖，沒有就建立；之後以來源 placement 的目標 map UUID 跳轉。
+- settings V13 以可空 `targetMapID` 擴充 placement；V12→V13 輕量遷移保留原座標與 UUID。刪除目標圖會解除來源綁定，下次可重新配對；Place 與來源標記保留。
+- 26 項地圖專項及完整 194 項 macOS XCTest 通過，Swift parse 與 diff check 通過；隔離資料 UI 冒煙待完成。
+
 ## 2026-09-22 V6.4 紀元管理刪除
 
 - 已完成 `PersistentModelDeletion.deleteEra` 與 `CrossStoreDeletionCoordinator.deleteEra`；所有仍引用目標 Era 的 Node 與 Event 一併刪除，歷史來源解除定位，其他相關 store 依既有 reconcile 路徑清理。
@@ -91,6 +97,7 @@
 
 ## 建議下一步
 
+- 2026-09-23：以隔離資料確認 V7.4 標記表單的「前往城市／特寫地圖」、同名既有圖跳轉、新建圖跳轉與改名後保持綁定。
 - 2026-09-22：以 `/private/tmp` 隔離 store 建立測試書，人工確認 V6.4 紀元列刪除按鈕與影響說明，然後取消 alert；目前未執行刪除。
 - 2026-09-21：V6.3 角色詳情圖示化與追加時間序需求均已完成實作及自動驗證。時間定位依使用者校正為兩個按鈕與彈窗：「敘事版本」選卷／節，「時間序版本」選紀元／年／月／日；事件彙整能力、外觀、心理、物品、關係及直接事件；能力預覽增加目前等級。沿用既有 Node 並在首次編輯時複製共用定位，不改 schema；完整 macOS XCTest與 Debug build通過，隔離資料 UI 驗收待完成。
 - 2026-09-21：V6.3 角色詳情新增多筆所屬勢力，沿用既有 `PowerMember`：每列只顯示勢力名稱與單一職稱，可新增、切換與解除且不可重複；不加入時間序、狀態或多職務 UI，不改 schema。完整 macOS XCTest、Debug build、parse 與 diff check通過。
