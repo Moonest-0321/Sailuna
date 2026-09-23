@@ -4,20 +4,42 @@ import SwiftData
 struct SailuneAIChatSidebarView: View {
     let book: Book
     let model: SailuneAIChatViewModel
-    let onSend: (String, UUID?, SailuneAICharacterTemplateSelection?) -> Bool
+    let onSubmit: (SailuneAISubmission) async -> Bool
     let onClose: () -> Void
 
     @Query(sort: \Character.sortOrder) private var allCharacters: [Character]
+    @Query(sort: \Item.name) private var allItems: [Item]
+    @Query(sort: \CharacterAbility.name) private var allAbilities: [CharacterAbility]
+    @Environment(AbilityProgressStore.self) private var abilityStore
+    @Environment(V5SettingsStore.self) private var settingsStore
     @State private var draft = ""
-    @State private var selectedSectionID: UUID?
+    @State private var selectedScope: SailuneAIReadingScope?
     @State private var characterTemplate: SailuneAICharacterTemplateSelection?
-    @State private var showingSectionPicker = false
     @State private var showingCharacterTemplate = false
+    @State private var showingReadingRange = false
+    @State private var showingSettingAnalysis = false
+    @State private var showingCharacterComparison = false
     @State private var showingConversations = false
     @State private var conversationToDeleteID: UUID?
     @State private var templateSectionID: UUID?
     @State private var templateCharacterID: UUID?
     @State private var templateCategories = Set(SailuneAICharacterCategory.allCases)
+    @State private var scopeLevel: ScopeLevel = .section
+    @State private var scopeSectionID: UUID?
+    @State private var scopeVolumeID: UUID?
+    @State private var settingKind: SailuneAISettingKind = .character
+    @State private var settingTargetID: UUID?
+    @State private var settingDimensions = Set(SailuneAISettingDimension.all(for: .character))
+    @State private var comparisonCharacterID: UUID?
+    @State private var comparisonCategories = Set(SailuneAICharacterCategory.allCases)
+    @State private var isSubmitting = false
+
+    private enum ScopeLevel: String, CaseIterable, Identifiable {
+        case section = "單節"
+        case volume = "單卷"
+        case wholeBook = "全書"
+        var id: Self { self }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -100,19 +122,24 @@ struct SailuneAIChatSidebarView: View {
                 .font(.caption)
                 .padding(.horizontal, 12)
                 .padding(.top, 10)
-            } else if let selectedSectionID {
+            } else if let selectedScope {
                 HStack(spacing: 6) {
-                    Label(selectedSectionTitle(for: selectedSectionID), systemImage: "doc.text")
+                    Label(selectedScopeTitle(selectedScope), systemImage: "doc.text.magnifyingglass")
                         .lineLimit(1)
                     Spacer(minLength: 0)
+                    Button("生成摘要") {
+                        submit(.summary(selectedScope))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(isSubmitting || model.isLoading)
                     Button {
-                        self.selectedSectionID = nil
+                        self.selectedScope = nil
                     } label: {
                         Image(systemName: "xmark")
                     }
                     .buttonStyle(.plain)
-                    .help("移除節次")
-                    .accessibilityLabel("移除已選節次")
+                    .help("移除閱讀範圍")
+                    .accessibilityLabel("移除閱讀範圍")
                 }
                 .font(.caption)
                 .padding(.horizontal, 12)
@@ -121,8 +148,22 @@ struct SailuneAIChatSidebarView: View {
 
             HStack(alignment: .bottom, spacing: 8) {
                 Menu {
-                    Button("加入節次", systemImage: "doc.text") {
-                        showingSectionPicker = true
+                    Button("加入閱讀範圍…", systemImage: "doc.text.magnifyingglass") {
+                        prepareScopeSelection()
+                        showingReadingRange = true
+                    }
+                    Button("設定分析…", systemImage: "list.clipboard") {
+                        prepareScopeSelection()
+                        settingKind = .character
+                        settingTargetID = bookCharacters.first?.id
+                        settingDimensions = Set(SailuneAISettingDimension.all(for: .character))
+                        showingSettingAnalysis = true
+                    }
+                    Button("角色比較…", systemImage: "person.crop.rectangle.stack") {
+                        prepareScopeSelection()
+                        comparisonCharacterID = bookCharacters.first?.id
+                        comparisonCategories = Set(SailuneAICharacterCategory.allCases)
+                        showingCharacterComparison = true
                     }
                     Button("角色資訊整理…", systemImage: "person.text.rectangle") {
                         let sections = BookStructure.orderedSections(in: book)
@@ -139,8 +180,14 @@ struct SailuneAIChatSidebarView: View {
                 .frame(minWidth: 24, minHeight: 24)
                 .help("加入節次或角色整理模板")
                 .accessibilityLabel("加入內容")
-                .popover(isPresented: $showingSectionPicker) {
-                    sectionPicker
+                .sheet(isPresented: $showingReadingRange) {
+                    readingRangeSheet
+                }
+                .sheet(isPresented: $showingSettingAnalysis) {
+                    settingAnalysisSheet
+                }
+                .sheet(isPresented: $showingCharacterComparison) {
+                    characterComparisonSheet
                 }
                 .sheet(isPresented: $showingCharacterTemplate) {
                     characterTemplateSheet
@@ -152,7 +199,7 @@ struct SailuneAIChatSidebarView: View {
                     .onSubmit(send)
                     .accessibilityLabel("輸入給 AI 助手的訊息")
 
-                if model.isLoading {
+                if model.isLoading || isSubmitting {
                     Button { model.cancel() } label: {
                         Image(systemName: "stop.fill")
                     }
@@ -172,8 +219,12 @@ struct SailuneAIChatSidebarView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onChange(of: model.selectedConversationID) { _, _ in
             draft = ""
-            selectedSectionID = nil
+            selectedScope = nil
             characterTemplate = nil
+            showingReadingRange = false
+            showingSettingAnalysis = false
+            showingCharacterComparison = false
+            isSubmitting = false
         }
         .alert("刪除對話？", isPresented: Binding(
             get: { conversationToDeleteID != nil },
@@ -189,7 +240,7 @@ struct SailuneAIChatSidebarView: View {
                 conversationToDeleteID = nil
             }
         } message: {
-            Text("這段對話及其中已加入的節次快照會永久刪除。")
+            Text("這段對話及其中已加入的正文與設定快照會永久刪除。")
         }
     }
 
@@ -292,10 +343,257 @@ struct SailuneAIChatSidebarView: View {
     }
 
     private func send() {
-        if onSend(draft, selectedSectionID, characterTemplate) {
-            draft = ""
-            selectedSectionID = nil
-            characterTemplate = nil
+        if let characterTemplate {
+            submit(.characterSectionTemplate(draft, characterTemplate))
+        } else if let selectedScope {
+            submit(.readQuestion(draft, selectedScope))
+        } else {
+            submit(.chat(draft))
+        }
+    }
+
+    private func submit(_ submission: SailuneAISubmission, onSuccess: @escaping () -> Void = {}) {
+        guard !isSubmitting, !model.isLoading else { return }
+        isSubmitting = true
+        Task { @MainActor in
+            let succeeded = await onSubmit(submission)
+            if succeeded {
+                draft = ""
+                selectedScope = nil
+                characterTemplate = nil
+                onSuccess()
+            }
+            isSubmitting = false
+        }
+    }
+
+    private func prepareScopeSelection() {
+        let sections = BookStructure.orderedSections(in: book)
+        let volumes = BookStructure.orderedVolumes(in: book)
+        scopeLevel = .section
+        scopeSectionID = sections.first?.id
+        scopeVolumeID = volumes.first?.id
+    }
+
+    private var selectedScopeForForm: SailuneAIReadingScope? {
+        switch scopeLevel {
+        case .section:
+            guard let id = scopeSectionID,
+                  BookStructure.orderedSections(in: book).contains(where: { $0.id == id }) else { return nil }
+            return .section(id)
+        case .volume:
+            guard let id = scopeVolumeID,
+                  BookStructure.orderedVolumes(in: book).contains(where: { $0.id == id }) else { return nil }
+            return .volume(id)
+        case .wholeBook:
+            return .wholeBook
+        }
+    }
+
+    private var scopeFields: some View {
+        Group {
+            Picker("閱讀範圍", selection: $scopeLevel) {
+                ForEach(ScopeLevel.allCases) { level in
+                    Text(level.rawValue).tag(level)
+                }
+            }
+            if scopeLevel == .section {
+                Picker("節次", selection: $scopeSectionID) {
+                    Text("選擇節次").tag(Optional<UUID>.none)
+                    ForEach(BookStructure.orderedSections(in: book), id: \.id) { section in
+                        Text(selectedSectionTitle(for: section.id)).tag(Optional(section.id))
+                    }
+                }
+            } else if scopeLevel == .volume {
+                Picker("卷次", selection: $scopeVolumeID) {
+                    Text("選擇卷次").tag(Optional<UUID>.none)
+                    ForEach(BookStructure.orderedVolumes(in: book), id: \.id) { volume in
+                        Text(volume.title.isEmpty ? "未命名卷" : volume.title).tag(Optional(volume.id))
+                    }
+                }
+            } else {
+                LabeledContent("作品", value: book.title.isEmpty ? "未命名作品" : book.title)
+            }
+        }
+    }
+
+    private var readingRangeSheet: some View {
+        NavigationStack {
+            Form {
+                scopeFields
+                if let selectedScopeForForm {
+                    Text("範圍：\(selectedScopeTitle(selectedScopeForForm))")
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .formStyle(.grouped)
+            .navigationTitle("加入閱讀範圍")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { showingReadingRange = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("加入範圍") {
+                        guard let selectedScopeForForm else { return }
+                        selectedScope = selectedScopeForForm
+                        characterTemplate = nil
+                        showingReadingRange = false
+                    }
+                    .disabled(selectedScopeForForm == nil)
+                }
+            }
+        }
+        .frame(minWidth: 390, minHeight: 300)
+    }
+
+    private var settingAnalysisSheet: some View {
+        NavigationStack {
+            Form {
+                scopeFields
+                Picker("設定類型", selection: $settingKind) {
+                    ForEach(SailuneAISettingKind.allCases) { kind in
+                        Text(kind.rawValue).tag(kind)
+                    }
+                }
+                .onChange(of: settingKind) { _, kind in
+                    settingTargetID = analysisTargets(for: kind).first?.id
+                    settingDimensions = Set(SailuneAISettingDimension.all(for: kind))
+                }
+                if analysisTargets(for: settingKind).isEmpty {
+                    Text("目前作品沒有已建立的\(settingKind.rawValue)資料。")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Picker("目標", selection: $settingTargetID) {
+                        Text("選擇既有\(settingKind.rawValue)").tag(Optional<UUID>.none)
+                        ForEach(analysisTargets(for: settingKind)) { target in
+                            Text(target.title).tag(Optional(target.id))
+                        }
+                    }
+                    SwiftUI.Section("分析維度") {
+                        ForEach(SailuneAISettingDimension.all(for: settingKind), id: \.self) { dimension in
+                            Toggle(dimension.title, isOn: Binding(
+                                get: { settingDimensions.contains(dimension) },
+                                set: { isSelected in
+                                    if isSelected { settingDimensions.insert(dimension) }
+                                    else { settingDimensions.remove(dimension) }
+                                }
+                            ))
+                        }
+                    }
+                }
+                if let errorMessage = model.errorMessage {
+                    Text(errorMessage).font(.caption).foregroundStyle(.red)
+                }
+            }
+            .formStyle(.grouped)
+            .navigationTitle("設定分析")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { showingSettingAnalysis = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("開始分析") { runSettingAnalysis() }
+                        .disabled(selectedScopeForForm == nil || settingTargetID == nil || settingDimensions.isEmpty || isSubmitting || model.isLoading)
+                }
+            }
+        }
+        .frame(minWidth: 400, minHeight: 480)
+    }
+
+    private var characterComparisonSheet: some View {
+        NavigationStack {
+            Form {
+                scopeFields
+                if bookCharacters.isEmpty {
+                    Text("目前作品沒有已建立的角色資料。")
+                        .foregroundStyle(.secondary)
+                } else {
+                    Picker("角色", selection: $comparisonCharacterID) {
+                        Text("選擇既有角色").tag(Optional<UUID>.none)
+                        ForEach(bookCharacters, id: \.id) { character in
+                            Text(character.realName.isEmpty ? "未命名角色" : character.realName).tag(Optional(character.id))
+                        }
+                    }
+                    SwiftUI.Section("比較分類") {
+                        ForEach(SailuneAICharacterCategory.allCases) { category in
+                            Toggle(category.rawValue, isOn: Binding(
+                                get: { comparisonCategories.contains(category) },
+                                set: { isSelected in
+                                    if isSelected { comparisonCategories.insert(category) }
+                                    else { comparisonCategories.remove(category) }
+                                }
+                            ))
+                        }
+                    }
+                }
+                if let errorMessage = model.errorMessage {
+                    Text(errorMessage).font(.caption).foregroundStyle(.red)
+                }
+            }
+            .formStyle(.grouped)
+            .navigationTitle("角色比較")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { showingCharacterComparison = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("開始比較") { runCharacterComparison() }
+                        .disabled(selectedScopeForForm == nil || comparisonCharacterID == nil || comparisonCategories.isEmpty || isSubmitting || model.isLoading)
+                }
+            }
+        }
+        .frame(minWidth: 400, minHeight: 480)
+    }
+
+    private struct AnalysisTarget: Identifiable {
+        let id: UUID
+        let title: String
+    }
+
+    private func analysisTargets(for kind: SailuneAISettingKind) -> [AnalysisTarget] {
+        switch kind {
+        case .character:
+            return bookCharacters.map { AnalysisTarget(id: $0.id, title: $0.realName.isEmpty ? "未命名角色" : $0.realName) }
+        case .item:
+            return allItems.filter { $0.book?.id == book.id }.map { AnalysisTarget(id: $0.id, title: $0.name.isEmpty ? "未命名物品" : $0.name) }
+        case .ability:
+            let bookIDs = abilityStore.resolvedBookIDs(for: allAbilities)
+            return allAbilities.filter { bookIDs[$0.id] == book.id }
+                .map { AnalysisTarget(id: $0.id, title: $0.name.isEmpty ? "未命名能力" : $0.name) }
+        case .power:
+            return settingsStore.powers(for: book.id).map { AnalysisTarget(id: $0.id, title: $0.name.isEmpty ? "未命名勢力" : $0.name) }
+        }
+    }
+
+    private func runSettingAnalysis() {
+        guard let scope = selectedScopeForForm, let settingTargetID else { return }
+        let selection = SailuneAISettingAnalysisSelection(
+            scope: scope,
+            kind: settingKind,
+            targetID: settingTargetID,
+            dimensions: settingDimensions
+        )
+        submit(.settingAnalysis(selection)) { showingSettingAnalysis = false }
+    }
+
+    private func runCharacterComparison() {
+        guard let scope = selectedScopeForForm, let comparisonCharacterID else { return }
+        let selection = SailuneAICharacterComparisonSelection(
+            scope: scope,
+            characterID: comparisonCharacterID,
+            categories: comparisonCategories
+        )
+        submit(.characterComparison(selection)) { showingCharacterComparison = false }
+    }
+
+    private func selectedScopeTitle(_ scope: SailuneAIReadingScope) -> String {
+        switch scope {
+        case .section(let id): selectedSectionTitle(for: id)
+        case .volume(let id):
+            BookStructure.orderedVolumes(in: book).first(where: { $0.id == id }).map {
+                $0.title.isEmpty ? "未命名卷" : $0.title
+            } ?? "卷次已不存在"
+        case .wholeBook: book.title.isEmpty ? "全書" : book.title
         }
     }
 
@@ -342,7 +640,6 @@ struct SailuneAIChatSidebarView: View {
                             characterID: templateCharacterID,
                             categories: templateCategories
                         )
-                        selectedSectionID = nil
                         showingCharacterTemplate = false
                     }
                     .disabled(templateSectionID == nil || templateCharacterID == nil || templateCategories.isEmpty)
@@ -362,45 +659,11 @@ struct SailuneAIChatSidebarView: View {
         switch attachment.kind {
         case .characterProfile: "已參照角色設定：\(attachment.title)"
         case .characterSectionTemplate: "角色整理依據：\(attachment.title)"
+        case .readingSummary: "摘要依據：\(attachment.title)"
+        case .settingAnalysis: "設定分析依據：\(attachment.title)"
+        case .characterComparison: "角色比較依據：\(attachment.title)"
         case .section, .none: "已加入：\(attachment.title)"
         }
-    }
-
-    private var sectionPicker: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("選擇節次")
-                .font(.headline)
-            ScrollView {
-                VStack(alignment: .leading, spacing: 12) {
-                    ForEach(BookStructure.orderedVolumes(in: book), id: \.id) { volume in
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text(volume.title.isEmpty ? "未命名卷" : volume.title)
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                            ForEach(BookStructure.orderedSections(in: volume), id: \.id) { section in
-                                Button {
-                                    selectedSectionID = section.id
-                                    characterTemplate = nil
-                                    showingSectionPicker = false
-                                } label: {
-                                    Text(section.title.isEmpty ? "未命名節" : section.title)
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .contentShape(Rectangle())
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-                    if BookStructure.orderedSections(in: book).isEmpty {
-                        Text("尚無節次")
-                            .foregroundStyle(.secondary)
-                    }
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-        }
-        .padding(14)
-        .frame(width: 280, height: 320)
     }
 
     private func selectedSectionTitle(for sectionID: UUID) -> String {

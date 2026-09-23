@@ -5,6 +5,9 @@ struct SailuneAISectionAttachment: Codable, Identifiable {
         case section
         case characterProfile
         case characterSectionTemplate
+        case readingSummary
+        case settingAnalysis
+        case characterComparison
     }
 
     let id: UUID
@@ -18,6 +21,90 @@ struct SailuneAISectionAttachment: Codable, Identifiable {
         self.content = content
         self.kind = kind
     }
+}
+
+enum SailuneAIReadingScope: Hashable {
+    case section(UUID)
+    case volume(UUID)
+    case wholeBook
+}
+
+enum SailuneAISettingKind: String, CaseIterable, Identifiable, Hashable {
+    case character = "角色"
+    case item = "物品"
+    case ability = "能力"
+    case power = "勢力"
+
+    var id: Self { self }
+}
+
+enum SailuneAISettingDimension: Hashable, Identifiable {
+    case character(SailuneAICharacterCategory)
+    case itemProfile
+    case itemHistory
+    case abilityProfile
+    case abilityLevels
+    case abilityHistory
+    case powerProfile
+    case powerMembership
+    case powerRelations
+    case powerGovernment
+    case powerPurpose
+    case powerAssets
+    case powerAdvantages
+    case powerHistory
+
+    var id: String { title }
+
+    var title: String {
+        switch self {
+        case .character(let category): category.rawValue
+        case .itemProfile: "物品資料"
+        case .itemHistory: "物品歷史"
+        case .abilityProfile: "能力資料"
+        case .abilityLevels: "能力等級"
+        case .abilityHistory: "能力歷史"
+        case .powerProfile: "勢力資料"
+        case .powerMembership: "成員與職務"
+        case .powerRelations: "勢力關係"
+        case .powerGovernment: "政治與宗教"
+        case .powerPurpose: "目的"
+        case .powerAssets: "資產"
+        case .powerAdvantages: "優勢"
+        case .powerHistory: "沿革"
+        }
+    }
+
+    static func all(for kind: SailuneAISettingKind) -> [SailuneAISettingDimension] {
+        switch kind {
+        case .character: SailuneAICharacterCategory.allCases.map(Self.character)
+        case .item: [.itemProfile, .itemHistory]
+        case .ability: [.abilityProfile, .abilityLevels, .abilityHistory]
+        case .power: [.powerProfile, .powerMembership, .powerRelations, .powerGovernment, .powerPurpose, .powerAssets, .powerAdvantages, .powerHistory]
+        }
+    }
+}
+
+struct SailuneAISettingAnalysisSelection: Equatable {
+    let scope: SailuneAIReadingScope
+    let kind: SailuneAISettingKind
+    let targetID: UUID
+    let dimensions: Set<SailuneAISettingDimension>
+}
+
+struct SailuneAICharacterComparisonSelection: Equatable {
+    let scope: SailuneAIReadingScope
+    let characterID: UUID
+    let categories: Set<SailuneAICharacterCategory>
+}
+
+enum SailuneAISubmission {
+    case chat(String)
+    case readQuestion(String, SailuneAIReadingScope)
+    case summary(SailuneAIReadingScope)
+    case characterSectionTemplate(String, SailuneAICharacterTemplateSelection)
+    case settingAnalysis(SailuneAISettingAnalysisSelection)
+    case characterComparison(SailuneAICharacterComparisonSelection)
 }
 
 enum SailuneAICharacterCategory: String, CaseIterable, Identifiable, Hashable {

@@ -11,6 +11,7 @@ final class SailuneAIChatViewModel {
     private(set) var isLoading = false
     private(set) var errorMessage: String?
     private var requestTask: Task<Void, Never>?
+    private var preparationID: UUID?
     private var canSave = true
 
     var messages: [SailuneAIMessage] {
@@ -68,6 +69,81 @@ final class SailuneAIChatViewModel {
 
     func send(prompt: String, sectionContent: String) -> Bool {
         send(prompt: prompt, sectionContent: sectionContent, attachment: nil)
+    }
+
+    func sendValidated(prompt: String, attachment: SailuneAISectionAttachment? = nil) async -> Bool {
+        let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedPrompt.isEmpty, !isLoading, canSave,
+              let index = conversations.firstIndex(where: { $0.id == selectedConversationID }) else { return false }
+        if let attachment,
+           attachment.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            errorMessage = "所選範圍沒有可閱讀的內容。"
+            return false
+        }
+
+        let client: SailuneAIClient
+        do {
+            client = try injectedClient ?? SailuneAIClient.configured()
+        } catch {
+            errorMessage = error.localizedDescription
+            return false
+        }
+
+        let conversationID = selectedConversationID
+        let preparationID = UUID()
+        self.preparationID = preparationID
+        isLoading = true
+        errorMessage = nil
+
+        var updated = conversations
+        updated[index].messages.append(SailuneAIMessage(role: .user, text: trimmedPrompt, attachment: attachment))
+        if updated[index].messages.count == 1 {
+            let firstLine = trimmedPrompt.components(separatedBy: .newlines).first ?? trimmedPrompt
+            updated[index].title = String(firstLine.prefix(32))
+        }
+        updated[index].updatedAt = .now
+        updated.sort { $0.updatedAt > $1.updatedAt }
+        guard let candidate = updated.first(where: { $0.id == conversationID }) else { return false }
+        let request = SailuneAIChatRequest(
+            sectionContent: nil,
+            messages: candidate.messages.map {
+                SailuneAIChatRequest.Turn(role: $0.role, text: $0.text, attachment: $0.attachment)
+            }
+        )
+
+        do {
+            try await client.validateContext(request)
+        } catch {
+            guard self.preparationID == preparationID else { return false }
+            self.preparationID = nil
+            isLoading = false
+            errorMessage = error.localizedDescription
+            return false
+        }
+
+        guard self.preparationID == preparationID,
+              selectedConversationID == conversationID,
+              updated.contains(where: { $0.id == conversationID }) else { return false }
+        self.preparationID = nil
+        guard commit(updated, selectedID: conversationID) else {
+            isLoading = false
+            return false
+        }
+        requestTask = Task { [weak self] in
+            do {
+                let reply = try await client.chat(request)
+                guard let self, !Task.isCancelled, self.selectedConversationID == conversationID else { return }
+                self.appendReply(SailuneAIMessage(role: .assistant, text: reply.answer), to: conversationID)
+                self.isLoading = false
+                self.requestTask = nil
+            } catch {
+                guard let self, !Task.isCancelled, self.selectedConversationID == conversationID else { return }
+                self.errorMessage = error.localizedDescription
+                self.isLoading = false
+                self.requestTask = nil
+            }
+        }
+        return true
     }
 
     private func send(prompt: String, sectionContent: String?, attachment: SailuneAISectionAttachment?) -> Bool {
@@ -163,6 +239,7 @@ final class SailuneAIChatViewModel {
     private func stopRequest() {
         requestTask?.cancel()
         requestTask = nil
+        preparationID = nil
         isLoading = false
         errorMessage = nil
     }

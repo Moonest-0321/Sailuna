@@ -90,7 +90,7 @@ enum SailuneAICharacterContextBuilder {
         return !name.isEmpty && text.range(of: name, options: [.caseInsensitive, .diacriticInsensitive]) != nil
     }
 
-    private static func snapshot(
+    static func snapshot(
         character: Character,
         categories: Set<SailuneAICharacterCategory>,
         bookID: UUID,

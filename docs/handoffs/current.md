@@ -2,9 +2,26 @@
 
 > 整體狀態：active
 >
-> 目前階段：設定集資料查詢與章節角色資訊整理（R／U／I approved；程式完成，待人工 UI 驗收）
+> 目前階段：V8.2 AI 閱讀、設定分析與角色一致性比較（R／U／I approved；實作及 Debug build 通過，待隔離資料 UI 驗收）
 >
-> 唯一下一步：以隔離書籍資料人工驗收角色資料查詢、角色整理模板與訊息附件檢視。
+> 唯一下一步：以隔離資料驗收單節／單卷／全書、設定分析、角色比較及超長拒絕流程。
+
+## 2026-09-23 V8.2 AI 閱讀與分析需求起點
+
+- 使用者提出四項能力：單節／單卷／全書閱讀；對既有角色、物品、能力、勢力使用固定模板分析且不可自訂提示；對既有角色和指定正文範圍直接比對出入／矛盾且不可自訂提示；保留純聊天。
+- 已查證現況：V8 使用 Apple 裝置端模型，已支援一節快照、每書對話、角色資料查詢及單節角色分類整理；尚無卷／全書上下文、物品／能力／勢力固定模板分析或角色跨範圍比較。現行超長上下文會報錯，不截短、不轉雲端。
+- 已決定：指定正文範圍後可生成摘要或自由提問；純聊天不附正文。模板分析一次只選一個既有設定目標，可選多個分析維度（角色可含所屬勢力、關係等），選完直接執行。角色比較可選設定分類，正文未提及的設定不列為矛盾。內容過長時提示過長並停止，不自動分段彙整、截短或轉雲端。
+- 已決定的共同邊界：僅讀目前書籍中明確選定的正文範圍與既有設定；結果留在對話，不寫回任何設定或正文。模板分析及角色比較均不提供自訂提示文字。
+- 已決定：分析維度完全沿用角色、物品、能力、勢力目前既有欄位與分類，不自行增加或刪除；作者可選擇多個既有維度。
+- R／U／I approved：使用者分別明確回覆「R」、「U」，並指示「開始實作」。依 I 計畫進行，不改 SwiftData schema；保留每書 AI JSON 舊格式；以 Apple Foundation Models token 計數／context size 預檢整段提示並預留回覆空間；實作含範圍及設定快照、同書 UUID 隔離、固定提示、側欄接線與既定驗證。
+- U 範圍假設：全書範圍包含目前書籍所有卷內非空節次；可於 U 確認時修正。
+- 被否決方案：目前無使用者否決方案。不得新增或刪除既有資料欄位維度；長文本不採自動分段彙整。
+- 工作樹：`main`，起始 HEAD `1589745`；起始工作樹乾淨。此前 AI 角色整理的人工 UI 驗收仍未完成，保留為未驗收事項。
+- 本輪已改：`Sailune/EditorWorkspaceView.swift`、`Sailune/SailuneAICharacterContext.swift`、`Sailune/SailuneAIChatSidebarView.swift`、`Sailune/SailuneAIChatViewModel.swift`、`Sailune/SailuneAIClient.swift`、`Sailune/SailuneAIModels.swift`，新增 `Sailune/SailuneAIAnalysisContext.swift`；文件改 `docs/spec-ai-v8.md`、`docs/project-status.md`、本工作單與交接。未改 SwiftData schema／設定欄位／測試或作者資料；起始工作樹乾淨，無使用者既有未提交程式修改需保留。
+- 實作：單節／單卷／全書正文快照及摘要／範圍提問；角色、物品、能力、勢力既有維度單目標分析；角色分類比較；token 預檢與回覆空間預留；附件可檢視快照，對話 JSON 格式延用舊 Codable 形狀。
+- 驗證：受影響 Swift 檔 `swiftc -frontend -parse`、`git diff --check` 與無簽章 macOS Debug build 通過。沙盒內 build 曾遇 Swift macro server malformed response；主機環境重跑後發現並修正快照作用域、字串 shadowing 與 SwiftUI 回傳值，再成功編譯連結。未新增或執行 XCTest；V8.2 隔離資料 UI 驗收未執行。
+- 未操作正式作者資料。上一工作「角色資料查詢與章節整理」的人工隔離驗收仍待完成。
+- 唯一下一步：以隔離資料驗收 V8.2 四條流程、超長拒絕與訊息附件檢視；目前工作單維持 active。
 
 ## 2026-09-23 設定集資料查詢與章節角色資訊整理需求起點
 

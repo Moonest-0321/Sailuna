@@ -178,7 +178,7 @@ struct EditorWorkspaceView: View {
                     SailuneAIChatSidebarView(
                         book: book,
                         model: aiChatModel,
-                        onSend: sendAIMessage,
+                        onSubmit: submitAISubmission,
                         onClose: { setAIAssistantPresented(false) }
                     )
                     .workspaceFloatingPanel()
@@ -408,30 +408,10 @@ struct EditorWorkspaceView: View {
             + Layout.minimumAISidebarWidth + Layout.inspectorWidth
     }
 
-    private func sendAIMessage(
-        _ prompt: String,
-        sectionID: UUID?,
-        characterTemplate: SailuneAICharacterTemplateSelection?
-    ) -> Bool {
-        if let characterTemplate {
-            bridge.flushPendingSave()
-            guard let section = BookStructure.orderedSections(in: book).first(where: { $0.id == characterTemplate.sectionID }) else {
-                return aiChatModel.rejectUnavailableSection()
-            }
-            do {
-                let attachment = try SailuneAICharacterContextBuilder.templateAttachment(
-                    selection: characterTemplate,
-                    section: section,
-                    bookID: book.id,
-                    context: modelContext
-                )
-                return aiChatModel.send(prompt: prompt, attachment: attachment)
-            } catch {
-                return aiChatModel.reject(error.localizedDescription)
-            }
-        }
-        guard let sectionID else {
-            do {
+    private func submitAISubmission(_ submission: SailuneAISubmission) async -> Bool {
+        do {
+            switch submission {
+            case .chat(let prompt):
                 let attachment = try SailuneAICharacterContextBuilder.queryAttachment(
                     for: prompt,
                     bookID: book.id,
@@ -439,24 +419,61 @@ struct EditorWorkspaceView: View {
                     abilityStore: aiAbilityStore,
                     settingsStore: aiSettingsStore
                 )
-                if let attachment { return aiChatModel.send(prompt: prompt, attachment: attachment) }
-                return aiChatModel.send(prompt: prompt)
-            } catch {
-                return aiChatModel.reject(error.localizedDescription)
+                return await aiChatModel.sendValidated(prompt: prompt, attachment: attachment)
+            case .readQuestion(let prompt, let scope):
+                bridge.flushPendingSave()
+                let attachment = try SailuneAIAnalysisContextBuilder.readingAttachment(scope: scope, book: book)
+                return await aiChatModel.sendValidated(prompt: prompt, attachment: attachment)
+            case .summary(let scope):
+                bridge.flushPendingSave()
+                let attachment = try SailuneAIAnalysisContextBuilder.readingAttachment(
+                    scope: scope,
+                    book: book,
+                    kind: .readingSummary
+                )
+                return await aiChatModel.sendValidated(prompt: "請依附件正文順序生成摘要。", attachment: attachment)
+            case .characterSectionTemplate(let prompt, let selection):
+                bridge.flushPendingSave()
+                guard let section = BookStructure.orderedSections(in: book).first(where: { $0.id == selection.sectionID }) else {
+                    return aiChatModel.rejectUnavailableSection()
+                }
+                let attachment = try SailuneAICharacterContextBuilder.templateAttachment(
+                    selection: selection,
+                    section: section,
+                    bookID: book.id,
+                    context: modelContext
+                )
+                return await aiChatModel.sendValidated(prompt: prompt, attachment: attachment)
+            case .settingAnalysis(let selection):
+                bridge.flushPendingSave()
+                let attachment = try SailuneAIAnalysisContextBuilder.settingAnalysisAttachment(
+                    selection: selection,
+                    book: book,
+                    context: modelContext,
+                    abilityStore: aiAbilityStore,
+                    settingsStore: aiSettingsStore
+                )
+                return await aiChatModel.sendValidated(
+                    prompt: "請依附件中所選既有設定維度與正文範圍分析目標。",
+                    attachment: attachment
+                )
+            case .characterComparison(let selection):
+                bridge.flushPendingSave()
+                let attachment = try SailuneAIAnalysisContextBuilder.characterComparisonAttachment(
+                    selection: selection,
+                    book: book,
+                    context: modelContext,
+                    abilityStore: aiAbilityStore,
+                    settingsStore: aiSettingsStore
+                )
+                return await aiChatModel.sendValidated(
+                    prompt: "請比較附件中角色既有設定與所選正文範圍。",
+                    attachment: attachment
+                )
             }
+        } catch {
+            return aiChatModel.reject(error.localizedDescription)
         }
-        bridge.flushPendingSave()
-        guard let section = BookStructure.orderedSections(in: book).first(where: { $0.id == sectionID }) else {
-            return aiChatModel.rejectUnavailableSection()
-        }
-        let volumeTitle = section.volume.map { $0.title.isEmpty ? "未命名卷" : $0.title } ?? "未命名卷"
-        let sectionTitle = section.title.isEmpty ? "未命名節" : section.title
-        let attachment = SailuneAISectionAttachment(
-            id: section.id,
-            title: "\(volumeTitle)／\(sectionTitle)",
-            content: String(section.content.characters)
-        )
-        return aiChatModel.send(prompt: prompt, attachment: attachment)
     }
 
     private func openSettings(_ destination: EditorSettingsDestination) {
