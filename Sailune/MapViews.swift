@@ -25,6 +25,24 @@ private final class MapScrollWheelMonitor {
     deinit { stop() }
 }
 
+private struct AdaptiveToolbarLabel: View {
+    let title: String
+    let systemImage: String
+
+    init(_ title: String, systemImage: String) {
+        self.title = title
+        self.systemImage = systemImage
+    }
+
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            Label(title, systemImage: systemImage)
+            Image(systemName: systemImage)
+        }
+        .accessibilityLabel(title)
+    }
+}
+
 struct MapWorkspaceView: View {
     let book: Book
     @Binding var viewport: MapViewport
@@ -41,13 +59,73 @@ struct MapWorkspaceView: View {
     @State private var panStartViewport: MapViewport?
     @State private var scrollWheelMonitor = MapScrollWheelMonitor()
     @State private var isDraggingMarker = false
+    @State private var selectedLevel: MapLevel = .overview
+    @State private var selectedMapID: UUID?
+    @State private var selectedVersionID: UUID?
+    @State private var isManagingMaps = false
+    @State private var isManagingVersions = false
+    @State private var viewportsByMapID: [UUID: MapViewport] = [:]
 
-    private var placedPlaces: [Place] {
-        settingsStore.places(for: book.id).filter {
-            guard let x = $0.coordinateX, let y = $0.coordinateY else { return false }
-            return x.isFinite && y.isFinite
-                && (0...MapCoordinate.maximumX).contains(x)
-                && (0...MapCoordinate.maximumY).contains(y)
+    private var visibleMaps: [BookMap] { settingsStore.maps(for: book.id, level: selectedLevel) }
+    private var currentMap: BookMap? { visibleMaps.first { $0.id == selectedMapID } }
+    private var currentVersions: [BookMapVersion] { currentMap.map(settingsStore.versions) ?? [] }
+    private var currentVersion: BookMapVersion? { currentVersions.first { $0.id == selectedVersionID } }
+    private var markerRecords: [MapMarkerRecord] {
+        currentMap.map(settingsStore.markerRecords) ?? []
+    }
+
+    private var zoomControls: some View {
+        HStack(spacing: 8) {
+            Button { adjustZoom(by: -1) } label: {
+                Image(systemName: "minus")
+            }
+            .help("縮小 25%")
+            .disabled(viewport.zoom <= MapViewport.minimumZoom)
+
+            Button { resetViewport() } label: {
+                Text(zoomPercentage)
+                    .monospacedDigit()
+                    .frame(minWidth: 44)
+            }
+            .help("回到 100%")
+
+            Button { adjustZoom(by: 1) } label: {
+                Image(systemName: "plus")
+            }
+            .help("放大 25%")
+            .disabled(viewport.zoom >= MapViewport.maximumZoom)
+
+            Button { resetViewport() } label: {
+                Text("=")
+            }
+            .help("符合視窗")
+            .accessibilityLabel("符合視窗")
+        }
+        .buttonStyle(.bordered)
+        .foregroundStyle(.primary)
+    }
+
+    @ViewBuilder
+    private var layerControls: some View {
+        if selectedLevel.supportsMultipleVersions, let currentMap {
+            HStack(spacing: 3) {
+                Picker("圖層", selection: $selectedVersionID) {
+                    ForEach(settingsStore.versions(for: currentMap)) { version in
+                        Text(version.name).tag(Optional(version.id))
+                    }
+                }
+                .labelsHidden()
+                .frame(minWidth: 110, maxWidth: 160)
+                .onChange(of: selectedVersionID) { _, _ in reloadMap() }
+
+                Button { isManagingVersions = true } label: {
+                    Image(systemName: "square.stack.3d.up")
+                }
+                .help("管理圖層")
+                .accessibilityLabel("管理圖層")
+            }
+            .buttonStyle(.bordered)
+            .foregroundStyle(.primary)
         }
     }
 
@@ -61,33 +139,47 @@ struct MapWorkspaceView: View {
                 } label: {
                     Label("匯出地圖 PDF", systemImage: "square.and.arrow.up")
                 }
+                .help("匯出地圖 PDF")
 
                 Button { isImporting = true } label: {
-                    Label("匯入地圖", systemImage: "square.and.arrow.down")
+                    AdaptiveToolbarLabel("匯入地圖", systemImage: "square.and.arrow.down")
+                }
+                .help("匯入地圖")
+                .disabled(currentMap == nil || currentVersion == nil)
+
+                Spacer(minLength: 12)
+
+                HStack(spacing: 2) {
+                    Picker("層級", selection: $selectedLevel) {
+                        ForEach(MapLevel.allCases) { level in Text(level.title).tag(level) }
+                    }
+                    .labelsHidden()
+                    .fixedSize(horizontal: true, vertical: false)
+                    .onChange(of: selectedLevel) { _, _ in selectFirstMap() }
+
+                    Picker("地圖", selection: Binding(
+                        get: { selectedMapID },
+                        set: { selectMap($0) }
+                    )) {
+                        if visibleMaps.isEmpty { Text("尚無地圖").tag(UUID?.none) }
+                        ForEach(visibleMaps) { map in Text(map.name).tag(Optional(map.id)) }
+                    }
+                    .labelsHidden()
+                    .fixedSize(horizontal: true, vertical: false)
+
+                    Button { isManagingMaps = true } label: {
+                        Image(systemName: "square.stack.3d.up")
+                    }
+                    .help("管理地圖")
+                    .accessibilityLabel("管理地圖")
                 }
 
                 Button { markerDraft = MapMarkerDraft() } label: {
-                    Label("輸入座標", systemImage: "number")
+                    Image(systemName: "mappin")
                 }
-                Spacer()
-                Button { adjustZoom(by: -1) } label: {
-                    Image(systemName: "minus")
-                }
-                .help("縮小 25%")
-                .disabled(viewport.zoom <= MapViewport.minimumZoom)
-                Button { resetViewport() } label: {
-                    Text(zoomPercentage)
-                        .monospacedDigit()
-                        .frame(minWidth: 44)
-                }
-                .help("回到 100%")
-                Button { adjustZoom(by: 1) } label: {
-                    Image(systemName: "plus")
-                }
-                .help("放大 25%")
-                .disabled(viewport.zoom >= MapViewport.maximumZoom)
-                Button("符合視窗") { resetViewport() }
-                    .help("顯示完整地圖")
+                .help("輸入座標")
+                .accessibilityLabel("輸入座標")
+                .disabled(currentMap == nil)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -105,40 +197,44 @@ struct MapWorkspaceView: View {
                 ZStack(alignment: .topLeading) {
                     Color(nsColor: .windowBackgroundColor)
 
-                    MapSurfaceView(
-                        pdfData: pdfData,
-                        places: placedPlaces,
-                        zoom: viewport.zoom,
-                        selectedPlaceID: markerDraft?.placeID,
-                        onCreateMarker: { coordinate in
-                            markerDraft = MapMarkerDraft(coordinate: coordinate)
-                        },
-                        onEditMarker: { place, coordinate in
-                            markerDraft = MapMarkerDraft(place: place, coordinate: coordinate)
-                        },
-                        onMoveMarker: moveMarker,
-                        onMarkerDragChanged: { isDragging in
-                            isDraggingMarker = isDragging
-                        }
-                    )
-                    .frame(width: mapRect.width, height: mapRect.height)
-                    .offset(
-                        x: mapRect.minX - viewportRect.minX,
-                        y: mapRect.minY - viewportRect.minY
-                    )
-                }
-                .frame(width: viewportRect.width, height: viewportRect.height, alignment: .topLeading)
-                .clipShape(Rectangle())
-                // Visual clipping does not constrain SwiftUI hit testing. Keep the
-                // enlarged map content from receiving clicks in the toolbar/letterbox.
-                .contentShape(.interaction, Rectangle())
-                .overlay(Rectangle().stroke(.primary.opacity(0.55), lineWidth: 1))
-                .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
-                .position(x: viewportRect.midX, y: viewportRect.midY)
-                .simultaneousGesture(panGesture(in: availableBounds))
-                .simultaneousGesture(magnifyGesture(in: availableBounds))
-                .onHover { isInside in
-                    scrollWheelMonitor.isPointerInside = isInside
+                    ZStack(alignment: .topLeading) {
+                        Color(nsColor: .windowBackgroundColor)
+
+                        MapSurfaceView(
+                            pdfData: pdfData,
+                            markers: markerRecords,
+                            zoom: viewport.zoom,
+                            selectedPlaceID: markerDraft?.placeID,
+                            onCreateMarker: { coordinate in
+                                markerDraft = MapMarkerDraft(coordinate: coordinate)
+                            },
+                            onEditMarker: { marker in
+                                markerDraft = MapMarkerDraft(marker: marker)
+                            },
+                            onMoveMarker: moveMarker,
+                            onMarkerDragChanged: { isDragging in
+                                isDraggingMarker = isDragging
+                            }
+                        )
+                        .frame(width: mapRect.width, height: mapRect.height)
+                        .offset(
+                            x: mapRect.minX - viewportRect.minX,
+                            y: mapRect.minY - viewportRect.minY
+                        )
+                    }
+                    .frame(width: viewportRect.width, height: viewportRect.height, alignment: .topLeading)
+                    .clipShape(Rectangle())
+                    // Visual clipping does not constrain SwiftUI hit testing. Keep the
+                    // enlarged map content from receiving clicks in the toolbar/letterbox.
+                    .contentShape(.interaction, Rectangle())
+                    .overlay(Rectangle().stroke(.primary.opacity(0.55), lineWidth: 1))
+                    .shadow(color: .black.opacity(0.12), radius: 8, y: 3)
+                    .position(x: viewportRect.midX, y: viewportRect.midY)
+                    .simultaneousGesture(panGesture(in: availableBounds))
+                    .simultaneousGesture(magnifyGesture(in: availableBounds))
+                    .onHover { isInside in
+                        scrollWheelMonitor.isPointerInside = isInside
+                    }
                 }
             }
             .contentShape(.interaction, Rectangle())
@@ -151,6 +247,17 @@ struct MapWorkspaceView: View {
                 viewportSize = size
                 constrainViewport(to: availableBounds(for: size))
             }
+
+            Divider()
+
+            HStack {
+                zoomControls
+                Spacer()
+                layerControls
+            }
+            .padding(.horizontal, 16)
+            .frame(height: 60)
+            .background(Color(nsColor: .windowBackgroundColor))
         }
         .fileImporter(
             isPresented: $isImporting,
@@ -178,6 +285,23 @@ struct MapWorkspaceView: View {
                 }
             )
         }
+        .sheet(isPresented: $isManagingMaps) {
+            MapManagementView(
+                bookID: book.id,
+                selectedLevel: $selectedLevel,
+                selectedMapID: $selectedMapID,
+                onSelectionChanged: synchronizeSelection
+            )
+        }
+        .sheet(isPresented: $isManagingVersions) {
+            if let currentMap {
+                MapVersionManagementView(
+                    map: currentMap,
+                    selectedVersionID: $selectedVersionID,
+                    onSelectionChanged: synchronizeVersionSelection
+                )
+            }
+        }
         .alert("地圖處理失敗", isPresented: Binding(
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
@@ -186,7 +310,7 @@ struct MapWorkspaceView: View {
         } message: {
             Text(errorMessage ?? "未知錯誤")
         }
-        .onAppear(perform: reloadMap)
+        .onAppear(perform: bootstrapMapCatalog)
         .onAppear {
             scrollWheelMonitor.start { delta, modifiers in
                 panWithScrollWheel(delta, modifiers: modifiers)
@@ -299,7 +423,9 @@ struct MapWorkspaceView: View {
             pdfData = try BookMapPDFStore.saveImportedMap(
                 sourceData,
                 contentType: contentType,
-                forID: book.id
+                bookID: book.id,
+                mapID: try requireCurrentMap().id,
+                versionID: try requireCurrentVersion().id
             )
         } catch {
             if (error as NSError).code != NSUserCancelledError {
@@ -310,7 +436,8 @@ struct MapWorkspaceView: View {
 
     private func reloadMap() {
         do {
-            pdfData = try BookMapPDFStore.pdfData(forID: book.id)
+            guard let currentMap, let currentVersion else { pdfData = nil; return }
+            pdfData = try BookMapPDFStore.pdfData(bookID: book.id, mapID: currentMap.id, versionID: currentVersion.id)
         } catch {
             pdfData = nil
             errorMessage = error.localizedDescription
@@ -323,23 +450,16 @@ struct MapWorkspaceView: View {
         placeType: String?,
         coordinate: MapCoordinate
     ) {
-        if let placeID = draft.placeID,
-           let place = settingsStore.places(for: book.id).first(where: { $0.id == placeID }) {
-            settingsStore.updateMapPlace(
-                place,
-                bookID: book.id,
-                name: name,
-                placeType: placeType,
-                coordinate: coordinate
-            )
-        } else {
-            settingsStore.createMapPlace(
-                bookID: book.id,
-                name: name,
-                placeType: placeType,
-                coordinate: coordinate
-            )
-        }
+        guard let currentMap else { return }
+        do {
+            if let placeID = draft.placeID, let placementID = draft.placementID,
+               let place = settingsStore.places(for: book.id).first(where: { $0.id == placeID }),
+               let placement = settingsStore.placements(for: currentMap).first(where: { $0.id == placementID }) {
+                try settingsStore.updateMapPlace(place, placement: placement, map: currentMap, name: name, placeType: placeType, coordinate: coordinate)
+            } else {
+                try settingsStore.createMapPlace(bookID: book.id, map: currentMap, name: name, placeType: placeType, coordinate: coordinate)
+            }
+        } catch { errorMessage = error.localizedDescription }
     }
 
     private func deleteMarker(_ draft: MapMarkerDraft) {
@@ -350,8 +470,54 @@ struct MapWorkspaceView: View {
         settingsStore.deletePlace(place, bookID: book.id)
     }
 
-    private func moveMarker(_ place: Place, to coordinate: MapCoordinate) {
-        settingsStore.updateMapPlaceCoordinate(place, bookID: book.id, coordinate: coordinate)
+    private func moveMarker(_ marker: MapMarkerRecord, to coordinate: MapCoordinate) {
+        guard let currentMap else { return }
+        do { try settingsStore.updatePlacement(marker.placement, for: marker.place, on: currentMap, coordinate: coordinate) }
+        catch { errorMessage = error.localizedDescription }
+    }
+
+    private func bootstrapMapCatalog() {
+        do {
+            guard let (map, version) = try settingsStore.ensureDefaultMap(for: book.id) else {
+                selectedMapID = nil; selectedVersionID = nil; pdfData = nil; return
+            }
+            selectedLevel = MapLevel(rawValue: map.levelRawValue) ?? .overview
+            selectedMapID = map.id; selectedVersionID = version.id
+            reloadMap()
+        } catch { errorMessage = error.localizedDescription }
+    }
+
+    private func selectFirstMap() {
+        selectMap(visibleMaps.first?.id)
+    }
+
+    private func selectMap(_ mapID: UUID?) {
+        if let selectedMapID { viewportsByMapID[selectedMapID] = viewport }
+        selectedMapID = mapID
+        if let mapID { viewport = viewportsByMapID[mapID] ?? MapViewport() }
+        synchronizeVersionSelection()
+    }
+
+    private func synchronizeSelection() {
+        if let map = settingsStore.maps(for: book.id).first(where: { $0.id == selectedMapID }) {
+            selectedLevel = MapLevel(rawValue: map.levelRawValue) ?? selectedLevel
+            selectMap(map.id)
+        } else { selectFirstMap() }
+    }
+
+    private func synchronizeVersionSelection() {
+        guard let currentMap else { selectedVersionID = nil; pdfData = nil; return }
+        let versions = settingsStore.versions(for: currentMap)
+        if !versions.contains(where: { $0.id == selectedVersionID }) { selectedVersionID = versions.first?.id }
+        reloadMap()
+    }
+
+    private func requireCurrentMap() throws -> BookMap {
+        guard let currentMap else { throw MapCatalogError.invalidBook }; return currentMap
+    }
+
+    private func requireCurrentVersion() throws -> BookMapVersion {
+        guard let currentVersion else { throw MapCatalogError.invalidBook }; return currentVersion
     }
 
     private func sanitizedFilename(_ name: String) -> String {
@@ -364,12 +530,12 @@ struct MapWorkspaceView: View {
 
 private struct MapSurfaceView: View {
     let pdfData: Data?
-    let places: [Place]
+    let markers: [MapMarkerRecord]
     let zoom: CGFloat
     let selectedPlaceID: UUID?
     let onCreateMarker: (MapCoordinate) -> Void
-    let onEditMarker: (Place, MapCoordinate) -> Void
-    let onMoveMarker: (Place, MapCoordinate) -> Void
+    let onEditMarker: (MapMarkerRecord) -> Void
+    let onMoveMarker: (MapMarkerRecord, MapCoordinate) -> Void
     let onMarkerDragChanged: (Bool) -> Void
 
     var body: some View {
@@ -381,7 +547,7 @@ private struct MapSurfaceView: View {
                     if let pdfData {
                         MapPDFPageView(data: pdfData)
                     } else {
-                        Color.white
+                        Color(red: 0.72, green: 0.72, blue: 0.72)
                     }
                 }
                 .contentShape(Rectangle())
@@ -398,23 +564,21 @@ private struct MapSurfaceView: View {
                 MapCoordinateOverlay()
                     .allowsHitTesting(false)
 
-                ForEach(places) { place in
-                    if let x = place.coordinateX, let y = place.coordinateY {
-                        let coordinate = MapCoordinate(x: x, y: y)
-                        let point = MapCoordinateTransform.viewPoint(for: coordinate, in: mapRect)
-                        MapMarkerView(
-                            place: place,
-                            coordinate: coordinate,
-                            point: point,
-                            mapRect: mapRect,
-                            zoom: zoom,
-                            isSelected: selectedPlaceID == place.id,
-                            onOpen: { onEditMarker(place, coordinate) },
-                            onMove: { onMoveMarker(place, $0) },
-                            onDragChanged: onMarkerDragChanged
-                        )
-                        .help(markerHelp(for: place, coordinate: coordinate))
-                    }
+                ForEach(markers) { marker in
+                    let coordinate = marker.coordinate
+                    let point = MapCoordinateTransform.viewPoint(for: coordinate, in: mapRect)
+                    MapMarkerView(
+                        place: marker.place,
+                        coordinate: coordinate,
+                        point: point,
+                        mapRect: mapRect,
+                        zoom: zoom,
+                        isSelected: selectedPlaceID == marker.place.id,
+                        onOpen: { onEditMarker(marker) },
+                        onMove: { onMoveMarker(marker, $0) },
+                        onDragChanged: onMarkerDragChanged
+                    )
+                    .help(markerHelp(for: marker.place, coordinate: coordinate))
                 }
             }
         }
@@ -598,12 +762,14 @@ private struct MapCoordinateOverlay: View {
 private struct MapMarkerDraft: Identifiable {
     let id = UUID()
     let placeID: UUID?
+    let placementID: UUID?
     let initialCoordinate: MapCoordinate?
     let initialName: String
     let initialPlaceType: String
 
     init() {
         placeID = nil
+        placementID = nil
         initialCoordinate = nil
         initialName = ""
         initialPlaceType = "城市"
@@ -611,16 +777,18 @@ private struct MapMarkerDraft: Identifiable {
 
     init(coordinate: MapCoordinate) {
         placeID = nil
+        placementID = nil
         initialCoordinate = coordinate
         initialName = ""
         initialPlaceType = "城市"
     }
 
-    init(place: Place, coordinate: MapCoordinate) {
-        placeID = place.id
-        initialCoordinate = coordinate
-        initialName = place.name
-        initialPlaceType = place.placeType ?? ""
+    init(marker: MapMarkerRecord) {
+        placeID = marker.place.id
+        placementID = marker.placement.id
+        initialCoordinate = marker.coordinate
+        initialName = marker.place.name
+        initialPlaceType = marker.place.placeType ?? ""
     }
 }
 

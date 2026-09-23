@@ -24,7 +24,7 @@ ContentView（書櫃）
 └─ BookOverviewView（書籍總覽、卷節、背景）
    └─ EditorWorkspaceView
       ├─ 正文工作區 + 設定集／右側大綱
-      ├─ MapWorkspaceView（單張 PDF 背景、固定座標、Place 點位）
+      ├─ MapWorkspaceView（平面層級、多張具體地圖、替代背景版本、map-local placement）
       └─ BookPlanningWorkspaceView
          ├─ 敘事大綱畫布
          └─ 世界時間軸
@@ -36,7 +36,7 @@ ContentView（書櫃）
 - 主資料模型：`Book`、`Volume`、`Section`、`Character`、`Item`、`Timeline`、`Node`、`Event` 等。
 - `BookOutline.swift`／`StoryTag.swift`：故事規劃 schema V1–V6、文字錨點、故事線與階段、排序投影和 store 操作。
 - `EditorWorkspaceView`：讓正文與寬版大綱在同一書籍視窗中保留各自生命週期；切換前提交待存正文。
-- `MapPDFGenerator`／`BookMapPDFStore`／`MapWorkspaceView`：產生 4:3 模板、將單頁 PDF 完整補白正規化、保存每書背景，並以同一內容矩形疊加座標與 Place 標記。
+- `MapCatalog`／`MapPDFGenerator`／`BookMapPDFStore`／`MapWorkspaceView`：管理平面地圖分類、替代背景版本與 map-local placement，產生 4:3 模板、正規化輸入並以同一內容矩形疊加座標與標記。
 - `RichEditorView`／`EditorBridge`：文字輸入、CJK composition、選取與跨節跳轉、格式、右鍵工具、角色連結及規劃錨點協調。
 - `InspectorViews`、`CharacterSectionViews`、`RelationshipWorkspace`：設定集與角色／物品／能力／勢力／關係管理；V5 勢力不與角色或正文連結。
 - `OutlineViews`：故事背景、敘事畫布、故事線／階段／大綱項目管理，以及「由大綱加入世界時間軸」。

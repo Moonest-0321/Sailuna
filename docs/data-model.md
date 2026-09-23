@@ -1,19 +1,19 @@
 # 資料模型與關聯
 
-> 依 2026-09-22 現行 schema、store 與 V7 單張地圖實作整理。
+> 依 2026-09-23 現行 schema、store 與 V7.2 多地圖實作整理。
 
 ## Store 邊界
 
 | Store | Schema／主要模型 | 連結方式 |
 |---|---|---|
 | `Sailune-v5.store` | `NovelWriterSchemaV5`：Book、Volume、Section、Character、Ability、Item、Timeline、Node、Event 與舊 Organization 相容型別 | SwiftData relationship；V6.0c 不改此已發布 schema，Book 狀態目前為 transient |
-| `Sailune-v5-settings.store` | `V5SettingsSchemaV11`：V10 全部模型加上具可選座標的 Place | 只以 `bookID` 與穩定 UUID 連結其他 store；時間序以 `nodeID` 指向主 store Node；V1～V10 保留為不可變遷移快照 |
+| `Sailune-v5-settings.store` | `V5SettingsSchemaV12`：V11 全部模型加上 BookMap、BookMapVersion、MapPlacement、MapCatalogProfile | 只以 `bookID` 與穩定 UUID 連結其他 store；地圖與 Place 以 UUID placement 連接；V1～V11 保留為不可變遷移快照 |
 | `Sailune-v5-item-copies.store` | ItemCopy、ItemCopyHolding、ItemCopyHistory | `bookID`、`itemID`、`characterID`、`copyID` |
 | `Sailune-v5-item-copy-level-selections.store` | ItemCopyLevelSelection | `copyID`、`levelID` |
 | `Sailune-v5-ability-progress.store` | AbilityProgressRecord／History | `bookID`、`abilityID`、`characterID`、`nodeID` |
 | `Sailune-v5-story-planning.store` | `StoryPlanningSchemaV7`：V6 全部模型加上 PlanningRecordMetadata | `bookID`、`sectionID`、`eventID`、`outlineItemID`、來源種類與來源 UUID 等 |
 
-Book 封面與單張地圖背景不在 SwiftData，分別存於 Application Support 的 `Sailune/Covers` PNG 與 `Sailune/Maps/<bookID>.pdf`。
+Book 封面與地圖背景不在 SwiftData，分別存於 Application Support 的 `Sailune/Covers` PNG 與 `Sailune/Maps/<bookID>/<mapID>/<versionID>.pdf`。
 
 ## 主關聯
 
@@ -41,6 +41,9 @@ PowerLevel（bookID、由高至低 sortOrder）
 
 BookSidebarSetting（bookID）→ 顯示項目、可見性、排序、側邊欄目錄版本
 Place（bookID）→ 名稱、其他名稱、類型、簡介、詳細描述、備註、排序、可選 coordinateX／coordinateY
+BookMap（bookID、平面 level、名稱、排序）
+├─ BookMapVersion（mapID、名稱、排序）→ 對應獨立 PDF 背景
+└─ MapPlacement（mapID、placeID、X、Y）→ 同一 Place 可跨地圖使用不同座標
 WorldTerm（bookID）→ 名稱、其他名稱、分類、簡介、核心定義、運作與表現、限制／差異／例外、世界影響、使用範例、備註、排序
 ```
 
@@ -60,7 +63,7 @@ TimelineEventCardMetadata ─ eventID + 可選 outlineItemID
 ## 重要不變條件
 
 - UUID 是跨 store、遷移與回填的穩定識別；`sortOrder` 只負責同父層顯示順序。
-- V7 每本書只有一張固定 `4000 × 3000` 地圖；Place 只有在 X／Y 兩個座標皆存在且合法時才顯示為標記。PDF 是可替換背景，替換或移除不改動 Place 座標。
+- V7.2 每張具體地圖都是固定 `4000 × 3000`；MapPlacement 的 X／Y 合法時才顯示。背景版本只是替代 PDF，切換或移除不改 placement。Place 舊座標只作 V11 遷移來源。
 - 同一本書最多一條主線；主線可有多個階段。階段只屬主線。
 - 一筆大綱項目最多一個正文來源；手動項目可沒有來源。
 - 只有有正文來源的大綱項目可呈現「已完成」；手動項目使用背景、草稿或預定。
@@ -85,6 +88,7 @@ TimelineEventCardMetadata ─ eventID + 可選 outlineItemID
 - `CrossStoreDeletionCoordinator` 對 Book、Event、Node、Era、Timeline 採「先保存主 store，再清理 StoryPlanning」；附屬清理失敗可稍後冪等重試。
 - V6.4 刪除 Era 時，限按目前 Book 的所有 Timeline 找出仍關聯的 Node，沿用 Node 刪除語意並在同一次主 store save 刪除這些 Node 與 Era；Node 的 Event 隨之刪除。歷史來源保留但解除 Node 定位，StoryPlanning metadata、ItemCopy、AbilityProgress 與 V5 settings 的失效 Node UUID 在主 store 保存後清理，失敗可由既有修復重試。每本書的 Era／Timeline／設定獨立，不存在跨書共享；被刪 Era 的 `Book.currentEra` 依 nullify 解除。
 - 刪除勢力會刪除以它為端點的直接隸屬；已被勢力使用的層級不可刪除。刪除書籍時會一併刪除該書的層級與 settings 資料。
+- 刪除具體地圖會刪除其版本與 placement，但保留 Place；刪除 Place 會清除所有地圖中的對應 placement。刪除版本不影響 placement。
 - 啟動與時間軸載入會按現存 Book／Event UUID 清除孤立規劃資料；缺 OutlineItem 不會使 Event 或 metadata 被刪除。
 - 現行 UI 仍有 Volume／Section 與角色事件直接刪除入口，未完整套用上述集中語意；詳見 `consistency-audit.md`。
 

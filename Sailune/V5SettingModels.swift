@@ -1370,6 +1370,113 @@ enum V5SettingsSchemaV11: VersionedSchema {
     }
 }
 
+/// V12 separates the reusable Place notebook entry from its position on any
+/// particular map. The legacy coordinate fields remain in this snapshot only
+/// so V11 stores can migrate without discarding their single-map positions.
+enum V5SettingsSchemaV12: VersionedSchema {
+    static var versionIdentifier = Schema.Version(12, 0, 0)
+
+    static var models: [any PersistentModel.Type] {
+        [
+            V5SettingsSchemaV9.BookSidebarSetting.self,
+            V5SettingsSchemaV9.PowerLevel.self,
+            V5SettingsSchemaV9.PowerUnit.self,
+            V5SettingsSchemaV9.PowerSubordination.self,
+            V5SettingsSchemaV9.PowerMember.self,
+            V5SettingsSchemaV9.PowerMemberRole.self,
+            V5SettingsSchemaV9.PowerLifecycleEvent.self,
+            V5SettingsSchemaV9.PowerSuccessionLink.self,
+            V5SettingsSchemaV9.PowerAssetLink.self,
+            V5SettingsSchemaV9.PowerAdvantage.self,
+            V5SettingsSchemaV10.PowerRelation.self,
+            Place.self,
+            V5SettingsSchemaV9.WorldTerm.self,
+            BookMap.self,
+            BookMapVersion.self,
+            MapPlacement.self,
+            MapCatalogProfile.self
+        ]
+    }
+}
+
+extension V5SettingsSchemaV12 {
+@Model
+final class Place {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID
+    var name: String
+    var alternateNames: String?
+    var placeType: String?
+    var placeDescription: String
+    var detailedDescription: String?
+    var notes: String?
+    var sortOrder: Int
+    var coordinateX: Double?
+    var coordinateY: Double?
+
+    init(id: UUID = UUID(), bookID: UUID, name: String = "", alternateNames: String? = nil, placeType: String? = nil, placeDescription: String = "", detailedDescription: String? = nil, notes: String? = nil, sortOrder: Int = 0, coordinateX: Double? = nil, coordinateY: Double? = nil) {
+        self.id = id; self.bookID = bookID; self.name = name
+        self.alternateNames = alternateNames; self.placeType = placeType
+        self.placeDescription = placeDescription; self.detailedDescription = detailedDescription
+        self.notes = notes; self.sortOrder = sortOrder
+        self.coordinateX = coordinateX; self.coordinateY = coordinateY
+    }
+}
+
+@Model
+final class BookMap {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID
+    var levelRawValue: String
+    var name: String
+    var sortOrder: Int
+
+    init(id: UUID = UUID(), bookID: UUID, levelRawValue: String, name: String, sortOrder: Int = 0) {
+        self.id = id; self.bookID = bookID; self.levelRawValue = levelRawValue
+        self.name = name; self.sortOrder = sortOrder
+    }
+}
+
+@Model
+final class BookMapVersion {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID
+    var mapID: UUID
+    var name: String
+    var sortOrder: Int
+
+    init(id: UUID = UUID(), bookID: UUID, mapID: UUID, name: String, sortOrder: Int = 0) {
+        self.id = id; self.bookID = bookID; self.mapID = mapID
+        self.name = name; self.sortOrder = sortOrder
+    }
+}
+
+@Model
+final class MapPlacement {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID
+    var mapID: UUID
+    var placeID: UUID
+    var coordinateX: Double
+    var coordinateY: Double
+
+    init(id: UUID = UUID(), bookID: UUID, mapID: UUID, placeID: UUID, coordinateX: Double, coordinateY: Double) {
+        self.id = id; self.bookID = bookID; self.mapID = mapID; self.placeID = placeID
+        self.coordinateX = coordinateX; self.coordinateY = coordinateY
+    }
+}
+
+@Model
+final class MapCatalogProfile {
+    @Attribute(.unique) var id: UUID
+    var bookID: UUID
+
+    init(id: UUID = UUID(), bookID: UUID) {
+        self.id = id; self.bookID = bookID
+    }
+}
+}
+
 extension V5SettingsSchemaV11 {
 @Model
 final class Place {
@@ -1895,15 +2002,16 @@ final class WorldTerm {
 /// from legacy free text. V6 adds only a sidebar catalog revision marker. V7
 /// adds three optional world-term content fields without splitting old text. V8
 /// adds power aliases, asset links, and advantages. V9 adds lifecycle and roles.
-/// V10 adds structured non-subordination power relationships. V11 adds only
-/// optional map coordinates to places; nil continues to mean not placed.
+/// V10 adds structured non-subordination power relationships. V11 adds optional
+/// single-map coordinates. V12 adds flat maps, background versions and map-local
+/// placements while retaining those legacy fields for safe backfill.
 enum V5SettingsMigrationPlan: SchemaMigrationPlan {
     static var schemas: [any VersionedSchema.Type] {
         [
             V5SettingsSchemaV1.self, V5SettingsSchemaV2.self, V5SettingsSchemaV3.self,
             V5SettingsSchemaV4.self, V5SettingsSchemaV5.self, V5SettingsSchemaV6.self,
             V5SettingsSchemaV7.self, V5SettingsSchemaV8.self, V5SettingsSchemaV9.self,
-            V5SettingsSchemaV10.self, V5SettingsSchemaV11.self
+            V5SettingsSchemaV10.self, V5SettingsSchemaV11.self, V5SettingsSchemaV12.self
         ]
     }
 
@@ -1976,6 +2084,10 @@ enum V5SettingsMigrationPlan: SchemaMigrationPlan {
             .lightweight(
                 fromVersion: V5SettingsSchemaV10.self,
                 toVersion: V5SettingsSchemaV11.self
+            ),
+            .lightweight(
+                fromVersion: V5SettingsSchemaV11.self,
+                toVersion: V5SettingsSchemaV12.self
             )
         ]
     }
@@ -2000,7 +2112,11 @@ typealias PowerLifecycleKind = V5SettingsSchemaV9.PowerLifecycleKind
 typealias PowerTransitionKind = V5SettingsSchemaV9.PowerTransitionKind
 typealias PowerRelation = V5SettingsSchemaV10.PowerRelation
 typealias PowerRelationKind = V5SettingsSchemaV10.PowerRelationKind
-typealias Place = V5SettingsSchemaV11.Place
+typealias Place = V5SettingsSchemaV12.Place
+typealias BookMap = V5SettingsSchemaV12.BookMap
+typealias BookMapVersion = V5SettingsSchemaV12.BookMapVersion
+typealias MapPlacement = V5SettingsSchemaV12.MapPlacement
+typealias MapCatalogProfile = V5SettingsSchemaV12.MapCatalogProfile
 typealias WorldTerm = V5SettingsSchemaV9.WorldTerm
 
 enum PowerHierarchyError: LocalizedError {
@@ -2235,6 +2351,9 @@ final class V5SettingsStore {
 
     func deletePlace(_ place: Place, bookID: UUID) {
         guard place.bookID == bookID else { return }
+        (try? context.fetch(FetchDescriptor<MapPlacement>()))?
+            .filter { $0.bookID == bookID && $0.placeID == place.id }
+            .forEach(context.delete)
         context.delete(place)
         save()
     }
@@ -2764,6 +2883,10 @@ final class V5SettingsStore {
         try context.fetch(FetchDescriptor<PowerUnit>()).filter { $0.bookID == bookID }.forEach(context.delete)
         try context.fetch(FetchDescriptor<PowerLevel>()).filter { $0.bookID == bookID }.forEach(context.delete)
         try context.fetch(FetchDescriptor<Place>()).filter { $0.bookID == bookID }.forEach(context.delete)
+        try context.fetch(FetchDescriptor<MapPlacement>()).filter { $0.bookID == bookID }.forEach(context.delete)
+        try context.fetch(FetchDescriptor<MapCatalogProfile>()).filter { $0.bookID == bookID }.forEach(context.delete)
+        try context.fetch(FetchDescriptor<BookMapVersion>()).filter { $0.bookID == bookID }.forEach(context.delete)
+        try context.fetch(FetchDescriptor<BookMap>()).filter { $0.bookID == bookID }.forEach(context.delete)
         try context.fetch(FetchDescriptor<WorldTerm>()).filter { $0.bookID == bookID }.forEach(context.delete)
         try context.save()
         didSave()

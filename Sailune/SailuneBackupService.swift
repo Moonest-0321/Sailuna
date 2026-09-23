@@ -28,7 +28,7 @@ struct SailuneDataLocations {
     var stores: [(name: String, url: URL, schema: String)] {
         [
             ("main.store", mainStore, "NovelWriterSchemaV5"),
-            ("settings.store", settingsStore, "V5SettingsSchemaV11"),
+            ("settings.store", settingsStore, "V5SettingsSchemaV12"),
             ("item-copies.store", itemCopyStore, "ItemCopySchemaV1"),
             ("item-copy-level-selections.store", itemCopyLevelStore, "ItemCopyLevelSelectionSchemaV1"),
             ("ability-progress.store", abilityProgressStore, "AbilityProgressSchemaV1"),
@@ -167,7 +167,10 @@ enum SailuneBackupService {
             if !mapFiles.isEmpty {
                 try fm.createDirectory(at: mapsURL, withIntermediateDirectories: true)
                 for file in mapFiles {
-                    try file.data.write(to: mapsURL.appendingPathComponent(URL(fileURLWithPath: file.path).lastPathComponent), options: .atomic)
+                    let relativePath = String(file.path.dropFirst("maps/".count))
+                    let destination = try safeAssetDestination(relativePath: relativePath, root: mapsURL)
+                    try fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try file.data.write(to: destination, options: .atomic)
                 }
             }
             try fm.removeItem(at: pending)
@@ -208,9 +211,10 @@ enum SailuneBackupService {
             }
         }
         let maps = locations.mapsDirectory
-        if let urls = try? fm.contentsOfDirectory(at: maps, includingPropertiesForKeys: nil) {
-            for url in urls where url.pathExtension.lowercased() == "pdf" {
-                files.append(ArchiveFile(path: "maps/\(url.lastPathComponent)", data: try Data(contentsOf: url)))
+        if let relativePaths = try? fm.subpathsOfDirectory(atPath: maps.path) {
+            for relativePath in relativePaths where URL(fileURLWithPath: relativePath).pathExtension.lowercased() == "pdf" {
+                let url = maps.appendingPathComponent(relativePath)
+                files.append(ArchiveFile(path: "maps/\(relativePath)", data: try Data(contentsOf: url)))
             }
         }
         let entries = files.map { Manifest.FileEntry(path: $0.path, byteCount: $0.data.count, sha256: checksum($0.data)) }
@@ -246,17 +250,37 @@ enum SailuneBackupService {
         }
         let listed = Set(archive.manifest.files.map(\.path))
         guard listed == Set(files.keys) else { throw BackupError.invalidArchive("manifest 檔案清單不一致") }
+        for path in files.keys where path.hasPrefix("maps/") {
+            _ = try safeAssetDestination(
+                relativePath: String(path.dropFirst("maps/".count)),
+                root: FileManager.default.temporaryDirectory.appendingPathComponent("SailuneMapValidation", isDirectory: true)
+            )
+        }
         return archive
     }
 
-    /// V10 backups remain restorable because the settings store can migrate to
-    /// V11 on the next app launch. Every other store schema must match exactly.
+    private static func safeAssetDestination(relativePath: String, root: URL) throws -> URL {
+        let components = relativePath.split(separator: "/", omittingEmptySubsequences: false)
+        guard !relativePath.hasPrefix("/"), !components.isEmpty,
+              components.allSatisfy({ !$0.isEmpty && $0 != "." && $0 != ".." }) else {
+            throw BackupError.invalidArchive("地圖資產路徑不安全")
+        }
+        return components.reduce(root) { partial, component in
+            partial.appendingPathComponent(String(component), isDirectory: false)
+        }
+    }
+
+    /// V10 and V11 backups remain restorable because the settings store can
+    /// migrate to V12 on the next app launch. Every other schema must match.
     private static func schemasAreRestorable(_ archived: [String: String], expected: [String: String]) -> Bool {
         guard Set(archived.keys) == Set(expected.keys) else { return false }
         for (name, expectedSchema) in expected {
             let archivedSchema = archived[name]
             if name == "settings.store" {
-                guard archivedSchema == expectedSchema || archivedSchema == "V5SettingsSchemaV10" else { return false }
+                guard archivedSchema == expectedSchema
+                    || archivedSchema == "V5SettingsSchemaV11"
+                    || archivedSchema == "V5SettingsSchemaV10"
+                else { return false }
             } else if archivedSchema != expectedSchema {
                 return false
             }

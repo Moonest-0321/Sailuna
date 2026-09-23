@@ -843,12 +843,20 @@ final class ItemV3Tests: XCTestCase {
         try FileManager.default.createDirectory(at: locations.mapsDirectory, withIntermediateDirectories: true)
         let mapData = Data([5, 6, 7, 8])
         try mapData.write(to: locations.mapsDirectory.appendingPathComponent("map.pdf"))
+        let nestedMapURL = locations.mapsDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+            .appendingPathComponent("version.pdf")
+        try FileManager.default.createDirectory(at: nestedMapURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let nestedMapData = Data([8, 7, 6, 5])
+        try nestedMapData.write(to: nestedMapURL)
         let backup = root.appendingPathComponent("test.sailunebackup")
 
         try SailuneBackupService.createBackup(at: backup, locations: locations)
         for store in locations.stores { try writeSQLiteValue(999, at: store.url) }
         try Data([9]).write(to: locations.coversDirectory.appendingPathComponent("cover.png"))
         try Data([9]).write(to: locations.mapsDirectory.appendingPathComponent("map.pdf"))
+        try Data([9]).write(to: nestedMapURL)
         try SailuneBackupService.scheduleRestore(from: backup, locations: locations)
         try SailuneBackupService.applyPendingRestoreIfNeeded(locations: locations)
 
@@ -857,6 +865,7 @@ final class ItemV3Tests: XCTestCase {
         }
         XCTAssertEqual(try Data(contentsOf: locations.coversDirectory.appendingPathComponent("cover.png")), coverData)
         XCTAssertEqual(try Data(contentsOf: locations.mapsDirectory.appendingPathComponent("map.pdf")), mapData)
+        XCTAssertEqual(try Data(contentsOf: nestedMapURL), nestedMapData)
         XCTAssertFalse(FileManager.default.fileExists(atPath: locations.pendingRestoreURL.path))
         XCTAssertFalse((try FileManager.default.contentsOfDirectory(atPath: locations.recoveryDirectory.path)).isEmpty)
     }
@@ -881,7 +890,7 @@ final class ItemV3Tests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: locations.mapsDirectory.path))
     }
 
-    func testV10SettingsBackupManifestRemainsRestorableAfterV11Upgrade() throws {
+    func testV10SettingsBackupManifestRemainsRestorableAfterV12Upgrade() throws {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("SailuneBackupV10ManifestTest-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
