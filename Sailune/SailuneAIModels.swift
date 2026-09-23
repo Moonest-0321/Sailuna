@@ -1,9 +1,44 @@
 import Foundation
 
 struct SailuneAISectionAttachment: Codable, Identifiable {
+    enum Kind: String, Codable {
+        case section
+        case characterProfile
+        case characterSectionTemplate
+    }
+
     let id: UUID
     let title: String
     let content: String
+    let kind: Kind?
+
+    init(id: UUID, title: String, content: String, kind: Kind? = .section) {
+        self.id = id
+        self.title = title
+        self.content = content
+        self.kind = kind
+    }
+}
+
+enum SailuneAICharacterCategory: String, CaseIterable, Identifiable, Hashable {
+    case summary = "摘要"
+    case basic = "基本資訊"
+    case power = "所屬勢力"
+    case aliases = "別名"
+    case abilities = "能力"
+    case appearance = "外觀"
+    case psychology = "心理"
+    case items = "物品"
+    case relationships = "關係"
+    case events = "事件"
+
+    var id: Self { self }
+}
+
+struct SailuneAICharacterTemplateSelection: Equatable {
+    let sectionID: UUID
+    let characterID: UUID
+    let categories: Set<SailuneAICharacterCategory>
 }
 
 struct SailuneAIMessage: Codable, Identifiable {

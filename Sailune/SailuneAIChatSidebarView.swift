@@ -1,16 +1,23 @@
 import SwiftUI
+import SwiftData
 
 struct SailuneAIChatSidebarView: View {
     let book: Book
     let model: SailuneAIChatViewModel
-    let onSend: (String, UUID?) -> Bool
+    let onSend: (String, UUID?, SailuneAICharacterTemplateSelection?) -> Bool
     let onClose: () -> Void
 
+    @Query(sort: \Character.sortOrder) private var allCharacters: [Character]
     @State private var draft = ""
     @State private var selectedSectionID: UUID?
+    @State private var characterTemplate: SailuneAICharacterTemplateSelection?
     @State private var showingSectionPicker = false
+    @State private var showingCharacterTemplate = false
     @State private var showingConversations = false
     @State private var conversationToDeleteID: UUID?
+    @State private var templateSectionID: UUID?
+    @State private var templateCharacterID: UUID?
+    @State private var templateCategories = Set(SailuneAICharacterCategory.allCases)
 
     var body: some View {
         VStack(spacing: 0) {
@@ -76,7 +83,24 @@ struct SailuneAIChatSidebarView: View {
                     .padding(.top, 8)
             }
 
-            if let selectedSectionID {
+            if let characterTemplate {
+                HStack(alignment: .top, spacing: 6) {
+                    Label(templateSummary(characterTemplate), systemImage: "person.text.rectangle")
+                        .lineLimit(2)
+                    Spacer(minLength: 0)
+                    Button {
+                        self.characterTemplate = nil
+                    } label: {
+                        Image(systemName: "xmark")
+                    }
+                    .buttonStyle(.plain)
+                    .help("移除角色整理模板")
+                    .accessibilityLabel("移除角色整理模板")
+                }
+                .font(.caption)
+                .padding(.horizontal, 12)
+                .padding(.top, 10)
+            } else if let selectedSectionID {
                 HStack(spacing: 6) {
                     Label(selectedSectionTitle(for: selectedSectionID), systemImage: "doc.text")
                         .lineLimit(1)
@@ -96,17 +120,30 @@ struct SailuneAIChatSidebarView: View {
             }
 
             HStack(alignment: .bottom, spacing: 8) {
-                Button {
-                    showingSectionPicker = true
+                Menu {
+                    Button("加入節次", systemImage: "doc.text") {
+                        showingSectionPicker = true
+                    }
+                    Button("角色資訊整理…", systemImage: "person.text.rectangle") {
+                        let sections = BookStructure.orderedSections(in: book)
+                        let characters = bookCharacters
+                        templateSectionID = sections.first?.id
+                        templateCharacterID = characters.first?.id
+                        templateCategories = Set(SailuneAICharacterCategory.allCases)
+                        showingCharacterTemplate = true
+                    }
                 } label: {
                     Image(systemName: "plus")
                 }
                 .buttonStyle(.plain)
                 .frame(minWidth: 24, minHeight: 24)
-                .help("加入節次")
-                .accessibilityLabel("加入節次")
+                .help("加入節次或角色整理模板")
+                .accessibilityLabel("加入內容")
                 .popover(isPresented: $showingSectionPicker) {
                     sectionPicker
+                }
+                .sheet(isPresented: $showingCharacterTemplate) {
+                    characterTemplateSheet
                 }
 
                 TextField("輸入訊息…", text: $draft, axis: .vertical)
@@ -136,6 +173,7 @@ struct SailuneAIChatSidebarView: View {
         .onChange(of: model.selectedConversationID) { _, _ in
             draft = ""
             selectedSectionID = nil
+            characterTemplate = nil
         }
         .alert("刪除對話？", isPresented: Binding(
             get: { conversationToDeleteID != nil },
@@ -221,7 +259,7 @@ struct SailuneAIChatSidebarView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
             if let attachment = message.attachment {
-                DisclosureGroup("已加入：\(attachment.title)") {
+                DisclosureGroup(attachmentDisclosureTitle(attachment)) {
                     Text(attachment.content)
                         .font(.caption)
                         .textSelection(.enabled)
@@ -254,9 +292,77 @@ struct SailuneAIChatSidebarView: View {
     }
 
     private func send() {
-        if onSend(draft, selectedSectionID) {
+        if onSend(draft, selectedSectionID, characterTemplate) {
             draft = ""
             selectedSectionID = nil
+            characterTemplate = nil
+        }
+    }
+
+    private var bookCharacters: [Character] {
+        allCharacters.filter { $0.book?.id == book.id }.sorted { $0.sortOrder < $1.sortOrder }
+    }
+
+    private var characterTemplateSheet: some View {
+        NavigationStack {
+            Form {
+                Picker("節次", selection: $templateSectionID) {
+                    ForEach(BookStructure.orderedSections(in: book), id: \.id) { section in
+                        Text(selectedSectionTitle(for: section.id)).tag(Optional(section.id))
+                    }
+                }
+                Picker("角色", selection: $templateCharacterID) {
+                    ForEach(bookCharacters, id: \.id) { character in
+                        Text(character.realName.isEmpty ? "未命名角色" : character.realName).tag(Optional(character.id))
+                    }
+                }
+                SwiftUI.Section("整理分類") {
+                    ForEach(SailuneAICharacterCategory.allCases) { category in
+                        Toggle(category.rawValue, isOn: Binding(
+                            get: { templateCategories.contains(category) },
+                            set: { selected in
+                                if selected { templateCategories.insert(category) }
+                                else { templateCategories.remove(category) }
+                            }
+                        ))
+                    }
+                }
+            }
+            .formStyle(.grouped)
+            .navigationTitle("角色資訊整理")
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) {
+                    Button("取消") { showingCharacterTemplate = false }
+                }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("套用") {
+                        guard let templateSectionID, let templateCharacterID, !templateCategories.isEmpty else { return }
+                        characterTemplate = SailuneAICharacterTemplateSelection(
+                            sectionID: templateSectionID,
+                            characterID: templateCharacterID,
+                            categories: templateCategories
+                        )
+                        selectedSectionID = nil
+                        showingCharacterTemplate = false
+                    }
+                    .disabled(templateSectionID == nil || templateCharacterID == nil || templateCategories.isEmpty)
+                }
+            }
+        }
+        .frame(minWidth: 380, minHeight: 470)
+    }
+
+    private func templateSummary(_ template: SailuneAICharacterTemplateSelection) -> String {
+        let characterName = bookCharacters.first(where: { $0.id == template.characterID })?.realName ?? "角色已不存在"
+        let categories = template.categories.map(\.rawValue).sorted().joined(separator: "、")
+        return "整理：\(selectedSectionTitle(for: template.sectionID))／\(characterName)・\(categories)"
+    }
+
+    private func attachmentDisclosureTitle(_ attachment: SailuneAISectionAttachment) -> String {
+        switch attachment.kind {
+        case .characterProfile: "已參照角色設定：\(attachment.title)"
+        case .characterSectionTemplate: "角色整理依據：\(attachment.title)"
+        case .section, .none: "已加入：\(attachment.title)"
         }
     }
 
@@ -274,6 +380,7 @@ struct SailuneAIChatSidebarView: View {
                             ForEach(BookStructure.orderedSections(in: volume), id: \.id) { section in
                                 Button {
                                     selectedSectionID = section.id
+                                    characterTemplate = nil
                                     showingSectionPicker = false
                                 } label: {
                                     Text(section.title.isEmpty ? "未命名節" : section.title)

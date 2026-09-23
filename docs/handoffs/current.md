@@ -1,5 +1,20 @@
 # 當前聊天交接
 
+> 整體狀態：active
+>
+> 目前階段：設定集資料查詢與章節角色資訊整理（R／U／I approved；程式完成，待人工 UI 驗收）
+>
+> 唯一下一步：以隔離書籍資料人工驗收角色資料查詢、角色整理模板與訊息附件檢視。
+
+## 2026-09-23 設定集資料查詢與章節角色資訊整理需求起點
+
+- 已決定：第一步以目前書籍既有角色分類查詢角色資料；第二步套用目前既有角色分類至指定節次與角色；不做一鍵寫回。線上 Apple 模型問題另行討論。「4.」未補充內容，暫無額外要求。
+- 批准狀態：R／U／I 均 approved；U 線框已獲使用者「U」確認，並依先前「先把我剛剛提交的需求落實」開始實作。
+- 實作：一般聊天僅在角色資料查詢時匹配本書角色本名／別名，附上已填寫的既有角色分類；未匹配或有歧義時停止並提示。角色整理模板讓使用者選節次、角色、現有分類，送出時僅加入該節純文字及模板指示。訊息可展開檢視附加資料；無資料寫回與 schema 變更。
+- 工作樹邊界：本工作改動 `SailuneAICharacterContext.swift`（新增）、`SailuneAIModels.swift`、`SailuneAIClient.swift`、`SailuneAIChatSidebarView.swift`、`SailuneAIChatViewModel.swift`、`EditorWorkspaceView.swift`，以及規格／工作單／交接文件；保留其餘既有 V8 修改。未操作作者資料。
+- 驗證：主機環境無簽章 Xcode Debug build、受影響 Swift frontend parse、`git diff --check` 通過。一般沙盒的 Xcode build 因 SwiftData 巨集外掛啟動限制失敗，主機環境建置成功。本輪未新增或執行 XCTest。隔離書籍資料的人工 UI 驗收尚未完成。
+- 唯一下一步：以隔離書籍資料人工驗收角色資料查詢、角色整理模板與訊息附件檢視。
+
 > 整體狀態：closed
 >
 > 目前階段：V8 每書 AI 對話管理完成

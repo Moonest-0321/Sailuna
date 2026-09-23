@@ -67,6 +67,9 @@ struct EditorWorkspaceView: View {
     }
 
     let book: Book
+    @Environment(\.modelContext) private var modelContext
+    @Environment(AbilityProgressStore.self) private var aiAbilityStore
+    @Environment(V5SettingsStore.self) private var aiSettingsStore
     @State private var selectedSection: Section?
     @State private var showInspector = false
     @State private var showAIAssistant = false
@@ -405,9 +408,42 @@ struct EditorWorkspaceView: View {
             + Layout.minimumAISidebarWidth + Layout.inspectorWidth
     }
 
-    private func sendAIMessage(_ prompt: String, sectionID: UUID?) -> Bool {
+    private func sendAIMessage(
+        _ prompt: String,
+        sectionID: UUID?,
+        characterTemplate: SailuneAICharacterTemplateSelection?
+    ) -> Bool {
+        if let characterTemplate {
+            bridge.flushPendingSave()
+            guard let section = BookStructure.orderedSections(in: book).first(where: { $0.id == characterTemplate.sectionID }) else {
+                return aiChatModel.rejectUnavailableSection()
+            }
+            do {
+                let attachment = try SailuneAICharacterContextBuilder.templateAttachment(
+                    selection: characterTemplate,
+                    section: section,
+                    bookID: book.id,
+                    context: modelContext
+                )
+                return aiChatModel.send(prompt: prompt, attachment: attachment)
+            } catch {
+                return aiChatModel.reject(error.localizedDescription)
+            }
+        }
         guard let sectionID else {
-            return aiChatModel.send(prompt: prompt)
+            do {
+                let attachment = try SailuneAICharacterContextBuilder.queryAttachment(
+                    for: prompt,
+                    bookID: book.id,
+                    context: modelContext,
+                    abilityStore: aiAbilityStore,
+                    settingsStore: aiSettingsStore
+                )
+                if let attachment { return aiChatModel.send(prompt: prompt, attachment: attachment) }
+                return aiChatModel.send(prompt: prompt)
+            } catch {
+                return aiChatModel.reject(error.localizedDescription)
+            }
         }
         bridge.flushPendingSave()
         guard let section = BookStructure.orderedSections(in: book).first(where: { $0.id == sectionID }) else {

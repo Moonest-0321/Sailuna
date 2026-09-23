@@ -172,6 +172,11 @@ final class SailuneAIChatViewModel {
         return false
     }
 
+    func reject(_ message: String) -> Bool {
+        errorMessage = message
+        return false
+    }
+
     func reset() {
         stopRequest()
     }
