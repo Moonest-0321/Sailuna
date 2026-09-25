@@ -28,6 +28,14 @@ fileprivate let headingAttrs: [NSAttributedString.Key: Any] = [
     .foregroundColor: NSColor.textColor,
     .paragraphStyle: headingParagraphStyle
 ]
+
+enum RichEditorLocalTextStyle {
+    static func importedBody(_ text: String) -> AttributedString {
+        let styled = NSAttributedString(string: text, attributes: bodyAttrs)
+        return AttributedString(styled)
+    }
+}
+
 fileprivate extension NSAttributedString.Key {
     static let sailuneStoryTagMarker = NSAttributedString.Key("sailune.storyTagMarker")
 }

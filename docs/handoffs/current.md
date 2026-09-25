@@ -1,20 +1,67 @@
 # 當前聊天交接
 
+## 2026-09-25 V10.0 實作／驗證 checkpoint
+
+- **已決定**：R／U／I 已批准。匯入 TXT 每次選定「章／張／節」一種且不得混用，卷名延續到首個節標記；匯入建立新書。卷名／節名／內文缺漏使用「無」，沒有卷標記時全部節歸入第一卷；正文採本機編輯器內文樣式，不保留來源字型、字體粗細、螢光筆等格式。TXT 匯出固定用「節」，所有 `#` 字元移除，卷名格式為「第X卷 卷名」且不重複已有卷次。
+- **實作進度**：新增純值 parser、專用 ModelContext 的匯入 coordinator、書櫃匯入選檔／預覽表單；TXT 匯出直接使用「節」並開啟系統存檔面板，不再顯示標記選擇 overlay。無 SwiftData schema 改動。
+- **驗證**：Swift 前端 parse 通過；V10 6 項 XCTest 全通過。序列模式完整 XCTest 214 項全通過，獨立 Debug build 通過；`git diff --check` 通過。平行測試曾遇既有案例在 macOS 27 abort／session invalidated，序列模式重跑後全數通過。
+- **尚未驗收**：臨時 app 由命令列啟動會在 AppKit `RegisterApplication` 中 abort；Launch Services 對 Xcode 輸出的 bundle 回報 `kLSNoExecutableErr`，UI automation 依 bundle ID 找到的是使用者已開啟的正式 Sailune 與作者資料。未對正式資料操作，也未完成隔離 GUI 的 fileImporter、modal 與匯出手動驗收。
+- **工作樹邊界**：本次功能修改集中在 `ContentView.swift`、`BookTextImport.swift`、`BookTextTransferViews.swift`、`ExportManager.swift`、`EditorWorkspaceView.swift`、`BookOverviewView.swift`、共用圖示／文案、本次測試及 V10 文件；原有 V9／其他功能責任僅保留局部接線。
+- **下一步**：在正常 GUI 使用者 session 由 Xcode Run 啟動隔離 Debug app，確認匯入流程及 TXT 匯出直接打開存檔面板；勿點擊／寫入目前已開啟的正式 Sailune。之後關閉工作單。
+
+## 2026-09-25 TXT 匯出面板時序修正
+
+- 使用者回報點擊「繼續匯出」後沒有出現下一個視窗。
+- 原因推定：同一個按鈕事件裡同步關閉自訂選項 overlay 並設定 `.fileExporter` request，SwiftUI 可能在 overlay 尚未退場時錯過系統存檔面板呈現。
+- 已在 `EditorWorkspaceView` 與 `VolumeSectionTreeView` 先建立 export request、清除選項 overlay，並將 exporter request 延到下一個主執行緒事件迴圈。
+- 受影響 Swift 檔 parse 通過，Debug build 通過。此主機仍無法用 Launch Services 啟動隔離 app（`kLSNoExecutableErr`），所以尚未完成 GUI 點擊驗收；不要在目前已開啟的正式 Sailune 測試匯出。
+- **下一步**：於正常 Xcode GUI session 用隔離書籍確認「繼續匯出」會開系統存檔面板。
+
+## 2026-09-25 TXT 匯出預設為「節」
+
+- 使用者回報延後呈現仍無效，並指示先固定使用「節」輸出。
+- 已移除匯出前選項 overlay；書目錄及編輯器的 TXT 匯出按鈕直接建立「節」格式 request 並交給既有 `fileExporter`。
+- 「章」仍由 formatter 支援，但 UI 暫不提供選擇；EPUB 匯出未改。
+- 受影響 Swift 前端 parse、Debug build 與 `git diff --check` 通過；未重跑 XCTest（本次只移除呈現步驟並固定 formatter 參數）。
+- 尚需以隔離書籍確認系統存檔面板出現；不要用已開啟的正式 Sailune 測試。
+
+## 2026-09-25 TXT 匯出文字格式更正
+
+- 使用者更正：TXT 輸出的所有 `#` 字元都要移除，卷標題前加上「第X卷」。
+- 已更新共用 formatter：整本、單卷及單節最終輸出一律移除 `#`；卷標題依排序加卷次，已帶卷次的名稱先剝除避免重複；節標題仍依預設「節」格式輸出。
+- 已更新匯出規格與 V10 工作單；尚未執行最新程式修改的 build／測試。下一步是確認工作樹 diff 後依使用者授權實作完成要求處理。
+
+## 2026-09-25 TXT 匯入空值與無卷標記
+
+- 使用者補充：卷名、節名或內文缺漏時直接以「無」記錄；如果來源沒有卷標記，整份內容都當作第一卷。
+- Parser 已接受缺少的卷名／節名／內文並填入「無」；沒有任何卷標記時建立第一卷，沒有卷名則設為「無」。第一節標記前的普通文字會保留在第一節正文開頭。
+- 只更新既有結構錯誤案例的預期（沒有卷且沒有節標記時回報沒有節標記）；未執行 build／XCTest。下一步：核對 parser diff 與工作單，再依明確要求驗證。
+
+## 2026-09-25 TXT 匯入樣式
+
+- 使用者要求匯入文字使用本機樣式，不保留來源字型、字級、粗體、螢光筆等格式。
+- `BookImportCoordinator` 現改用 `RichEditorLocalTextStyle.importedBody`，套用共用編輯器既有的內文字型、文字色與行距；來源的字元樣式不寫入模型。
+- 未執行 build／XCTest。第一節標記前的普通文字仍暫定保留於第一節正文開頭。
+
 > 整體狀態：active
 >
-> 目前階段：V10 文書匯入與 TXT 發布相容輸出（僅限 V10；優先 `.docx`／`.txt`，`.pages` 可暫緩；細節見 [docs/work-items/v10-content-transfer.md](../work-items/v10-content-transfer.md)）
+> 目前階段：V10.0 TXT 書籍匯入與 TXT 匯出實作／驗證；R／U／I 已確認。詳見 [docs/work-items/v10-content-transfer.md](../work-items/v10-content-transfer.md)。
 >
-> 唯一下一步：使用者核准 R 提案的待定預設，再核准 U 線框；之後依已授權的 I 計畫開始實作。文件匯入建立一本新書，不追加到目前書籍；整本及單節 TXT 均帶卷次／節次，移除 `#`／`##`、單一字級及超過四級的回退規則已確認。網站架設與其他產品版本均不在本工作範圍；V10 工作單不得改變其他工作流的決策或批准狀態。V8.2 的 4,096 token 議題保留，待另行決定。
+> 唯一下一步：在可用 Xcode build 環境完成 V10 指定／完整 XCTest 及 Debug build；再做隔離資料 GUI 冒煙與修正。
 
-## 2026-09-25 V10 R／U／I 提案 checkpoint
+## 2026-09-25 V10.0 需求重整 checkpoint
 
-- **已決定**：V10 優先 DOCX／TXT 匯入；Pages 可暫緩；按第一章及字級映射，四級＝卷／節／幕標題／內文，兩級＝節／內文，三級最小級為內文並由作者選較大兩級；單級或超過四級忽略字級、按卷／章／節／張／次文字標示切分且全部當內文；無法辨識時不匯入。TXT 匯出移除 `#`／`##`，可選節／章，整本與既有單節匯出都帶卷次／節次。
-- **已決定**：使用者已更正並確認匯入建立一本全新書，不追加到目前書籍，也不覆寫既有書。
-- **暫時假設**：一次匯入一檔；新書書名以來源檔名預填，作者使用既有新書流程的預設並可編輯（待 R 確認）；先讀首章決定映射，全文驗證同規則；V10 首版保留文字與段落邊界，不承諾頁面排版或非正文物件。
-- **待確認**：來源標題正式語法；三字級缺少必要父層的處理；無標題 TXT 的錯誤行為；內容格式保留；純文字匯出序號與空行；首章映射及全文一致性錯誤樣式；新書書名／作者預填方式與建立時機。
-- **工作樹邊界**：`main`，HEAD `5459db7`。工作樹已有多項 V9 code／docs 未提交變更，特別 `Sailune/EditorWorkspaceView.swift`、`Sailune/BookOverviewView.swift`、`Sailune/ExportManager.swift` 已有 V9 改動；本輪只調整 V10／current 文件，未改任何 Swift 檔，不覆蓋或還原既有變更。
-- **批准狀態**：R 草案、U 提案、I 計畫提案。使用者已明確授權開始 V10 規劃與實作；依 `AGENTS.md` 仍須 R、U 核准後才能開始 feature code。
-- **驗證**：本輪只需文件格式檢查；未執行 build／tests。
+- **已確認決策**：使用者回覆「是的」，確認上述解讀：匯入時可選「章／張／節」其中一種作為該次匯入的分界字，同一份來源不可混用；標題接在標記後，換行後開始正文；「第一卷」後的文字為卷名，直到第一個節分界標記；幕標題不另訂輸出處理。匯入仍建立新書，不追加或覆寫既有書。
+- **目前解讀**：匯入建立新書，不追加到目前書籍、不覆寫既有書；來源使用所選分界字拆節並依原順序匯入。
+- **待確認**：匯入時如何／何時選分界字；卷名標記及後續卷的具體格式；匯出時既有 `#` 是否保留；匯入預覽與新書建立時機。
+- **已完成**：V10 專屬工作單已重寫為 V10.0 TXT 範圍，將舊 DOCX／Pages／字級映射方向標記為不沿用提案。未修改 Swift 程式。
+- **批准狀態**：R approved；使用者回覆「U」進入 UI，之後再回覆「U」確認 UI。I proposal，待核准。功能程式未修改。
+- **程式與畫面現況**：`ExportManager` 的整本與單節 TXT 目前以 `#` 輸出節標題，幕標題輸出 `##` 前綴；書櫃已有作品畫面上方有「新建書籍」，空書櫃另有「建立第一本小說」提示；新建書籍表單提供書名、作者、取消及完成。實際檢視並取消表單，未建立資料。整本匯出在書目錄列「匯出」選單，編輯器匯出在「更多」選單。
+- **U 已確認**：書櫃相鄰匯入入口、TXT 單字選擇、解析預覽及整本／目前節 TXT 的章／節輸出選項；UI 現況檢視與線框記於工作單。
+- **I 提案**：工作單已列純值 parser、匯入 coordinator、SwiftData 無 schema 建立、共用 TXT export 及 UI 接線，並列測試／錯誤回復計畫。
+- **工作樹邊界**：目前未提交修改僅為本輪 V10 規劃文件（work item、current work item、handoff、project status）；沒有 Swift 或測試程式修改。開始實作時需保留其他工作流變更，特別 ExportManager、EditorWorkspaceView、BookOverviewView 的既有責任，按 V9 凍結清單做最小接線。
+- **驗證**：目前僅規劃及文件更新，`git diff --check` 通過；尚未執行 build、XCTest 或產品程式 GUI 驗收。
+- **下一步**：使用者核准或修正 I 計畫；核准前不改功能程式。
 
 ## 2026-09-23 V8.2 AI 閱讀與分析需求起點
 

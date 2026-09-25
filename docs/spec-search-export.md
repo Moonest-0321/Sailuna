@@ -17,7 +17,8 @@
 
 - 可匯出整本書、單卷或單節。
 - 匯出內容包含標題、作者、簡介（整本書）及依卷節順序排列的正文。
-- 編輯器的幕標題會轉成較高層級的 `##` 文字標記。
+- TXT 內容的所有 `#` 字元均移除（包括標題文字本身及幕標題前綴）。書名為一般文字，卷名格式為「第X卷 卷名」（例如「第一卷 霧港」），節名預設格式為「第一節 標題」。
+- 編輯器的幕標題保留文字，不輸出 Markdown 井字號前綴。
 - 匯出使用原生存檔面板，作者可選擇檔名與目的地；取消不寫檔，既有檔案的覆寫確認交由系統處理。
 - TXT 與 EPUB 使用 SwiftUI `fileExporter` 搭配 `FileDocument` 顯示系統輸出面板；產品匯出路徑不得直接建立 `NSSavePanel`，避免偵錯執行在面板初始化時觸發 AppKit breakpoint。
 - App Sandbox 的 Debug 與 Release target 都必須啟用使用者所選檔案的讀寫 entitlement；唯讀 entitlement 會令 SwiftUI 內部建立輸出面板時觸發 `REPORT_APP_ENTITLEMENTS_INSUFFICIENT`。
@@ -34,6 +35,6 @@
 ## 4. 待確認決策
 
 - 故事標籤、大綱、設定集資料是否要匯出。
-- TXT 匯出副檔名與 Markdown 標記的正式相容性。
+- TXT 是否完整遵循 Markdown 標記慣例。
 - EPUB 是否需要版權與其他中繼資料。
 - 全部替換是否需要預覽、撤銷或再次確認。

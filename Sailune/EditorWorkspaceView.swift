@@ -275,10 +275,10 @@ struct EditorWorkspaceView: View {
                     .keyboardShortcut("k", modifiers: .command)
                 Button {
                     if let section = selectedSection {
-                        let content = ExportManager.exportSectionToTXT(section: section)
+                        let content = ExportManager.exportSectionToTXT(section: section, marker: .section)
                         exportRequest = ExportManager.textExportRequest(defaultName: section.title, content: content)
                     } else {
-                        let content = ExportManager.exportBookToTXT(book: book)
+                        let content = ExportManager.exportBookToTXT(book: book, marker: .section)
                         exportRequest = ExportManager.textExportRequest(defaultName: book.title, content: content)
                     }
                 } label: { Label(SailuneActionCopy.exportText, systemImage: SailuneSymbol.exportText.systemName) }

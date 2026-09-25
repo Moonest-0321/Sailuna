@@ -2,9 +2,9 @@
 
 > 整體狀態：active
 >
-> 目前階段：V10 文書匯入與 TXT 發布相容輸出（僅限 V10；優先 `.docx`／`.txt`，`.pages` 可暫緩；R 草案見 [v10-content-transfer.md](v10-content-transfer.md)）
+> 目前階段：V10.0 TXT 書籍匯入與 TXT 匯出實作／驗證；匯入缺少卷名／節名／內文以「無」代替，無卷標記時全部歸入第一卷，正文套用本機內文格式而不保留來源樣式；匯出固定使用「節」、移除所有 `#`，卷名加「第X卷」。詳見 [v10-content-transfer.md](v10-content-transfer.md)。
 >
-> 單一下一步：使用者核准 R 提案的待定預設，再核准 U 線框；之後依已授權的 I 計畫開始實作。已確認文件匯入建立一本新書，不追加到目前書籍；已確認移除 `#`／`##`、整本及單節 TXT 均帶卷次／節次、單一字級及超過四級回退規則。網站架設與其他產品版本均不在本工作範圍；本工作單不改變其他工作流的決策或批准狀態。V8.2 的 4,096 token 議題保留為後續待議。
+> 單一下一步：在正常 GUI 使用者 session 由 Xcode Run 啟動獨立 bundle ID 的 Debug app，完成 GUI 冒煙後關閉 V10 工作單。直接命令列啟動會 abort，Launch Services 開啟 Xcode build bundle 回報 `kLSNoExecutableErr`；不可操作已開啟的正式 Sailune。舊 DOCX、字級映射及超過四級回退提案已由新版需求取代。
 
 ## V8.2 AI 閱讀、設定分析與角色一致性比較（R approved）
 
@@ -3946,3 +3946,4 @@ X 需為 0–4000、Y 需為 0–3000 的整數   ← 僅無效時顯示
 - 新增 `MapV7Tests` 並擴充 settings／備份／刪除測試；完整 173 項 macOS XCTest 通過，Debug 無簽章 build 通過。沙盒 build 因 SwiftData／SwiftUI macro plugin 權限失敗，主機環境通過。
 - PDF 實檔檢查：純白／網格與 2:1 寬圖正規化輸出皆為單頁 `1200 × 900 pt`；Poppler 渲染確認上下白邊、左右端內容與格線完整。
 - 隔離 UI 冒煙：在 `/private/tmp/sailune-v7-map-ui` 建立測試書，深色模式可讀四角座標；於約 `(1995,1499)` 建立「中央城／城市」，再匯入 2:1 測試 PDF，白邊與兩端內容正確且標記座標不變。正式作者資料未使用。
+# 此工作目前的 TXT 匯出格式以 `docs/work-items/v10-content-transfer.md` 最新決策為準：移除所有 `#` 字元，卷標題使用「第X卷 卷名」，節標題預設使用「第X節 標題」。

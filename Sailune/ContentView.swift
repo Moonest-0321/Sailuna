@@ -15,6 +15,8 @@ struct ContentView: View {
     @Query private var profiles: [AuthorProfile]
     @State private var navigationPath = NavigationPath()
     @State private var showingNewBookSheet = false
+    @State private var showingBookTextImporter = false
+    @State private var bookTextImportSource: BookTextImportSource?
     @State private var searchText = ""
     @State private var deletionRequest: BookDeletionRequest?
     @State private var bookDeletionError: String?
@@ -67,7 +69,8 @@ struct ContentView: View {
                             StartTopBarView(
                                 searchText: $searchText,
                                 isSearchPresented: selectedSidebarItem == .find,
-                                onCreateBook: { showingNewBookSheet = true }
+                                onCreateBook: { showingNewBookSheet = true },
+                                onImportBook: { showingBookTextImporter = true }
                             )
                         }
                         libraryContent(metrics: metrics)
@@ -139,6 +142,20 @@ struct ContentView: View {
                     .zIndex(11)
                 }
 
+                if let bookTextImportSource {
+                    BookTextImportOverlay(
+                        source: bookTextImportSource,
+                        onCancel: { self.bookTextImportSource = nil },
+                        onCreated: { bookID in
+                            self.bookTextImportSource = nil
+                            selectedSidebarItem = .home
+                            searchText = ""
+                            navigationPath = NavigationPath()
+                            navigationPath.append(BookRoute(id: bookID, opensEditor: true))
+                        }
+                    )
+                }
+
                 if showingAboutMeSheet {
                     AboutMeView(onDismiss: {
                         showingAboutMeSheet = false
@@ -174,6 +191,38 @@ struct ContentView: View {
             .navigationDestination(for: Section.self) { section in
                 if let book = section.volume?.book {
                     EditorWorkspaceView(book: book, initialSection: section)
+                }
+            }
+            .fileImporter(
+                isPresented: $showingBookTextImporter,
+                allowedContentTypes: [UTType(filenameExtension: "txt") ?? .plainText],
+                allowsMultipleSelection: false
+            ) { result in
+                guard case .success(let urls) = result, let url = urls.first else { return }
+                guard url.pathExtension.lowercased() == "txt" else {
+                    bookTextImportSource = BookTextImportSource(
+                        fileName: url.lastPathComponent,
+                        data: nil,
+                        readError: "請選擇 TXT 檔案。"
+                    )
+                    return
+                }
+                let hasSecurityScope = url.startAccessingSecurityScopedResource()
+                defer {
+                    if hasSecurityScope { url.stopAccessingSecurityScopedResource() }
+                }
+                do {
+                    bookTextImportSource = BookTextImportSource(
+                        fileName: url.lastPathComponent,
+                        data: try Data(contentsOf: url),
+                        readError: nil
+                    )
+                } catch {
+                    bookTextImportSource = BookTextImportSource(
+                        fileName: url.lastPathComponent,
+                        data: nil,
+                        readError: "無法讀取檔案：\(error.localizedDescription)"
+                    )
                 }
             }
             .animation(.easeInOut(duration: 0.18), value: showingAccountPopover)
@@ -683,12 +732,13 @@ private struct StartTopBarView: View {
     @Binding var searchText: String
     let isSearchPresented: Bool
     let onCreateBook: () -> Void
+    let onImportBook: () -> Void
     @FocusState private var searchFocused
 
     var body: some View {
         GeometryReader { proxy in
             let availableWidth = proxy.size.width
-            let reservedButtonWidth = min(150, availableWidth * 0.34)
+            let reservedButtonWidth = min(250, availableWidth * 0.52)
             let maximumSearchWidth = max(0, availableWidth - reservedButtonWidth)
             let proportionalSearchWidth = availableWidth * 0.38
             let presentedSearchWidth = min(maximumSearchWidth, max(160, proportionalSearchWidth))
@@ -718,10 +768,17 @@ private struct StartTopBarView: View {
                 .opacity(isSearchPresented ? 1 : 0)
                 .offset(x: isSearchPresented ? 0 : -18)
 
-                Button(action: onCreateBook) {
-                    Label("新建書籍", systemImage: SailuneSymbol.add.systemName)
+                HStack(spacing: 10) {
+                    Button(action: onCreateBook) {
+                        Label("新建書籍", systemImage: SailuneSymbol.add.systemName)
+                    }
+                    .buttonStyle(.borderless)
+
+                    Button(action: onImportBook) {
+                        Label(SailuneActionCopy.importBook, systemImage: SailuneSymbol.importBook.systemName)
+                    }
+                    .buttonStyle(.borderless)
                 }
-                .buttonStyle(.borderless)
 
                 Spacer(minLength: 0)
             }

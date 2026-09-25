@@ -353,7 +353,7 @@ struct VolumeSectionTreeView: View {
                 Spacer()
                 Menu {
                     Button {
-                        let content = ExportManager.exportBookToTXT(book: book)
+                        let content = ExportManager.exportBookToTXT(book: book, marker: .section)
                         exportRequest = ExportManager.textExportRequest(defaultName: book.title, content: content)
                     } label: {
                         Label(SailuneActionCopy.exportText, systemImage: SailuneSymbol.exportText.systemName)

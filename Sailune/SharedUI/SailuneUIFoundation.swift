@@ -43,6 +43,7 @@ enum SailuneSymbol {
     case export
     case exportText
     case exportEpub
+    case importBook
     case addSection
     case storyLine
     case relationship
@@ -99,6 +100,7 @@ enum SailuneSymbol {
         case .export: "square.and.arrow.up"
         case .exportText: "doc.text"
         case .exportEpub: "book.closed"
+        case .importBook: "square.and.arrow.down"
         case .addSection: "doc.badge.plus"
         case .storyLine: "point.topleft.down.to.point.bottomright.curvepath"
         case .relationship: "point.3.connected.trianglepath.dotted"
@@ -154,6 +156,7 @@ enum SailuneActionCopy {
     static let acknowledge = String(localized: "action.acknowledge", defaultValue: "好")
     static let done = String(localized: "action.done", defaultValue: "完成")
     static let exportText = String(localized: "action.exportText", defaultValue: "匯出 TXT")
+    static let importBook = String(localized: "action.importBook", defaultValue: "匯入書籍")
     static let exportEpub = String(localized: "action.exportEpub", defaultValue: "匯出 EPUB")
     static let deleteAppearance = String(localized: "action.deleteAppearance", defaultValue: "刪除外觀")
     static let deleteTime = String(localized: "action.deleteTime", defaultValue: "刪除這個時間")

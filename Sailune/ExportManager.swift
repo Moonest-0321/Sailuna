@@ -77,49 +77,79 @@ extension View {
 struct ExportManager {
 
     // MARK: - 匯出整本書為 TXT
-    static func exportBookToTXT(book: Book) -> String {
+    static func exportBookToTXT(book: Book, marker: BookTextSectionMarker = .section) -> String {
         var output = ""
-        output += "# \(book.title)\n"
+        output += "\(book.title)\n"
         output += "作者：\(book.author)\n\n"
         if !book.synopsis.isEmpty {
             output += "\(book.synopsis)\n\n"
             output += "---\n\n"
         }
         let sortedVolumes = book.volumes.sorted { $0.sortOrder < $1.sortOrder }
-        for volume in sortedVolumes {
-            output += "# \(volume.title)\n\n"
+        for (volumeIndex, volume) in sortedVolumes.enumerated() {
+            output += "\(volumeHeading(volume.title, ordinal: volumeIndex + 1))\n\n"
             let sortedSections = volume.sections.sorted { $0.sortOrder < $1.sortOrder }
-            for section in sortedSections {
-                output += "# \(section.title)\n\n"
+            for (sectionIndex, section) in sortedSections.enumerated() {
+                output += "\(sectionHeading(section.title, ordinal: sectionIndex + 1, marker: marker))\n\n"
                 output += parseAttributedStringToTXT(section.content)
                 output += "\n\n"
             }
         }
-        return output
+        return removingHashCharacters(from: output)
     }
 
     // MARK: - 匯出單一卷為 TXT
-    static func exportVolumeToTXT(volume: Volume, bookTitle: String) -> String {
-        var output = ""
-        output += "# \(bookTitle) - \(volume.title)\n\n"
+    static func exportVolumeToTXT(volume: Volume, bookTitle: String, marker: BookTextSectionMarker = .section) -> String {
+        var output = "\(bookTitle)\n\n"
+        output += "\(volumeHeading(volume.title, ordinal: volume.sortOrder + 1))\n\n"
         let sortedSections = volume.sections.sorted { $0.sortOrder < $1.sortOrder }
-        for section in sortedSections {
-            output += "# \(section.title)\n\n"
+        for (sectionIndex, section) in sortedSections.enumerated() {
+            output += "\(sectionHeading(section.title, ordinal: sectionIndex + 1, marker: marker))\n\n"
             output += parseAttributedStringToTXT(section.content)
             output += "\n\n"
         }
-        return output
+        return removingHashCharacters(from: output)
     }
 
     // MARK: - 匯出單一節為 TXT
-    static func exportSectionToTXT(section: Section) -> String {
+    static func exportSectionToTXT(section: Section, marker: BookTextSectionMarker = .section) -> String {
         var output = ""
-        output += "# \(section.title)\n\n"
+        output += "\(sectionHeading(section.title, ordinal: section.sortOrder + 1, marker: marker))\n\n"
         output += parseAttributedStringToTXT(section.content)
-        return output
+        return removingHashCharacters(from: output)
     }
 
-    // MARK: - 核心解析：AttributedString → Markdown TXT（幕標題 = ##，PRD 5.3.2）
+    private static func removingHashCharacters(from text: String) -> String {
+        text.replacingOccurrences(of: "#", with: "")
+    }
+
+    private static func volumeHeading(_ title: String, ordinal: Int) -> String {
+        "第\(spelledOrdinal(ordinal))卷 \(removingExistingOrdinal(from: title, unit: "卷"))"
+    }
+
+    private static func sectionHeading(_ title: String, ordinal: Int, marker: BookTextSectionMarker) -> String {
+        "第\(spelledOrdinal(ordinal))\(marker.label) \(removingExistingOrdinal(from: title, unit: "章張節"))"
+    }
+
+    private static func spelledOrdinal(_ ordinal: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "zh_Hant_TW")
+        formatter.numberStyle = .spellOut
+        return formatter.string(from: NSNumber(value: ordinal)) ?? "\(ordinal)"
+    }
+
+    private static func removingExistingOrdinal(from title: String, unit: String) -> String {
+        let pattern = #"^第\s*(?:[0-9]+|[〇零一二三四五六七八九十百千萬]+)["#
+            + NSRegularExpression.escapedPattern(for: unit)
+            + #"]\s*[:：、.．-]?\s*"#
+        return title.replacingOccurrences(
+            of: pattern,
+            with: "",
+            options: .regularExpression
+        )
+    }
+
+    // MARK: - 核心解析：AttributedString → 純文字 TXT
     private static func parseAttributedStringToTXT(_ attrStr: AttributedString) -> String {
         var result = ""
         let nsAttrStr = NSAttributedString(attrStr)
@@ -133,7 +163,7 @@ struct ExportManager {
                     for line in lines {
                         let trimmed = line.trimmingCharacters(in: .whitespaces)
                         if !trimmed.isEmpty {
-                            result += "## \(trimmed)\n"
+                            result += "\(trimmed)\n"
                         } else {
                             result += "\n"
                         }
