@@ -90,7 +90,7 @@ struct MapWorkspaceView: View {
             .help("回到 100%")
 
             Button { adjustZoom(by: 1) } label: {
-                Image(systemName: "plus")
+                Image(systemName: SailuneSymbol.zoomIn.systemName)
             }
             .help("放大 25%")
             .disabled(viewport.zoom >= MapViewport.maximumZoom)
@@ -98,8 +98,8 @@ struct MapWorkspaceView: View {
             Button { resetViewport() } label: {
                 Text("=")
             }
-            .help("符合視窗")
-            .accessibilityLabel("符合視窗")
+            .help(SailuneAccessibilityCopy.fitWindow)
+            .accessibilityLabel(SailuneAccessibilityCopy.fitWindow)
         }
         .buttonStyle(.bordered)
         .foregroundStyle(.primary)
@@ -119,10 +119,10 @@ struct MapWorkspaceView: View {
                 .onChange(of: selectedVersionID) { _, _ in reloadMap() }
 
                 Button { isManagingVersions = true } label: {
-                    Image(systemName: "square.stack.3d.up")
+                    Image(systemName: SailuneSymbol.mapStack.systemName)
                 }
-                .help("管理圖層")
-                .accessibilityLabel("管理圖層")
+                .help(SailuneAccessibilityCopy.manageLayers)
+                .accessibilityLabel(SailuneAccessibilityCopy.manageLayers)
             }
             .buttonStyle(.bordered)
             .foregroundStyle(.primary)
@@ -137,7 +137,7 @@ struct MapWorkspaceView: View {
                         Button(style.title) { exportTemplate(style) }
                     }
                 } label: {
-                    Label("匯出地圖 PDF", systemImage: "square.and.arrow.up")
+                    Label("匯出地圖 PDF", systemImage: SailuneSymbol.export.systemName)
                 }
                 .help("匯出地圖 PDF")
 
@@ -170,22 +170,22 @@ struct MapWorkspaceView: View {
                     .fixedSize(horizontal: true, vertical: false)
 
                     Button { isManagingMaps = true } label: {
-                        Image(systemName: "square.stack.3d.up")
+                        Image(systemName: SailuneSymbol.mapStack.systemName)
                     }
-                    .help("管理地圖")
-                    .accessibilityLabel("管理地圖")
+                    .help(SailuneAccessibilityCopy.manageMaps)
+                    .accessibilityLabel(SailuneAccessibilityCopy.manageMaps)
                 }
 
                 Button { markerDraft = MapMarkerDraft() } label: {
                     Image(systemName: "mappin")
                 }
-                .help("輸入座標")
-                .accessibilityLabel("輸入座標")
+                .help(SailuneAccessibilityCopy.enterCoordinates)
+                .accessibilityLabel(SailuneAccessibilityCopy.enterCoordinates)
                 .disabled(currentMap == nil)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
-            .background(Color(nsColor: .windowBackgroundColor))
+            .background(SailuneTheme.windowSurface)
             .zIndex(1)
 
             Divider()
@@ -241,7 +241,7 @@ struct MapWorkspaceView: View {
             }
             .contentShape(.interaction, Rectangle())
             .clipped()
-            .background(Color(nsColor: .windowBackgroundColor))
+            .background(SailuneTheme.windowSurface)
             .zIndex(0)
             .onGeometryChange(for: CGSize.self) { proxy in
                 proxy.size
@@ -259,7 +259,7 @@ struct MapWorkspaceView: View {
             }
             .padding(.horizontal, 16)
             .frame(height: 60)
-            .background(Color(nsColor: .windowBackgroundColor))
+            .background(SailuneTheme.windowSurface)
         }
         .fileImporter(
             isPresented: $isImporting,
@@ -312,7 +312,7 @@ struct MapWorkspaceView: View {
             get: { errorMessage != nil },
             set: { if !$0 { errorMessage = nil } }
         )) {
-            Button("好", role: .cancel) { errorMessage = nil }
+            Button(SailuneActionCopy.acknowledge, role: .cancel) { errorMessage = nil }
         } message: {
             Text(errorMessage ?? "未知錯誤")
         }
@@ -458,9 +458,13 @@ struct MapWorkspaceView: View {
     ) {
         guard let currentMap else { return }
         do {
-            if let placeID = draft.placeID, let placementID = draft.placementID,
-               let place = settingsStore.places(for: book.id).first(where: { $0.id == placeID }),
-               let placement = settingsStore.placements(for: currentMap).first(where: { $0.id == placementID }) {
+            if draft.placeID != nil || draft.placementID != nil {
+                guard let placeID = draft.placeID, let placementID = draft.placementID else {
+                    throw MapCatalogError.invalidMarkerSource
+                }
+                let (place, placement) = try settingsStore.markerSource(
+                    placeID: placeID, placementID: placementID, bookID: book.id, on: currentMap
+                )
                 try settingsStore.updateMapPlace(place, placement: placement, map: currentMap, name: name, placeType: placeType, coordinate: coordinate)
             } else {
                 try settingsStore.createMapPlace(bookID: book.id, map: currentMap, name: name, placeType: placeType, coordinate: coordinate)
@@ -469,11 +473,15 @@ struct MapWorkspaceView: View {
     }
 
     private func deleteMarker(_ draft: MapMarkerDraft) {
-        guard let placeID = draft.placeID,
-              let place = settingsStore.places(for: book.id).first(where: { $0.id == placeID }) else {
-            return
+        guard let placeID = draft.placeID else { return }
+        do {
+            guard let place = try settingsStore.markerPlaceForDeletion(placeID: placeID, bookID: book.id) else {
+                throw MapCatalogError.invalidMarkerSource
+            }
+            try settingsStore.deletePlaceForMap(place, bookID: book.id)
+        } catch {
+            errorMessage = error.localizedDescription
         }
-        settingsStore.deletePlace(place, bookID: book.id)
     }
 
     private func moveMarker(_ marker: MapMarkerRecord, to coordinate: MapCoordinate) {
@@ -483,10 +491,12 @@ struct MapWorkspaceView: View {
     }
 
     private func navigateFromMarker(_ draft: MapMarkerDraft) throws {
-        guard let currentMap, let placeID = draft.placeID, let placementID = draft.placementID,
-              let place = settingsStore.places(for: book.id).first(where: { $0.id == placeID }),
-              let placement = settingsStore.placements(for: currentMap).first(where: { $0.id == placementID })
+        guard let currentMap, let placeID = draft.placeID, let placementID = draft.placementID
         else { throw MapCatalogError.invalidNavigationSource }
+        let (place, placement) = try settingsStore.markerSource(
+            placeID: placeID, placementID: placementID, bookID: book.id, on: currentMap,
+            missingError: .invalidNavigationSource
+        )
         let destination = try settingsStore.destinationMap(for: place, placement: placement, on: currentMap)
         markerDraft = nil
         selectedLevel = MapLevel(rawValue: destination.levelRawValue) ?? selectedLevel
@@ -898,7 +908,7 @@ private struct MapMarkerEditorView: View {
 
             HStack {
                 if onDelete != nil {
-                    Button("刪除地點", role: .destructive) {
+                    Button(SailuneActionCopy.deletePlace, role: .destructive) {
                         showingDeleteConfirmation = true
                     }
                 }
@@ -911,8 +921,8 @@ private struct MapMarkerEditorView: View {
                     }
                 }
                 Spacer()
-                Button("取消", role: .cancel) { dismiss() }
-                Button("儲存", action: save)
+                Button(SailuneActionCopy.cancel, role: .cancel) { dismiss() }
+                Button(SailuneActionCopy.save, action: save)
                     .disabled(trimmedName.isEmpty || parsedCoordinate == nil)
             }
         }
@@ -920,8 +930,8 @@ private struct MapMarkerEditorView: View {
         .frame(width: 360)
         .onAppear { nameFocused = true }
         .alert("刪除地點「\(trimmedName.isEmpty ? "未命名地點" : trimmedName)」？", isPresented: $showingDeleteConfirmation) {
-            Button("取消", role: .cancel) {}
-            Button("刪除", role: .destructive) {
+            Button(SailuneActionCopy.cancel, role: .cancel) {}
+            Button(SailuneActionCopy.delete, role: .destructive) {
                 onDelete?()
                 dismiss()
             }

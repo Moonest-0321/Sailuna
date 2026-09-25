@@ -93,7 +93,7 @@ struct ContentView: View {
                         }
                     )
                     .frame(width: 220)
-                    .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .background(SailuneTheme.windowSurface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     .overlay(
                         RoundedRectangle(cornerRadius: 10, style: .continuous)
                             .stroke(Color.primary.opacity(0.08), lineWidth: 1)
@@ -133,7 +133,7 @@ struct ContentView: View {
                         }
                     )
                     .frame(width: 420, height: 250)
-                    .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(SailuneTheme.windowSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .shadow(color: .black.opacity(0.14), radius: 8, x: 0, y: 2)
                     .zIndex(11)
@@ -143,7 +143,7 @@ struct ContentView: View {
                     AboutMeView(onDismiss: {
                         showingAboutMeSheet = false
                     })
-                    .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .background(SailuneTheme.windowSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                     .shadow(color: .black.opacity(0.14), radius: 8, x: 0, y: 2)
                     .zIndex(11)
@@ -220,7 +220,7 @@ struct ContentView: View {
                     } description: {
                         Text("建立第一本小說，立即開始寫作。")
                     } actions: {
-                        Button("建立第一本小說", systemImage: "plus") { showingNewBookSheet = true }
+                        Button("建立第一本小說", systemImage: SailuneSymbol.add.systemName) { showingNewBookSheet = true }
                             .buttonStyle(.borderedProminent)
                     }
                     .frame(maxWidth: .infinity)
@@ -231,7 +231,7 @@ struct ContentView: View {
             }
             .padding(24)
         } else if filteredBooks.isEmpty {
-            ContentUnavailableView("找不到書籍", systemImage: "magnifyingglass")
+            ContentUnavailableView("找不到書籍", systemImage: SailuneSymbol.search.systemName)
         } else {
             ScrollView {
                 bookStatusSections(books: filteredBooks, metrics: metrics)
@@ -287,7 +287,7 @@ struct ContentView: View {
             Button(role: .destructive) {
                 deletionRequest = BookDeletionRequest(id: book.id, title: book.title)
             } label: {
-                Label("刪除", systemImage: "trash")
+                Label(SailuneActionCopy.delete, systemImage: SailuneSymbol.delete.systemName)
             }
         }
     }
@@ -329,11 +329,11 @@ private enum StartSidebarItem: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .home: return "house"
-        case .find: return "magnifyingglass"
+        case .find: return SailuneSymbol.search.systemName
         case .publish: return "square.and.arrow.up"
         case .achievements: return "trophy"
         case .about: return "person"
-        case .settings: return "gearshape"
+        case .settings: return SailuneSymbol.settings.systemName
         }
     }
 }
@@ -414,7 +414,7 @@ private struct StartSidebarView: View {
         }
         .padding(.horizontal, 8)
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(SailuneTheme.controlSurface)
     }
 
     private func sidebarButton(_ item: StartSidebarItem) -> some View {
@@ -494,7 +494,7 @@ private struct AccountPopoverView: View {
 
             Divider()
 
-            accountAction("設定", systemImage: "gearshape", action: onOpenSettings)
+            accountAction("設定", systemImage: SailuneSymbol.settings.systemName, action: onOpenSettings)
             accountAction("切換帳號", systemImage: "person.2") { }
 
             Divider()
@@ -606,34 +606,27 @@ private struct AboutMeForm: View {
                     Text("尚未設定圖片時，使用筆名第一個字。")
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                    Button("加入圖片", systemImage: "photo") {
+                    Button("加入圖片", systemImage: SailuneSymbol.imageAsset.systemName) {
                         selectAvatar()
                     }
                     .buttonStyle(.borderless)
                 }
             }
 
-            TextField("筆名", text: $profile.penName)
-                .textFieldStyle(.roundedBorder)
+            SailuneFormTextField(title: "筆名", text: $profile.penName)
 
             VStack(alignment: .leading, spacing: 6) {
                 Text("簡介")
                     .font(.headline)
-                TextEditor(text: Binding(
+                SailuneAuthorBioEditor(text: Binding(
                     get: { profile.bio ?? "" },
                     set: { profile.bio = $0 }
-                ))
-                .font(.body)
-                .frame(height: 110)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(Color.primary.opacity(0.12), lineWidth: 1)
-                )
+                ), height: 110, borderColor: Color.primary.opacity(0.12))
             }
 
             HStack {
                 Spacer()
-                Button("完成") {
+                Button(SailuneActionCopy.done) {
                     onDismiss()
                     dismiss()
                 }
@@ -702,7 +695,7 @@ private struct StartTopBarView: View {
 
             HStack(spacing: 10) {
                 HStack(spacing: 7) {
-                    Image(systemName: "magnifyingglass")
+                    Image(systemName: SailuneSymbol.search.systemName)
                         .foregroundStyle(.secondary)
                     TextField("搜尋書名或作者", text: $searchText)
                         .textFieldStyle(.plain)
@@ -711,7 +704,7 @@ private struct StartTopBarView: View {
                         Button {
                             searchText = ""
                         } label: {
-                            Image(systemName: "xmark.circle.fill")
+                            Image(systemName: SailuneSymbol.clearSearch.systemName)
                                 .foregroundStyle(.tertiary)
                         }
                         .buttonStyle(.plain)
@@ -726,7 +719,7 @@ private struct StartTopBarView: View {
                 .offset(x: isSearchPresented ? 0 : -18)
 
                 Button(action: onCreateBook) {
-                    Label("新建書籍", systemImage: "plus")
+                    Label("新建書籍", systemImage: SailuneSymbol.add.systemName)
                 }
                 .buttonStyle(.borderless)
 
@@ -832,7 +825,7 @@ struct BookCardView: View {
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color(nsColor: .controlBackgroundColor))
+            .background(SailuneTheme.controlSurface)
         }
         .frame(width: 180, height: 310)
         .clipShape(RoundedRectangle(cornerRadius: 10))
@@ -904,7 +897,7 @@ private struct HomeDeletionPopup: View {
 
             HStack {
                 Spacer()
-                Button("取消") { onCancel() }
+                Button(SailuneActionCopy.cancel) { onCancel() }
                     .keyboardShortcut(.cancelAction)
                 Button("刪除書籍", role: .destructive) { onConfirm() }
                     .keyboardShortcut(.defaultAction)
@@ -912,7 +905,7 @@ private struct HomeDeletionPopup: View {
         }
         .padding(22)
         .frame(width: 390)
-        .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(SailuneTheme.windowSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(Color.primary.opacity(0.08), lineWidth: 1)
@@ -937,13 +930,13 @@ private struct HomeMessagePopup: View {
 
             HStack {
                 Spacer()
-                Button("好") { onDismiss() }
+                Button(SailuneActionCopy.acknowledge) { onDismiss() }
                     .keyboardShortcut(.defaultAction)
             }
         }
         .padding(22)
         .frame(width: 390)
-        .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(SailuneTheme.windowSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .stroke(Color.primary.opacity(0.08), lineWidth: 1)
@@ -977,11 +970,9 @@ struct NewBookSheet: View {
                     .font(.title2.weight(.semibold))
 
                 VStack(alignment: .leading, spacing: 12) {
-                    TextField("書名", text: $title)
-                        .textFieldStyle(.roundedBorder)
+                    SailuneFormTextField(title: "書名", text: $title)
                         .onSubmit(saveBookIfValid)
-                    TextField("作者", text: $author)
-                        .textFieldStyle(.roundedBorder)
+                    SailuneFormTextField(title: "作者", text: $author)
                         .onSubmit(saveBookIfValid)
                 }
 
@@ -989,11 +980,11 @@ struct NewBookSheet: View {
 
                 HStack(spacing: 10) {
                     Spacer()
-                    Button("取消") {
+                    Button(SailuneActionCopy.cancel) {
                         onCancel()
                     }
                     .buttonStyle(.bordered)
-                    Button("完成") {
+                    Button(SailuneActionCopy.done) {
                         saveBook()
                     }
                     .buttonStyle(.borderedProminent)

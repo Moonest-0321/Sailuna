@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import OSLog
 
 struct PlanningRecordSourceReference: Equatable {
     let kind: PlanningRecordSourceKind
@@ -26,6 +27,16 @@ struct PlanningRecordProjection: Identifiable, Equatable {
 
 @MainActor
 enum PlanningRecordProjectionBuilder {
+    enum DisplaySurface: String {
+        case timeline
+        case outline
+    }
+
+    private static let logger = Logger(
+        subsystem: "com.MooNest.Sailune",
+        category: "PlanningRecordProjection"
+    )
+
     static func build(
         book: Book,
         context: ModelContext,
@@ -160,6 +171,30 @@ enum PlanningRecordProjectionBuilder {
             if $0.nodeID != $1.nodeID { return $0.nodeID.uuidString < $1.nodeID.uuidString }
             if $0.sortOrder != $1.sortOrder { return $0.sortOrder < $1.sortOrder }
             return $0.id < $1.id
+        }
+    }
+
+    static func buildForDisplay(
+        book: Book,
+        context: ModelContext,
+        abilityStore: AbilityProgressStore,
+        copyStore: ItemCopyStore,
+        planningStore: StoryPlanningStore,
+        surface: DisplaySurface
+    ) -> [PlanningRecordProjection] {
+        do {
+            return try build(
+                book: book,
+                context: context,
+                abilityStore: abilityStore,
+                copyStore: copyStore,
+                planningStore: planningStore
+            )
+        } catch {
+            logger.error(
+                "Failed to build planning records for \(surface.rawValue, privacy: .public); returning an empty list. \(String(describing: error), privacy: .private)"
+            )
+            return []
         }
     }
 

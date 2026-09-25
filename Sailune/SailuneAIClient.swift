@@ -1,5 +1,8 @@
 import Foundation
 import FoundationModels
+import OSLog
+
+private let aiResponseDecodeLogger = Logger(subsystem: "com.MooNest.Sailune", category: "AIResponseDecode")
 
 enum SailuneAIClientError: LocalizedError {
     case missingAPIKey
@@ -100,7 +103,12 @@ struct SailuneAIClient {
         case .appleOnDevice:
             preconditionFailure("Apple 裝置端模型已在前段處理")
         case .backend:
-            reply = try? JSONDecoder().decode(SailuneAIChatResponse.self, from: data)
+            do {
+                reply = try JSONDecoder().decode(SailuneAIChatResponse.self, from: data)
+            } catch {
+                aiResponseDecodeLogger.error("Backend response decode failed: \(error.localizedDescription, privacy: .private)")
+                reply = nil
+            }
         case .gemini:
             reply = Self.decodeGeminiResponse(data)
         }
@@ -228,13 +236,24 @@ struct SailuneAIClient {
             }
             let steps: [Step]?
         }
-        guard let interaction = try? JSONDecoder().decode(Interaction.self, from: data) else { return nil }
+        let interaction: Interaction
+        do {
+            interaction = try JSONDecoder().decode(Interaction.self, from: data)
+        } catch {
+            aiResponseDecodeLogger.error("Gemini interaction decode failed: \(error.localizedDescription, privacy: .private)")
+            return nil
+        }
         var output = ""
         for step in interaction.steps ?? [] where step.type == "model_output" {
             for content in step.content ?? [] where content.type == "text" {
                 output += content.text ?? ""
             }
         }
-        return try? JSONDecoder().decode(SailuneAIChatResponse.self, from: Data(output.utf8))
+        do {
+            return try JSONDecoder().decode(SailuneAIChatResponse.self, from: Data(output.utf8))
+        } catch {
+            aiResponseDecodeLogger.error("Gemini model output decode failed: \(error.localizedDescription, privacy: .private)")
+            return nil
+        }
     }
 }

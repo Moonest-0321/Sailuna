@@ -1,6 +1,6 @@
 # 技術基線紀錄
 
-> 核對日期：2026-09-13；本次為唯讀程式／設定稽核，未重新執行完整 Xcode 測試。
+> 歷史基線日期：2026-09-13；以下 HEAD、測試數及設定只描述當日快照，不能作為目前工作樹的狀態。最新摘要見 [project-status.md](project-status.md)，發布前須依 [release-checklist.md](release-checklist.md) 重新驗證。
 
 ## Git
 

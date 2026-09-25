@@ -3,7 +3,7 @@ import SwiftData
 
 // MARK: - 角色顯示名（直接取 realName）
 
-private func sailuneDisplayName(_ character: Character) -> String {
+func sailuneDisplayName(_ character: Character) -> String {
     let name = character.realName.trimmingCharacters(in: .whitespacesAndNewlines)
     return name.isEmpty ? "角色·\(character.id.uuidString.prefix(4))" : name
 }
@@ -204,7 +204,7 @@ private struct OutlineNavigationList<Item: Identifiable>: View {
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     titleText(displayTitle)
                     Spacer(minLength: 4)
-                    Image(systemName: "arrow.right")
+                    Image(systemName: SailuneSymbol.rowNavigation.systemName)
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -247,111 +247,6 @@ private extension OutlineNavigationList where Item == OutlineItem {
 private extension OutlineNavigationList where Item == Event {
     init(items: [Event], action: @escaping (Event) -> (() -> Void)?) {
         self.init(items: items, title: \Event.title, action: action)
-    }
-}
-
-// MARK: - 格子模型
-
-enum CellKind { case year, month, day }
-
-struct TimelineCell: Identifiable {
-    let id: String
-    let kind: CellKind
-    let ordinal: Int
-    let eraID: UUID?
-    let eraHex: String
-    let eraName: String
-    let era: Era?
-    let nodes: [Node]
-    let repYear: Int
-    let repMonth: Int?
-    let repDay: Int?
-    let events: [Event]
-    let planningRecords: [PlanningRecordProjection]
-    var label: String = ""
-
-    init(
-        id: String,
-        kind: CellKind,
-        ordinal: Int,
-        eraID: UUID?,
-        eraHex: String,
-        eraName: String,
-        era: Era?,
-        nodes: [Node],
-        repYear: Int,
-        repMonth: Int?,
-        repDay: Int?,
-        events: [Event],
-        planningRecords: [PlanningRecordProjection] = [],
-        label: String = ""
-    ) {
-        self.id = id
-        self.kind = kind
-        self.ordinal = ordinal
-        self.eraID = eraID
-        self.eraHex = eraHex
-        self.eraName = eraName
-        self.era = era
-        self.nodes = nodes
-        self.repYear = repYear
-        self.repMonth = repMonth
-        self.repDay = repDay
-        self.events = events
-        self.planningRecords = planningRecords
-        self.label = label
-    }
-}
-
-struct TimelineEraGroup: Identifiable {
-    let id: String
-    let eraID: UUID?
-    let name: String
-    let colorHex: String
-    let era: Era?
-    let cells: [TimelineCell]
-}
-
-struct TimelineSlot: Identifiable {
-    let id: String
-    let cell: TimelineCell
-    let event: Event?
-    let planningRecord: PlanningRecordProjection?
-}
-
-@MainActor
-enum TimelineOutlineSourceProjection {
-    static func orderedItems(book: Book, planningStore: StoryPlanningStore) -> [OutlineItem] {
-        let itemsByID = Dictionary(uniqueKeysWithValues: planningStore.items(bookID: book.id).map { ($0.id, $0) })
-        return planningStore.narrativeOutlineList(book: book).itemIDsInDisplayOrder.compactMap { itemsByID[$0] }
-    }
-
-    static func eventTitle(for item: OutlineItem) -> String {
-        String(item.title.trimmingCharacters(in: .whitespacesAndNewlines).prefix(10))
-    }
-}
-
-private final class CellAccum {
-    let kind: CellKind
-    var ordinal: Int
-    let eraID: UUID?
-    let eraHex: String
-    let eraName: String
-    var era: Era?
-    var nodes: [Node]
-    var nodeIDs: Set<UUID>
-    let repYear: Int
-    let repMonth: Int?
-    let repDay: Int?
-    var events: [Event]
-    var planningRecords: [PlanningRecordProjection]
-    init(kind: CellKind, ordinal: Int, eraID: UUID?, eraHex: String, eraName: String,
-         era: Era?, nodes: [Node], ry: Int, rm: Int?, rd: Int?, events: [Event], planningRecords: [PlanningRecordProjection]) {
-        self.kind = kind; self.ordinal = ordinal; self.eraID = eraID
-        self.eraHex = eraHex; self.eraName = eraName
-        self.era = era; self.nodes = nodes; self.nodeIDs = Set(nodes.map(\.id))
-        self.repYear = ry; self.repMonth = rm; self.repDay = rd; self.events = events
-        self.planningRecords = planningRecords
     }
 }
 
@@ -494,7 +389,7 @@ struct TimelinePanelView: View {
             Divider()
             axisContent
         }
-        .background(Color(nsColor: .controlBackgroundColor))
+        .background(SailuneTheme.controlSurface)
         .task {
             do {
                 try TimelineEngine.Bootstrap.ensure(for: book, in: modelContext)
@@ -507,15 +402,15 @@ struct TimelinePanelView: View {
         }
         .onChange(of: selectedTimeline?.id) { _, _ in resetSelection() }
         .onChange(of: granularity) { _, _ in resetSelection() }
-        .alert("時間軸操作失敗", isPresented: operationErrorBinding) { Button("好") { operationError = nil } } message: {
+        .alert("時間軸操作失敗", isPresented: operationErrorBinding) { Button(SailuneActionCopy.acknowledge) { operationError = nil } } message: {
             Text(operationError ?? "未知錯誤")
         }
         .popover(item: $editingEra) { era in
             EraEditPopover(era: era)
         }
         .alert("刪除時間釘子", isPresented: $showDeleteConfirm) {
-            Button("取消", role: .cancel) { pendingDeleteNodes = [] }
-            Button("刪除", role: .destructive) { performDeleteNodes() }
+            Button(SailuneActionCopy.cancel, role: .cancel) { pendingDeleteNodes = [] }
+            Button(SailuneActionCopy.delete, role: .destructive) { performDeleteNodes() }
         } message: {
             let n = pendingDeleteNodes.count
             if n <= 1 {
@@ -527,15 +422,15 @@ struct TimelinePanelView: View {
         .alert(deleteEventTitle,
                isPresented: deleteEventBinding,
                presenting: pendingDeleteEvent) { event in
-            Button("取消", role: .cancel) { pendingDeleteEvent = nil }
-            Button("刪除", role: .destructive) { performDeleteEvent(event) }
+            Button(SailuneActionCopy.cancel, role: .cancel) { pendingDeleteEvent = nil }
+            Button(SailuneActionCopy.delete, role: .destructive) { performDeleteEvent(event) }
         } message: { _ in
             Text("只會刪除此世界時間事件；日期節點、敘事大綱與正文都會保留。")
         }
         .alert("新增副軸", isPresented: $showingAddSecondary) {
             TextField("副軸名稱", text: $newSecondaryName)
-            Button("取消", role: .cancel) { newSecondaryName = "" }
-            Button("新增") { commitAddSecondary() }
+            Button(SailuneActionCopy.cancel, role: .cancel) { newSecondaryName = "" }
+            Button(SailuneActionCopy.add) { commitAddSecondary() }
                 .disabled(newSecondaryName.trimmingCharacters(in: .whitespaces).isEmpty)
         } message: {
             Text("副軸用來裝前史、伏筆或規劃中劇情，與主軸並存。")
@@ -545,8 +440,8 @@ struct TimelinePanelView: View {
                                     set: { if !$0 { pendingRenameTimeline = nil } }),
                presenting: pendingRenameTimeline) { t in
             TextField("副軸名稱", text: $renameBuffer)
-            Button("取消", role: .cancel) { pendingRenameTimeline = nil }
-            Button("儲存") {
+            Button(SailuneActionCopy.cancel, role: .cancel) { pendingRenameTimeline = nil }
+            Button(SailuneActionCopy.save) {
                 t.name = renameBuffer
                 do { try modelContext.save() }
                 catch { operationError = error.localizedDescription; return }
@@ -556,8 +451,8 @@ struct TimelinePanelView: View {
         .alert("刪除副軸",
                isPresented: deleteTimelineBinding,
                presenting: pendingDeleteTimeline) { t in
-            Button("取消", role: .cancel) { pendingDeleteTimeline = nil }
-            Button("刪除", role: .destructive) { performDeleteTimeline(t) }
+            Button(SailuneActionCopy.cancel, role: .cancel) { pendingDeleteTimeline = nil }
+            Button(SailuneActionCopy.delete, role: .destructive) { performDeleteTimeline(t) }
         } message: { t in
             Text("確定刪除副軸「\(t.name.isEmpty ? "副軸" : t.name)」？其下所有時間釘子與世界時間事件將一併刪除；敘事大綱與正文會保留，且無法復原。")
         }
@@ -591,7 +486,7 @@ struct TimelinePanelView: View {
                 HStack {
                     Text("事件詳情").font(.headline)
                     Spacer()
-                    Button("完成") { selectedEvent = nil }
+                    Button(SailuneActionCopy.done) { selectedEvent = nil }
                         .buttonStyle(PlanningActionStyle(prominent: true))
                 }
                 Divider()
@@ -640,10 +535,10 @@ struct TimelinePanelView: View {
                         .contextMenu {
                             if !t.isPrimary {
                                 Button { startRenameTimeline(t) } label: {
-                                    Label("重新命名", systemImage: "pencil")
+                                    Label(SailuneActionCopy.rename, systemImage: SailuneSymbol.edit.systemName)
                                 }
                                 Button(role: .destructive) { pendingDeleteTimeline = t } label: {
-                                    Label("刪除副軸", systemImage: "trash")
+                                    Label("刪除副軸", systemImage: SailuneSymbol.delete.systemName)
                                 }
                             }
                         }
@@ -660,7 +555,7 @@ struct TimelinePanelView: View {
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     addNodeButton
-                    Menu("時間軸操作", systemImage: "ellipsis.circle") { timelineActions }
+                    Menu("時間軸操作", systemImage: SailuneSymbol.more.systemName) { timelineActions }
                         .controlSize(.large)
                 }
             }
@@ -678,7 +573,7 @@ struct TimelinePanelView: View {
     }
 
     private var addNodeButton: some View {
-        Menu("新增", systemImage: "plus.circle.fill") {
+        Menu("新增", systemImage: SailuneSymbol.addCircleFilled.systemName) {
             Button("新增預排事件", systemImage: "rectangle.dashed") {
                 showingCreateEvent = true
             }
@@ -696,7 +591,7 @@ struct TimelinePanelView: View {
             showingEraManager = true
         }
             .help("新增或編輯紀元")
-        Button("新增副軸", systemImage: "plus") {
+        Button("新增副軸", systemImage: SailuneSymbol.add.systemName) {
             newSecondaryName = ""
             showingAddSecondary = true
         }
@@ -737,7 +632,7 @@ struct TimelinePanelView: View {
             if cells.isEmpty {
                 ContentUnavailableView(
                     "尚無時間記錄",
-                    systemImage: "clock",
+                    systemImage: SailuneSymbol.timeline.systemName,
                     description: Text("使用上方「新增」建立預排事件或日期節點；正文事件請從敘事大綱加入。")
                 )
                 .padding(.top, 40)
@@ -792,13 +687,13 @@ struct TimelinePanelView: View {
                             .font(.caption)
                             .foregroundStyle(.tertiary)
                             .frame(maxWidth: .infinity, minHeight: 76)
-                            .background(Color.secondary.opacity(0.04), in: RoundedRectangle(cornerRadius: 9))
+                            .background(SailuneTheme.faintCardSurface, in: RoundedRectangle(cornerRadius: 9))
                     }
                 }
                 Button {
                     requestDeleteNodes(cell.nodes)
                 } label: {
-                    Image(systemName: "xmark")
+                    Image(systemName: SailuneSymbol.deleteTime.systemName)
                         .font(.caption2.weight(.semibold))
                         .frame(width: 24, height: 24)
                         .contentShape(Rectangle())
@@ -806,8 +701,8 @@ struct TimelinePanelView: View {
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
                 .padding(4)
-                .accessibilityLabel("刪除這個時間")
-                .help("刪除這個時間")
+                .accessibilityLabel(SailuneActionCopy.deleteTime)
+                .help(SailuneActionCopy.deleteTime)
             }
             .padding(.horizontal, 7)
             .padding(.top, 8)
@@ -868,7 +763,7 @@ struct TimelinePanelView: View {
                 }
                 .buttonStyle(.plain)
                 if let era = group.era {
-                    Button("編輯紀元", systemImage: "pencil") { editingEra = era }
+                    Button(SailuneActionCopy.editEra, systemImage: SailuneSymbol.edit.systemName) { editingEra = era }
                         .buttonStyle(PlanningActionStyle())
                 }
             }
@@ -904,14 +799,14 @@ struct TimelinePanelView: View {
                 Button {
                     requestDeleteNodes(cell.nodes)
                 } label: {
-                    Image(systemName: "xmark")
+                    Image(systemName: SailuneSymbol.deleteTime.systemName)
                         .frame(width: 24, height: 24)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(.secondary)
-                .accessibilityLabel("刪除這個時間")
-                .help("刪除這個時間")
+                .accessibilityLabel(SailuneActionCopy.deleteTime)
+                .help(SailuneActionCopy.deleteTime)
             }
             if !collapsed {
                 VStack(alignment: .leading, spacing: 3) {
@@ -925,7 +820,7 @@ struct TimelinePanelView: View {
                                         .lineLimit(2)
                                         .multilineTextAlignment(.leading)
                                     Spacer(minLength: 12)
-                                    Image(systemName: "arrow.right").foregroundStyle(.tertiary)
+                                    Image(systemName: SailuneSymbol.rowNavigation.systemName).foregroundStyle(.tertiary)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.horizontal, 12)
@@ -933,7 +828,7 @@ struct TimelinePanelView: View {
                                 .contentShape(Rectangle())
                             }
                             .buttonStyle(.plain)
-                            .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
+                            .background(SailuneTheme.subtleSurface, in: RoundedRectangle(cornerRadius: 7))
                             .help(event.title.isEmpty ? "未命名事件" : event.title)
                         }
                         ForEach(cell.planningRecords) { record in
@@ -943,7 +838,7 @@ struct TimelinePanelView: View {
                     if addingEventToCell == cell.id {
                         addEventForm(cell: cell)
                     } else {
-                        Button("新增事件", systemImage: "plus.circle") {
+                        Button(SailuneActionCopy.addEvent, systemImage: SailuneSymbol.addCircle.systemName) {
                             selectedCharIDs = []
                             withAnimation(.snappy) { addingEventToCell = cell.id }
                         }
@@ -992,7 +887,7 @@ struct TimelinePanelView: View {
             if cells.isEmpty {
                 ContentUnavailableView(
                     "尚無時間記錄",
-                    systemImage: "clock",
+                    systemImage: SailuneSymbol.timeline.systemName,
                     description: Text("使用上方「新增時間釘子」建立日期，再展開日期新增事件。")
                 )
                 .padding(.top, 40)
@@ -1025,7 +920,7 @@ struct TimelinePanelView: View {
                     .foregroundStyle(.secondary)
                 Spacer()
                 if let era = cell.era {
-                    Button("編輯紀元", systemImage: "pencil") { editingEra = era }
+                    Button(SailuneActionCopy.editEra, systemImage: SailuneSymbol.edit.systemName) { editingEra = era }
                     .buttonStyle(PlanningActionStyle())
                     .help("編輯年號名稱與顏色")
                 }
@@ -1064,15 +959,15 @@ struct TimelinePanelView: View {
                     Button {
                         requestDeleteNodes(cell.nodes)
                     } label: {
-                        Image(systemName: "xmark")
+                        Image(systemName: SailuneSymbol.deleteTime.systemName)
                             .frame(width: 24, height: 24)
                             .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(.secondary)
                     .font(.caption)
-                    .accessibilityLabel("刪除這個時間")
-                    .help("刪除這個時間")
+                    .accessibilityLabel(SailuneActionCopy.deleteTime)
+                    .help(SailuneActionCopy.deleteTime)
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { toggle(cell.id) }
@@ -1132,7 +1027,7 @@ struct TimelinePanelView: View {
                     selectedCharIDs = []
                     withAnimation(.snappy) { addingEventToCell = cell.id }
                 } label: {
-                    Label("新增事件", systemImage: "plus.circle")
+                    Label(SailuneActionCopy.addEvent, systemImage: SailuneSymbol.addCircle.systemName)
                 }
                 .buttonStyle(PlanningActionStyle(prominent: true))
                 .padding(.leading, 4).padding(.top, 2)
@@ -1182,8 +1077,8 @@ struct TimelinePanelView: View {
     @ViewBuilder
     private func addEventForm(cell: TimelineCell) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            TextField("事件標題", text: $newEventTitle)
-                .textFieldStyle(.roundedBorder).font(.caption)
+            SailuneFormTextField(title: "事件標題", text: $newEventTitle)
+                .font(.caption)
             TextField("詳情（選填）", text: $newEventDetail, axis: .vertical)
                 .textFieldStyle(.roundedBorder).font(.caption).lineLimit(2...3)
 
@@ -1213,12 +1108,12 @@ struct TimelinePanelView: View {
             }
 
             HStack {
-                Button("取消") {
+                Button(SailuneActionCopy.cancel) {
                     withAnimation(.snappy) { cancelAddEvent() }
                 }
                 .buttonStyle(PlanningActionStyle())
                 Spacer()
-                Button("儲存") {
+                Button(SailuneActionCopy.save) {
                     withAnimation(.snappy) { commitAddEvent(to: cell) }
                 }
                 .buttonStyle(PlanningActionStyle(prominent: true))
@@ -1340,13 +1235,14 @@ struct TimelinePanelView: View {
     }
 
     private var planningRecordProjections: [PlanningRecordProjection] {
-        (try? PlanningRecordProjectionBuilder.build(
+        PlanningRecordProjectionBuilder.buildForDisplay(
             book: book,
             context: modelContext,
             abilityStore: abilityStore,
             copyStore: copyStore,
-            planningStore: planningStore
-        )) ?? []
+            planningStore: planningStore,
+            surface: .timeline
+        )
     }
 
     private func events(at node: Node) -> [Event] {
@@ -1355,270 +1251,6 @@ struct TimelinePanelView: View {
             .sorted { $0.sortOrder < $1.sortOrder }
     }
 
-}
-
-// 寬窄版共用的唯讀日期投影，與捲動、選取及編輯狀態分離。
-@MainActor
-enum TimelineDateProjection {
-    static func slots(cells: [TimelineCell]) -> [TimelineSlot] {
-        cells.flatMap { cell in
-            let orderedEvents = cell.events.sorted { lhs, rhs in
-                if lhs.sortOrder != rhs.sortOrder { return lhs.sortOrder < rhs.sortOrder }
-                return lhs.id.uuidString < rhs.id.uuidString
-            }
-            let orderedRecords = cell.planningRecords.sorted {
-                if $0.sortOrder != $1.sortOrder { return $0.sortOrder < $1.sortOrder }
-                return $0.id < $1.id
-            }
-            if orderedEvents.isEmpty && orderedRecords.isEmpty {
-                return [TimelineSlot(id: "\(cell.id):empty", cell: cell, event: nil, planningRecord: nil)]
-            }
-            return orderedEvents.map { event in
-                TimelineSlot(id: "\(cell.id):event:\(event.id.uuidString)", cell: cell, event: event, planningRecord: nil)
-            } + orderedRecords.map { record in
-                TimelineSlot(id: "\(cell.id):record:\(record.id)", cell: cell, event: nil, planningRecord: record)
-            }
-        }
-    }
-
-    static func cells(
-        nodes: [Node],
-        events: [Event],
-        planningRecords: [PlanningRecordProjection] = [],
-        primary: Bool,
-        granularity: SailuneTimelineGranularity
-    ) -> [TimelineCell] {
-        var groups: [String: CellAccum] = [:]
-        var order: [String] = []
-
-        for n in TimelineEngine.Query.sorted(nodes) where n.year != 0 && (!primary || n.isVisible) {
-            let ord = n.absoluteOrdinal
-            let absYear = ord / 10000
-            let absMonth = ord / 100
-            let eraHex = n.era?.color ?? "#888888"
-            let eraName = n.era?.name ?? ""
-            let eraID = n.era?.id
-            let hasMonth = n.month != nil
-            let hasDay = n.day != nil
-
-            let nodeEvents = events.filter { $0.node?.id == n.id }.sorted { $0.sortOrder < $1.sortOrder }
-            let evs = primary
-                ? nodeEvents.filter { TimelineEngine.Visibility.isVisibleOnPrimaryAxis($0) }
-                : nodeEvents
-            let records = planningRecords.filter { $0.nodeID == n.id }
-
-            var key: String
-            let kind: CellKind
-            if !hasMonth {
-                key = "Y:\(absYear)"; kind = .year
-            } else if !hasDay {
-                switch granularity {
-                case .year:        key = "Y:\(absYear)"; kind = .year
-                case .month, .day: key = "M:\(absMonth)"; kind = .month
-                }
-            } else {
-                switch granularity {
-                case .year:  key = "Y:\(absYear)"; kind = .year
-                case .month: key = "M:\(absMonth)"; kind = .month
-                case .day:   key = "D:\(ord)";     kind = .day
-                }
-            }
-
-            key = "\(eraID?.uuidString ?? "none"):\(key)"
-            if let acc = groups[key] {
-                acc.ordinal = min(acc.ordinal, ord)
-                acc.events.append(contentsOf: evs)
-                acc.planningRecords.append(contentsOf: records)
-                if !acc.nodeIDs.contains(n.id) { acc.nodeIDs.insert(n.id); acc.nodes.append(n) }
-                if acc.era == nil { acc.era = n.era }
-            } else {
-                groups[key] = CellAccum(kind: kind, ordinal: ord, eraID: eraID, eraHex: eraHex,
-                                        eraName: eraName, era: n.era, nodes: [n],
-                                        ry: n.year, rm: n.month, rd: n.day, events: evs, planningRecords: records)
-                order.append(key)
-            }
-        }
-
-        var cells: [TimelineCell] = order.compactMap { k in
-            guard let g = groups[k] else { return nil }
-            return TimelineCell(id: k, kind: g.kind, ordinal: g.ordinal, eraID: g.eraID,
-                                eraHex: g.eraHex, eraName: g.eraName, era: g.era, nodes: g.nodes,
-                                repYear: g.repYear, repMonth: g.repMonth, repDay: g.repDay,
-                                events: g.events, planningRecords: g.planningRecords)
-        }
-        cells.sort { lhs, rhs in
-            let lhsEra = TimelineEngine.Core.eraOrder(lhs.era?.startOrdinal)
-            let rhsEra = TimelineEngine.Core.eraOrder(rhs.era?.startOrdinal)
-            if lhsEra != rhsEra { return lhsEra < rhsEra }
-            if lhs.ordinal != rhs.ordinal { return lhs.ordinal < rhs.ordinal }
-            return lhs.id < rhs.id
-        }
-        assignLabels(&cells, granularity: granularity)
-        return cells
-    }
-
-    static func eraGroups(cells: [TimelineCell]) -> [TimelineEraGroup] {
-        var groups: [TimelineEraGroup] = []
-        var indexByID: [String: Int] = [:]
-        for cell in cells {
-            let id = cell.eraID?.uuidString ?? "none"
-            if let index = indexByID[id] {
-                let existing = groups[index]
-                groups[index] = TimelineEraGroup(
-                    id: existing.id,
-                    eraID: existing.eraID,
-                    name: existing.name,
-                    colorHex: existing.colorHex,
-                    era: existing.era,
-                    cells: existing.cells + [cell]
-                )
-            } else {
-                indexByID[id] = groups.count
-                groups.append(TimelineEraGroup(
-                    id: id,
-                    eraID: cell.eraID,
-                    name: cell.eraName.isEmpty ? (cell.eraID == nil ? "未指定紀元" : "未命名紀元") : cell.eraName,
-                    colorHex: cell.eraHex,
-                    era: cell.era,
-                    cells: [cell]
-                ))
-            }
-        }
-        return groups
-    }
-
-    static func eventsInDisplayOrder(cells: [TimelineCell]) -> [Event] {
-        cells.flatMap { cell in
-            cell.events.sorted { lhs, rhs in
-                if lhs.sortOrder != rhs.sortOrder { return lhs.sortOrder < rhs.sortOrder }
-                return lhs.id.uuidString < rhs.id.uuidString
-            }
-        }
-    }
-
-    static func relativeLabels(
-        cells: [TimelineCell],
-        granularity: SailuneTimelineGranularity,
-        firstVisibleIndex: Int
-    ) -> [String] {
-        guard !cells.isEmpty else { return [] }
-        let start = min(max(0, firstVisibleIndex), cells.count - 1)
-        var labels = cells.map(\.label)
-        var lastYear: Int?
-        var lastMonth: Int?
-        var lastEraID: UUID?
-        for index in cells.indices {
-            let cell = cells[index]
-            let beginsVisibleSequence = index == start
-            let eraChanged = index > start && cell.eraID != lastEraID
-            if index < start { continue }
-            if beginsVisibleSequence || eraChanged {
-                labels[index] = fullLabel(for: cell, granularity: granularity)
-                lastYear = cell.repYear
-                lastMonth = cell.repMonth
-                lastEraID = cell.eraID
-                continue
-            }
-            switch granularity {
-            case .year:
-                labels[index] = "\(cell.repYear)年"
-            case .month:
-                if cell.repYear == lastYear, let month = cell.repMonth {
-                    labels[index] = "\(month)月"
-                } else {
-                    labels[index] = fullLabel(for: cell, granularity: granularity)
-                }
-            case .day:
-                if cell.repYear == lastYear, cell.repMonth == lastMonth, let day = cell.repDay {
-                    labels[index] = "\(day)日"
-                } else if cell.repYear == lastYear, let month = cell.repMonth, let day = cell.repDay {
-                    labels[index] = "\(month)月\(day)日"
-                } else {
-                    labels[index] = fullLabel(for: cell, granularity: granularity)
-                }
-            }
-            lastYear = cell.repYear
-            lastMonth = cell.repMonth
-            lastEraID = cell.eraID
-        }
-        return labels
-    }
-
-    static func relativeLabels(
-        slots: [TimelineSlot],
-        granularity: SailuneTimelineGranularity,
-        firstVisibleIndex: Int
-    ) -> [String] {
-        relativeLabels(
-            cells: slots.map(\.cell),
-            granularity: granularity,
-            firstVisibleIndex: firstVisibleIndex
-        )
-    }
-
-    private static func fullLabel(for cell: TimelineCell, granularity: SailuneTimelineGranularity) -> String {
-        switch granularity {
-        case .year:
-            return "\(cell.repYear)年"
-        case .month:
-            guard let month = cell.repMonth else { return "\(cell.repYear)年" }
-            return "\(cell.repYear)年\(month)月"
-        case .day:
-            guard let month = cell.repMonth else { return "\(cell.repYear)年" }
-            guard let day = cell.repDay else { return "\(cell.repYear)年\(month)月" }
-            return "\(cell.repYear)年\(month)月\(day)日"
-        }
-    }
-
-    private static func assignLabels(_ cells: inout [TimelineCell], granularity: SailuneTimelineGranularity) {
-        var lastYear: Int? = nil
-        var lastMonth: Int? = nil
-        for i in cells.indices {
-            let c = cells[i]
-            if i > 0 && cells[i - 1].eraID != c.eraID {
-                lastYear = nil
-                lastMonth = nil
-            }
-            let y = c.repYear
-            switch granularity {
-            case .year:
-                cells[i].label = "\(y)年"
-                lastYear = y; lastMonth = nil
-            case .month:
-                switch c.kind {
-                case .year:
-                    cells[i].label = "\(y)年"; lastYear = y; lastMonth = nil
-                case .month, .day:
-                    let m = c.repMonth ?? 0
-                    cells[i].label = (lastYear == y) ? "\(m)月" : "\(y)年\(m)月"
-                    lastYear = y; lastMonth = m
-                }
-            case .day:
-                switch c.kind {
-                case .year:
-                    cells[i].label = "\(y)年"; lastYear = y; lastMonth = nil
-                case .month:
-                    let m = c.repMonth ?? 0
-                    cells[i].label = (lastYear == y) ? "\(m)月" : "\(y)年\(m)月"
-                    lastYear = y; lastMonth = m
-                case .day:
-                    let m = c.repMonth ?? 0
-                    let d = c.repDay ?? 0
-                    if lastYear == y && lastMonth == m { cells[i].label = "\(d)" }
-                    else if lastYear == y { cells[i].label = "\(m)/\(d)" }
-                    else { cells[i].label = "\(y)/\(m)/\(d)" }
-                    lastYear = y; lastMonth = m
-                }
-            }
-        }
-    }
-}
-
-struct TimelineCardPresentation {
-    let isWritten: Bool
-    let locationText: String
-    let excerpt: String
-    let accessibilityText: String
 }
 
 struct PlanningRecordCardView: View {
@@ -1679,13 +1311,13 @@ private struct TimelineEventCardView: View {
             }
             .buttonStyle(.plain)
             Button(action: onDelete) {
-                Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                Image(systemName: SailuneSymbol.delete.systemName).foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
             .padding(8)
             .help("刪除事件卡片")
         }
-        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 9))
+        .background(SailuneTheme.subtleSurface, in: RoundedRectangle(cornerRadius: 9))
         .overlay { border }
         .help(presentation.accessibilityText)
         .accessibilityLabel(presentation.accessibilityText)
@@ -1700,82 +1332,6 @@ private struct TimelineEventCardView: View {
                 .stroke(style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
                 .foregroundStyle(Color.secondary.opacity(0.65))
         }
-    }
-}
-
-@MainActor
-enum TimelineCardProjection {
-    static func presentation(
-        event: Event,
-        book: Book,
-        metadata: TimelineEventCardMetadata?,
-        planningStore: StoryPlanningStore
-    ) -> TimelineCardPresentation {
-        let sections = BookStructure.orderedSections(in: book)
-        let legacySection = event.section.flatMap { section in sections.first { $0.id == section.id } }
-        var resolvedSection: Section?
-        var sourceIsValid = false
-        var excerpt = ""
-
-        let linkedOutlineItem: OutlineItem? = metadata.flatMap { metadata -> OutlineItem? in
-            guard metadata.bookID == book.id, let outlineItemID = metadata.outlineItemID else { return nil }
-            return planningStore.items(bookID: book.id).first { $0.id == outlineItemID }
-        }
-
-        if let metadata,
-           metadata.bookID == book.id,
-           let outlineItemID = metadata.outlineItemID,
-           linkedOutlineItem?.id == outlineItemID,
-           let anchor = planningStore.anchor(outlineItemID: outlineItemID),
-           anchor.bookID == book.id,
-           let section = sections.first(where: { $0.id == anchor.sectionID }) {
-            resolvedSection = section
-            sourceIsValid = true
-            excerpt = metadata.excerptMode == .manual
-                ? TimelineEventCardMetadata.limitedExcerpt(metadata.manualExcerpt)
-                : automaticExcerpt(anchor: anchor, section: section)
-        } else if let metadata, metadata.excerptMode == .manual {
-            excerpt = TimelineEventCardMetadata.limitedExcerpt(metadata.manualExcerpt)
-        }
-
-        let section = resolvedSection ?? legacySection
-        let location: String
-        if let section {
-            let volume = section.volume?.title.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            let sectionTitle = section.title.trimmingCharacters(in: .whitespacesAndNewlines)
-            location = "\(volume.isEmpty ? "未命名卷次" : volume)・\(sectionTitle.isEmpty ? "未命名節次" : sectionTitle)"
-        } else if linkedOutlineItem != nil {
-            location = "尚無正文來源"
-        } else if metadata?.outlineItemID != nil {
-            location = "來源失效"
-        } else {
-            location = "尚未綁定"
-        }
-        let isWritten = sourceIsValid || legacySection != nil
-        let title = event.title.isEmpty ? "未命名事件" : event.title
-        return TimelineCardPresentation(
-            isWritten: isWritten,
-            locationText: location,
-            excerpt: excerpt,
-            accessibilityText: "\(title)，\(isWritten ? "已寫入" : "未寫入")，\(location)\(excerpt.isEmpty ? "" : "，\(excerpt)")"
-        )
-    }
-
-    static func automaticExcerpt(anchor: OutlineItemAnchor, section: Section) -> String {
-        let plainText = String(section.content.characters)
-        let offset = anchor.resolvedOffset(in: plainText)
-        let nsText = plainText as NSString
-        guard offset < nsText.length else { return normalizedExcerpt(anchor.anchorText) }
-        let candidate = nsText.substring(from: offset)
-        let normalized = normalizedExcerpt(candidate)
-        return normalized.isEmpty ? normalizedExcerpt(anchor.anchorText) : normalized
-    }
-
-    static func normalizedExcerpt(_ value: String) -> String {
-        let normalized = value
-            .split(whereSeparator: { $0.isWhitespace })
-            .joined(separator: " ")
-        return String(normalized.prefix(30))
     }
 }
 
@@ -1856,7 +1412,7 @@ struct TimelineEventCreationView: View {
             }
             if let saveError { Text(saveError).font(.caption).foregroundStyle(.red) }
             HStack {
-                Button("取消") { dismiss() }
+                Button(SailuneActionCopy.cancel) { dismiss() }
                 Spacer()
                 Button("加入時間軸") { commit() }
                     .buttonStyle(PlanningActionStyle(prominent: true))
@@ -1983,7 +1539,7 @@ private struct TimelineEventBindingControls: View {
             }
         }
         .padding(10)
-        .background(Color.secondary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+        .background(SailuneTheme.insetRowSurface, in: RoundedRectangle(cornerRadius: 8))
         .onAppear {
             let metadata = planningStore.timelineMetadata(eventID: event.id)
             selectedOutlineItemID = metadata?.outlineItemID
@@ -2028,8 +1584,8 @@ private struct EventRow: View {
         VStack(alignment: .leading, spacing: 4) {
             if let saveError { Text(saveError).font(.caption).foregroundStyle(.red) }
             if editing {
-                TextField("事件標題", text: $event.title)
-                    .textFieldStyle(.roundedBorder).font(.caption)
+                SailuneFormTextField(title: "事件標題", text: $event.title)
+                    .font(.caption)
                     .onChange(of: event.title) { _, value in
                         if value.count > 10 { event.title = String(value.prefix(10)) }
                     }
@@ -2069,7 +1625,7 @@ private struct EventRow: View {
 
                 HStack {
                     Spacer()
-                    Button("完成") {
+                    Button(SailuneActionCopy.done) {
                         event.characters = allCharacters.filter { selectedIDs.contains($0.id.uuidString) }
                         do { try modelContext.save(); saveError = nil }
                         catch { saveError = error.localizedDescription; return }
@@ -2103,17 +1659,17 @@ private struct EventRow: View {
                             Label(event.isVisible ? "主軸：顯示中" : "主軸：已隱藏", systemImage: event.isVisible ? "eye.fill" : "eye.slash")
                         }
                         .buttonStyle(PlanningActionStyle())
-                        .help("顯示於主時間軸")
+                        .help(SailuneAccessibilityCopy.showOnMainTimeline)
                         Button {
                             selectedIDs = Set(event.characters.map { $0.id.uuidString })
                             editing = true
                         } label: {
-                            Label("編輯事件", systemImage: "pencil")
+                            Label("編輯事件", systemImage: SailuneSymbol.edit.systemName)
                         }
                         .buttonStyle(PlanningActionStyle())
                         .help("編輯事件")
                         Button(action: onDelete) {
-                            Label("刪除事件", systemImage: "trash").foregroundStyle(.red)
+                            Label("刪除事件", systemImage: SailuneSymbol.delete.systemName).foregroundStyle(.red)
                         }
                         .buttonStyle(PlanningActionStyle())
                         .help("刪除事件")
@@ -2240,10 +1796,10 @@ private struct AddNodePopover: View {
             if let saveError { Text(saveError).font(.caption).foregroundStyle(.red) }
 
             HStack {
-                Button("取消") { dismiss() }
+                Button(SailuneActionCopy.cancel) { dismiss() }
                     .buttonStyle(PlanningActionStyle())
                 Spacer()
-                Button("新增") { commit() }
+                Button(SailuneActionCopy.add) { commit() }
                     .buttonStyle(PlanningActionStyle(prominent: true))
                     .disabled(!canSave || target == nil)
             }
@@ -2271,269 +1827,6 @@ private struct AddNodePopover: View {
     }
 }
 
-// MARK: - 年號管理 popover
-
-@MainActor
-private struct EraManagerPopover: View {
-    let book: Book
-    @Query private var eras: [Era]
-    @Environment(\.modelContext) private var modelContext
-    @Environment(StoryPlanningStore.self) private var planningStore
-    @Environment(ItemCopyStore.self) private var copyStore
-    @Environment(V5SettingsStore.self) private var settingsStore
-    @Environment(AbilityProgressStore.self) private var abilityStore
-    @Environment(\.dismiss) private var dismiss
-    @State private var saveError: String?
-    @State private var pendingDeleteEra: Era?
-
-    private var sortedEras: [Era] { eras.sorted { $0.startOrdinal < $1.startOrdinal } }
-
-    private var deleteEraBinding: Binding<Bool> {
-        Binding(
-            get: { pendingDeleteEra != nil },
-            set: { if !$0 { pendingDeleteEra = nil } }
-        )
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("年號管理").font(.system(.headline, design: .serif))
-            if let saveError { Text(saveError).font(.caption).foregroundStyle(.red) }
-            Text("紀元為全書共享的時間皮膚。序數較小者排在時間河上游；填負數可建立前史紀元，供副軸落釘。改元（踰年推進敘事）請於主軸操作。")
-                .font(.caption2).foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Divider()
-            ScrollView {
-                VStack(spacing: 8) {
-                    ForEach(sortedEras) { era in
-                        EraRow(era: era) {
-                            pendingDeleteEra = era
-                        }
-                    }
-                }
-            }
-            .frame(maxHeight: 260)
-            Button { addEra() } label: {
-                Label("新增紀元", systemImage: "plus.circle")
-            }
-            .buttonStyle(PlanningActionStyle())
-            HStack {
-                Spacer()
-                Button("完成") {
-                    do { try modelContext.save() }
-                    catch { saveError = error.localizedDescription; return }
-                    dismiss()
-                }
-                .buttonStyle(PlanningActionStyle(prominent: true))
-            }
-        }
-        .alert(
-            deleteTitle(for: pendingDeleteEra),
-            isPresented: deleteEraBinding,
-            presenting: pendingDeleteEra
-        ) { era in
-            Button("取消", role: .cancel) { pendingDeleteEra = nil }
-            Button("刪除", role: .destructive) { performDeleteEra(era) }
-        } message: { era in
-            Text(deleteWarning(for: era))
-        }
-        .padding(16)
-        .frame(width: 320)
-    }
-
-    private func addEra() {
-        let next = (eras.map(\.startOrdinal).max() ?? 0) + 1
-        let e = Era(name: "", color: "#888888", startOrdinal: next)
-        modelContext.insert(e)
-    }
-
-    private func deleteTitle(for era: Era?) -> String {
-        guard let era else { return "刪除紀元？" }
-        let name = era.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return "刪除紀元「\(name.isEmpty ? "未命名紀元" : name)」？"
-    }
-
-    private func deleteWarning(for era: Era) -> String {
-        let isCurrentEra = book.currentEra?.id == era.id
-        var warning = "目前這本書所有時間軸中仍掛在此紀元下的時間點與世界時間事件將一併刪除，且無法復原。角色、能力、物品與關係歷史內容會保留，但失去這些時間定位；正文與敘事大綱保留。"
-        if isCurrentEra {
-            warning += "此紀元是目前紀元，之後會建立空白預設紀元。"
-        }
-        return warning
-    }
-
-    private func performDeleteEra(_ era: Era) {
-        saveError = nil
-        do {
-            let outcome = try CrossStoreDeletionCoordinator.deleteEra(
-                era,
-                for: book,
-                in: modelContext,
-                planningStore: planningStore,
-                copyStore: copyStore,
-                settingsStore: settingsStore,
-                abilityStore: abilityStore
-            )
-            if outcome.requiresRepair {
-                saveError = "紀元已刪除，但部分附屬資料尚未清理，將由啟動修復重試。\n\(outcome.deferredCleanupErrors.joined(separator: "\n"))"
-            }
-        } catch {
-            saveError = "無法刪除紀元；主要資料尚未刪除。\n\(error.localizedDescription)"
-        }
-        pendingDeleteEra = nil
-    }
-}
-
-@MainActor
-private struct EraRow: View {
-    @Bindable var era: Era
-    let onDelete: () -> Void
-    @State private var hovering = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 8) {
-                Circle().fill(Color(hex: era.color) ?? .gray).frame(width: 12, height: 12)
-                TextField("紀元名", text: $era.name)
-                    .textFieldStyle(.roundedBorder).font(.caption)
-                Button(role: .destructive, action: onDelete) {
-                    Label("刪除", systemImage: "trash")
-                }
-                .buttonStyle(.borderless)
-            }
-            HStack(spacing: 8) {
-                Text("序").font(.caption2).foregroundStyle(.secondary)
-                TextField("", value: $era.startOrdinal, format: .number)
-                    .textFieldStyle(.roundedBorder).font(.caption).frame(width: 72)
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 5) {
-                        ForEach(eraPalette, id: \.self) { hex in
-                            Button { era.color = hex } label: {
-                                Circle()
-                                    .fill(Color(hex: hex) ?? .gray)
-                                    .frame(width: 14, height: 14)
-                                    .overlay(Circle().stroke(era.color == hex ? Color.primary : .clear, lineWidth: 1.5))
-                                    .scaleEffect(hovering && era.color == hex ? 1.12 : 1)
-                            }
-                            .buttonStyle(.plain)
-                        }
-                    }
-                }
-            }
-        }
-        .padding(8)
-        .background(Color.primary.opacity(hovering ? 0.05 : 0.025))
-        .clipShape(RoundedRectangle(cornerRadius: 6))
-        .onHover { hovering = $0 }
-        .animation(.easeInOut(duration: 0.12), value: hovering)
-    }
-}
-
-// MARK: - 改元 popover
-
-private let eraPalette: [String] = [
-    "#C0392B", "#E67E22", "#F1C40F", "#27AE60",
-    "#2980B9", "#8E44AD", "#16A085", "#7F8C8D"
-]
-
-@MainActor
-private struct EraChangePopover: View {
-    let book: Book
-    @Environment(\.modelContext) private var modelContext
-    @Environment(\.dismiss) private var dismiss
-    @State private var name = ""
-    @State private var selectedHex = eraPalette[0]
-    @State private var saveError: String?
-
-    private var continuationText: String? {
-        guard let era = try? TimelineEngine.Query.lastEra(for: book, in: modelContext) else { return nil }
-        let year = try? TimelineEngine.Query.maxYear(of: era, for: book, in: modelContext)
-        let name = era.name.trimmingCharacters(in: .whitespacesAndNewlines)
-        return "接續於：〈\(name.isEmpty ? "未命名年號" : name)〉第 \(year ?? 1) 年之後"
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("改元（踰年）").font(.system(.headline, design: .serif))
-            if let continuationText {
-                Text(continuationText).font(.caption).foregroundStyle(.secondary)
-            }
-            if let saveError { Text(saveError).font(.caption).foregroundStyle(.red) }
-            TextField("新年號名", text: $name)
-            Text("年號色").font(.caption).foregroundStyle(.secondary)
-            HStack(spacing: 8) {
-                ForEach(eraPalette, id: \.self) { hex in
-                    Button { selectedHex = hex } label: {
-                        Circle()
-                            .fill(Color(hex: hex) ?? .gray)
-                            .frame(width: 22, height: 22)
-                            .overlay(Circle().stroke(selectedHex == hex ? Color.primary : .clear, lineWidth: 2))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            HStack {
-                Button("取消") { dismiss() }
-                Spacer()
-                Button("確認改元") {
-                    do {
-                    _ = try TimelineEngine.EraChange.perform(
-                        for: book,
-                        input: .init(newName: name, newColor: selectedHex),
-                        in: modelContext
-                    )
-                    } catch { saveError = error.localizedDescription; return }
-                    dismiss()
-                }
-                .buttonStyle(PlanningActionStyle(prominent: true))
-                .disabled(name.trimmingCharacters(in: .whitespaces).isEmpty)
-            }
-        }
-        .padding(16)
-        .frame(width: 260)
-    }
-}
-
-// MARK: - 編輯既有年號 popover
-
-@MainActor
-private struct EraEditPopover: View {
-    @Bindable var era: Era
-    @Environment(\.modelContext) private var modelContext
-    @Environment(\.dismiss) private var dismiss
-    @State private var saveError: String?
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("編輯年號").font(.system(.headline, design: .serif))
-            if let saveError { Text(saveError).font(.caption).foregroundStyle(.red) }
-            TextField("年號名", text: $era.name)
-            Text("年號色").font(.caption).foregroundStyle(.secondary)
-            HStack(spacing: 8) {
-                ForEach(eraPalette, id: \.self) { hex in
-                    Button { era.color = hex } label: {
-                        Circle()
-                            .fill(Color(hex: hex) ?? .gray)
-                            .frame(width: 22, height: 22)
-                            .overlay(Circle().stroke(era.color == hex ? Color.primary : .clear, lineWidth: 2))
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            HStack {
-                Spacer()
-                Button("完成") {
-                    do { try modelContext.save() }
-                    catch { saveError = error.localizedDescription; return }
-                    dismiss()
-                }
-            }
-        }
-        .padding(16)
-        .frame(width: 260)
-    }
-}
-
 // MARK: - hex → Color
 
 extension Color {
@@ -2545,214 +1838,5 @@ extension Color {
         let g = Double((v >> 8) & 0xFF) / 255.0
         let b = Double(v & 0xFF) / 255.0
         self.init(.sRGB, red: r, green: g, blue: b, opacity: 1)
-    }
-}
-
-// MARK: - 個人卡片時間投影（PRD 第 10 節主入口）
-
-@MainActor
-struct CharacterTimelineProjectionView: View {
-    let character: Character
-    @Query private var allEvents: [Event]
-    @Environment(\.modelContext) private var modelContext
-
-    private var myEvents: [Event] {
-        allEvents
-            .filter { $0.characters.contains(where: { $0.id == character.id }) }
-            .sorted { ordinal(of: $0) < ordinal(of: $1) }
-    }
-
-    private var visibleCount: Int {
-        myEvents.filter { TimelineEngine.Visibility.isVisibleOnPrimaryAxis($0) }.count
-    }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            Divider().opacity(0.5)
-            if myEvents.isEmpty {
-                emptyState
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(myEvents, id: \.id) { e in
-                            EventProjectionRow(event: e)
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-                .frame(maxHeight: 320)
-            }
-        }
-        .padding(.vertical, 10)
-        .background(
-            LinearGradient(
-                colors: [Color.accentColor.opacity(0.05), .clear],
-                startPoint: .top, endPoint: .bottom
-            )
-            .allowsHitTesting(false)
-        )
-    }
-
-    private var header: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(sailuneDisplayName(character))
-                .font(.system(.headline, design: .serif))
-                .lineLimit(1)
-            Spacer(minLength: 6)
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                statBlock(value: myEvents.count, label: "筆事件")
-                statBlock(value: visibleCount, label: "上主軸", accent: true)
-            }
-        }
-        .padding(.horizontal, 12)
-        .padding(.bottom, 8)
-        .overlay(alignment: .bottom) {
-            LinearGradient(colors: [.accentColor.opacity(0.5), .clear],
-                           startPoint: .leading, endPoint: .trailing)
-                .frame(height: 1.5)
-        }
-    }
-
-    private func statBlock(value: Int, label: String, accent: Bool = false) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 3) {
-            Text("\(value)")
-                .font(.system(.title3, design: .serif, weight: .bold))
-                .foregroundStyle(accent ? Color.accentColor : .primary)
-                .monospacedDigit()
-                .contentTransition(.numericText())
-            Text(label)
-                .font(.caption2)
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var emptyState: some View {
-        VStack(spacing: 8) {
-            Image(systemName: "figure.walk")
-                .font(.title2)
-                .foregroundStyle(.tertiary)
-            Text("尚未踏入時間")
-                .font(.system(.subheadline, design: .serif))
-                .foregroundStyle(.secondary)
-            Text("在右欄時間軸為這角色記錄事件後，其一生足跡將在此呈現。")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 24)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 28)
-    }
-
-    private func ordinal(of e: Event) -> Int {
-        guard let n = e.node else { return Int.max }
-        return TimelineEngine.Core.ordinal(
-            eraStart: n.era?.startOrdinal ?? 1,
-            year: n.year, month: n.month, day: n.day
-        )
-    }
-}
-
-// MARK: - 投影事件列（含 isVisible 主開關）
-
-@MainActor
-private struct EventProjectionRow: View {
-    @Bindable var event: Event
-    @Environment(\.modelContext) private var modelContext
-    @State private var hovering = false
-    @State private var saveErrorMessage: String?
-
-    private var bandColor: Color {
-        if !event.isVisible { return .secondary.opacity(0.25) }
-        if let hex = event.node?.era?.color, let c = Color(hex: hex) { return c }
-        return .accentColor
-    }
-
-    private var timeLabel: String {
-        guard let n = event.node else { return "未定時間" }
-        var s = n.year > 0 ? "\(n.year)年" : ""
-        if let m = n.month {
-            s += "\(m)月"
-            if let d = n.day { s += "\(d)日" }
-        }
-        return s.isEmpty ? "未設定世界時間" : s
-    }
-
-    private var nodeHidesIt: Bool {
-        event.isVisible && (event.node?.isVisible == false)
-    }
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 0) {
-            RoundedRectangle(cornerRadius: 1.5)
-                .fill(bandColor)
-                .frame(width: hovering ? 4 : 3)
-                .padding(.vertical, 4)
-                .animation(.easeInOut(duration: 0.15), value: hovering)
-
-            VStack(alignment: .leading, spacing: 3) {
-                Text(event.title.isEmpty ? "（無標題事件）" : event.title)
-                    .font(.caption)
-                    .foregroundStyle(event.isVisible ? .primary : .secondary)
-                    .lineLimit(2)
-                HStack(spacing: 6) {
-                    Text(timeLabel)
-                        .font(.caption2)
-                        .foregroundStyle(.tertiary)
-                    if nodeHidesIt {
-                        Text("· 所在節點已隱藏")
-                            .font(.caption2)
-                            .foregroundStyle(.orange.opacity(0.8))
-                    }
-                }
-            }
-            .padding(.leading, 8)
-            .padding(.trailing, 6)
-            .padding(.vertical, 7)
-            .frame(maxWidth: .infinity, alignment: .leading)
-
-            Button {
-                withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
-                    event.isVisible.toggle()
-                }
-                do { try modelContext.save() }
-                catch { modelContext.rollback(); saveErrorMessage = error.localizedDescription }
-            } label: {
-                ZStack {
-                    Circle()
-                        .fill(event.isVisible ? Color.accentColor : Color.secondary.opacity(0.15))
-                        .frame(width: 22, height: 22)
-                        .overlay(
-                            Circle().stroke(
-                                event.isVisible ? Color.clear : Color.secondary.opacity(0.4),
-                                lineWidth: 1
-                            )
-                        )
-                        .scaleEffect(hovering ? 1.08 : 1.0)
-                    Image(systemName: event.isVisible ? "eye.fill" : "eye.slash")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(event.isVisible ? .white : .secondary)
-                }
-            }
-            .buttonStyle(.plain)
-            .help("顯示於主時間軸")
-            .padding(.trailing, 10)
-            .padding(.top, 7)
-        }
-        .background(
-            RoundedRectangle(cornerRadius: 6)
-                .fill(Color.primary.opacity(hovering ? 0.05 : 0.0))
-        )
-        .padding(.horizontal, 8)
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .animation(.easeInOut(duration: 0.12), value: hovering)
-        .alert("事件顯示狀態無法儲存", isPresented: Binding(
-            get: { saveErrorMessage != nil },
-            set: { if !$0 { saveErrorMessage = nil } }
-        )) { Button("好") { saveErrorMessage = nil } } message: {
-            Text(saveErrorMessage ?? "請稍後再試。")
-        }
     }
 }

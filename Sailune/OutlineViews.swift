@@ -1,27 +1,8 @@
 import SwiftUI
 import SwiftData
+import OSLog
 
-/// 大綱操作共用點擊範圍；保留系統的焦點與停用語意。
-struct PlanningActionStyle: ButtonStyle {
-    var prominent = false
-    @Environment(\.isEnabled) private var isEnabled
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 13, weight: .medium))
-            .padding(.horizontal, 10)
-            .frame(minWidth: 28, minHeight: prominent ? 32 : 30)
-            .foregroundStyle(
-                configuration.role == .destructive
-                    ? Color.red
-                    : (prominent ? Color.white : Color.primary)
-            )
-            .background(prominent ? Color.accentColor : Color.secondary.opacity(0.1), in: RoundedRectangle(cornerRadius: 7))
-            .overlay(RoundedRectangle(cornerRadius: 7).stroke(Color.secondary.opacity(0.22), lineWidth: prominent ? 0 : 1))
-            .contentShape(Rectangle())
-            .opacity(!isEnabled ? 0.4 : (configuration.isPressed ? 0.65 : 1))
-    }
-}
+private let outlineMetadataRepairLogger = Logger(subsystem: "com.MooNest.Sailune", category: "OutlineMetadataRepair")
 
 private struct OutlineRowHeightsKey: PreferenceKey {
     static var defaultValue: [String: CGFloat] { [:] }
@@ -53,18 +34,7 @@ struct BookBackgroundView: View {
             }
         }
         .task(id: book.id) { loadProfile() }
-        .alert("故事背景無法儲存", isPresented: errorPresented) {
-            Button("好") { errorMessage = nil }
-        } message: {
-            Text(errorMessage ?? "未知錯誤")
-        }
-    }
-
-    private var errorPresented: Binding<Bool> {
-        Binding(
-            get: { errorMessage != nil },
-            set: { if !$0 { errorMessage = nil } }
-        )
+        .sailuneErrorAlert("故事背景無法儲存", errorMessage: $errorMessage)
     }
 
     private func loadProfile() {
@@ -100,11 +70,11 @@ private struct BookBackgroundEditor: View {
                 .font(.body)
                 .scrollContentBackground(.hidden)
                 .padding(8)
-                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                .background(SailuneTheme.storyBackgroundEditorSurface, in: RoundedRectangle(cornerRadius: 8))
                 .frame(minHeight: 180)
             HStack {
                 Spacer()
-                Button("儲存", systemImage: "square.and.arrow.down", action: save)
+                Button(SailuneActionCopy.save, systemImage: SailuneSymbol.save.systemName, action: save)
                     .buttonStyle(.borderedProminent)
             }
             Spacer(minLength: 0)
@@ -119,7 +89,7 @@ private struct BookBackgroundEditor: View {
             TextEditor(text: text)
                 .scrollContentBackground(.hidden)
                 .padding(6)
-                .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8))
+                .background(SailuneTheme.storyBackgroundEditorSurface, in: RoundedRectangle(cornerRadius: 8))
                 .frame(minHeight: 72)
         }
     }
@@ -215,6 +185,7 @@ struct BookPlanningWorkspaceView: View {
                 )
                 try planningStore.removeOrphanedRecordMetadata(validSourceKeys: validKeys)
             } catch {
+                outlineMetadataRepairLogger.error("Planning metadata repair deferred: \(String(describing: error), privacy: .private)")
                 // 投影仍可安全顯示；一致性修復會在下次開啟工作區重試。
             }
         }
@@ -282,7 +253,7 @@ private struct NarrativeOutlineTimelineView: View {
                     Text("故事線與階段")
                         .font(.headline)
                     Spacer()
-                    Button("完成") { showingOutlineManager = false }
+                    Button(SailuneActionCopy.done) { showingOutlineManager = false }
                         .buttonStyle(PlanningActionStyle(prominent: true))
                         .keyboardShortcut(.defaultAction)
                 }
@@ -330,7 +301,7 @@ private struct NarrativeOutlineTimelineView: View {
             get: { timelineError != nil },
             set: { if !$0 { timelineError = nil } }
         )) {
-            Button("好") { timelineError = nil }
+            Button(SailuneActionCopy.acknowledge) { timelineError = nil }
         } message: {
             Text(timelineError ?? "未知錯誤")
         }
@@ -355,7 +326,7 @@ private struct NarrativeOutlineListView: View {
                 if projection.storyLines.isEmpty {
                     ContentUnavailableView(
                         "尚未建立故事線",
-                        systemImage: "point.topleft.down.to.point.bottomright.curvepath",
+                        systemImage: SailuneSymbol.storyLine.systemName,
                         description: Text("使用上方「管理故事線與階段」建立第一條故事線。")
                     )
                     .frame(maxWidth: .infinity)
@@ -372,14 +343,7 @@ private struct NarrativeOutlineListView: View {
             itemDetail(item)
                 .frame(minWidth: 420, idealWidth: 520, minHeight: 480)
         }
-        .alert("大綱無法儲存", isPresented: Binding(
-            get: { errorMessage != nil },
-            set: { if !$0 { errorMessage = nil } }
-        )) {
-            Button("好") { errorMessage = nil }
-        } message: {
-            Text(errorMessage ?? "未知錯誤")
-        }
+        .sailuneErrorAlert("大綱無法儲存", errorMessage: $errorMessage)
     }
 
     private var selectedItemBinding: Binding<OutlineItem?> {
@@ -484,7 +448,7 @@ private struct NarrativeOutlineListView: View {
                                 .lineLimit(2)
                                 .multilineTextAlignment(.leading)
                             Spacer(minLength: 12)
-                            Image(systemName: "arrow.right")
+                            Image(systemName: SailuneSymbol.rowNavigation.systemName)
                                 .foregroundStyle(.tertiary)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -493,7 +457,7 @@ private struct NarrativeOutlineListView: View {
                         .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 7))
+                    .background(SailuneTheme.subtleSurface, in: RoundedRectangle(cornerRadius: 7))
                     .help(item.title.isEmpty ? "未命名大綱項目" : item.title)
                 }
             }
@@ -539,7 +503,7 @@ private struct NarrativeOutlineListView: View {
             HStack {
                 Text("項目詳情").font(.headline)
                 Spacer()
-                Button("關閉", systemImage: "xmark") { selectedItemID = nil }
+                Button(SailuneActionCopy.close, systemImage: SailuneSymbol.close.systemName) { selectedItemID = nil }
                     .labelStyle(.iconOnly)
                     .buttonStyle(PlanningActionStyle())
             }
@@ -610,13 +574,14 @@ private struct OutlineStructureBoardView: View {
     private let columnWidth: CGFloat = 220
 
     private var planningRecords: [PlanningRecordProjection] {
-        (try? PlanningRecordProjectionBuilder.build(
+        PlanningRecordProjectionBuilder.buildForDisplay(
             book: book,
             context: modelContext,
             abilityStore: abilityStore,
             copyStore: copyStore,
-            planningStore: planningStore
-        )) ?? []
+            planningStore: planningStore,
+            surface: .outline
+        )
     }
 
     var body: some View {
@@ -645,11 +610,7 @@ private struct OutlineStructureBoardView: View {
                 self.selectedItemID = nil
             }
         }
-        .alert("大綱無法儲存", isPresented: errorPresented) {
-            Button("好") { errorMessage = nil }
-        } message: {
-            Text(errorMessage ?? "未知錯誤")
-        }
+        .sailuneErrorAlert("大綱無法儲存", errorMessage: $errorMessage)
     }
 
     private func layoutContent(
@@ -660,7 +621,7 @@ private struct OutlineStructureBoardView: View {
         return GeometryReader { proxy in
             if layout.lanes.isEmpty {
                 ContentUnavailableView {
-                    Label("尚未建立故事線", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
+                    Label("尚未建立故事線", systemImage: SailuneSymbol.storyLine.systemName)
                 } description: {
                     Text("先在右側大綱建立主線、支線或其他故事線。")
                 }
@@ -695,13 +656,6 @@ private struct OutlineStructureBoardView: View {
         Binding(
             get: { selectedItem },
             set: { selectedItemID = $0?.id }
-        )
-    }
-
-    private var errorPresented: Binding<Bool> {
-        Binding(
-            get: { errorMessage != nil },
-            set: { if !$0 { errorMessage = nil } }
         )
     }
 
@@ -807,7 +761,7 @@ private struct OutlineStructureBoardView: View {
                 Text("項目詳情")
                     .font(.headline)
                 Spacer()
-                Button("關閉", systemImage: "xmark") { selectedItemID = nil }
+                Button(SailuneActionCopy.close, systemImage: SailuneSymbol.close.systemName) { selectedItemID = nil }
                     .labelStyle(.iconOnly)
                     .buttonStyle(PlanningActionStyle())
                     .help("關閉項目詳情")
@@ -875,7 +829,7 @@ private struct OutlineStructureBoardView: View {
                     .lineLimit(1)
                     .frame(width: CGFloat(group.count) * columnWidth)
                     .padding(.vertical, 6)
-                    .background(Color.secondary.opacity(0.06))
+                    .background(SailuneTheme.subtleSurface)
                     .overlay(alignment: .leading) { Divider().frame(width: 1) }
             }
         }
@@ -1033,7 +987,7 @@ private struct OutlineStructureBoardView: View {
             .padding(12)
             .background(
                 RoundedRectangle(cornerRadius: 8)
-                    .strokeBorder(Color.secondary.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [5]))
+                    .strokeBorder(SailuneTheme.outlinePlaceholderBorder, style: StrokeStyle(lineWidth: 1, dash: [5]))
             )
             .padding(.top, 14)
         }
@@ -1061,7 +1015,7 @@ private struct OutlineStructureBoardView: View {
                 .padding(12)
                 .background(
                     RoundedRectangle(cornerRadius: 8)
-                        .strokeBorder(Color.secondary.opacity(0.45), style: StrokeStyle(lineWidth: 1, dash: [5]))
+                        .strokeBorder(SailuneTheme.outlinePlaceholderBorder, style: StrokeStyle(lineWidth: 1, dash: [5]))
                 )
                 .padding(.top, 14)
             }
@@ -1202,14 +1156,10 @@ struct BookOutlineWorkspaceView: View {
         .background(Color.workspacePanelBackground)
         .onAppear { selectFirstStoryLineIfNeeded() }
         .onChange(of: storyLines.map(\.id)) { _, _ in selectFirstStoryLineIfNeeded() }
-        .alert("大綱無法儲存", isPresented: errorPresented) {
-            Button("好") { errorMessage = nil }
-        } message: {
-            Text(errorMessage ?? "未知錯誤")
-        }
+        .sailuneErrorAlert("大綱無法儲存", errorMessage: $errorMessage)
         .confirmationDialog("刪除故事線？", isPresented: Binding(get: { deleteStoryLineTarget != nil }, set: { if !$0 { deleteStoryLineTarget = nil } }), presenting: deleteStoryLineTarget) { storyLine in
-            Button("刪除故事線", role: .destructive) { deleteStoryLine(storyLine) }
-            Button("取消", role: .cancel) { deleteStoryLineTarget = nil }
+            Button(SailuneActionCopy.deleteStoryLine, role: .destructive) { deleteStoryLine(storyLine) }
+            Button(SailuneActionCopy.cancel, role: .cancel) { deleteStoryLineTarget = nil }
         } message: { storyLine in
             let itemCount = planningStore.items(storyLineID: storyLine.id).count
             let stageCount = planningStore.stages(storyLineID: storyLine.id).count
@@ -1232,7 +1182,7 @@ struct BookOutlineWorkspaceView: View {
                 .labelsHidden()
                 .frame(maxWidth: .infinity)
             } else {
-                Label("故事線時間軸", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
+                Label("故事線時間軸", systemImage: SailuneSymbol.storyLine.systemName)
                     .font(.subheadline.weight(.semibold))
                 Spacer()
             }
@@ -1244,17 +1194,17 @@ struct BookOutlineWorkspaceView: View {
                             .disabled(kind == .main && hasMainStoryLine)
                     }
                 } label: {
-                    Label("新增故事線", systemImage: "plus")
+                    Label("新增故事線", systemImage: SailuneSymbol.add.systemName)
                 }
                 .controlSize(.large)
                 .help("新增故事線")
 
                 if presentation == .narrative, let selectedStoryLine {
                     Button(role: .destructive) { deleteStoryLineTarget = selectedStoryLine } label: {
-                        Label("刪除故事線", systemImage: "trash")
+                        Label(SailuneActionCopy.deleteStoryLine, systemImage: SailuneSymbol.delete.systemName)
                     }
                     .buttonStyle(PlanningActionStyle())
-                    .help("刪除故事線")
+                    .help(SailuneActionCopy.deleteStoryLine)
                 }
             }
         }
@@ -1265,11 +1215,11 @@ struct BookOutlineWorkspaceView: View {
 
     private var emptyState: some View {
         ContentUnavailableView {
-            Label("尚未建立故事線", systemImage: "point.topleft.down.to.point.bottomright.curvepath")
+            Label("尚未建立故事線", systemImage: SailuneSymbol.storyLine.systemName)
         } description: {
             Text("先建立前傳、主線、支線或後記，再加入大綱項目。")
         } actions: {
-            Menu("建立故事線", systemImage: "plus") {
+            Menu("建立故事線", systemImage: SailuneSymbol.add.systemName) {
                 ForEach(OutlineStoryLineKind.allCases) { kind in
                     Button(kind.rawValue) { createStoryLine(kind) }
                 }
@@ -1281,13 +1231,6 @@ struct BookOutlineWorkspaceView: View {
         Binding(
             get: { selectedStoryLine?.id },
             set: { selectedStoryLineID = $0 }
-        )
-    }
-
-    private var errorPresented: Binding<Bool> {
-        Binding(
-            get: { errorMessage != nil },
-            set: { if !$0 { errorMessage = nil } }
         )
     }
 
@@ -1375,9 +1318,8 @@ private struct StoryLineContentView: View {
             Text(storyLine.kind.rawValue)
                 .font(.caption.weight(.semibold))
                 .foregroundStyle(.secondary)
-            TextField("故事線名稱", text: storyLineTitleBinding)
+            SailuneFormTextField(title: "故事線名稱", text: storyLineTitleBinding)
                 .font(.headline)
-                .textFieldStyle(.roundedBorder)
                 .onSubmit(save)
             if storyLine.kind == .main {
                 Button("新增主線階段", systemImage: "rectangle.stack.badge.plus") {
@@ -1439,7 +1381,7 @@ private struct StoryLineContentView: View {
                 errorMessage: $errorMessage
             )
         }
-        Button("新增大綱項目", systemImage: "plus") {
+        Button(SailuneActionCopy.addOutlineItem, systemImage: SailuneSymbol.add.systemName) {
             createItem(stage: stage)
         }
         .buttonStyle(PlanningActionStyle(prominent: true))
@@ -1503,7 +1445,7 @@ private struct TimelineStoryLinesView: View {
                     )
                     .frame(width: 300, alignment: .top)
                     .background(
-                        Color.secondary.opacity(0.04),
+                        SailuneTheme.faintCardSurface,
                         in: RoundedRectangle(cornerRadius: 12)
                     )
                 }
@@ -1573,7 +1515,7 @@ private struct StageStartEditorSheet: View {
             }
             HStack {
                 Spacer()
-                Button("取消") { dismiss() }.buttonStyle(PlanningActionStyle())
+                Button(SailuneActionCopy.cancel) { dismiss() }.buttonStyle(PlanningActionStyle())
                 Button(stage == nil ? "建立" : "儲存定位", action: create)
                     .buttonStyle(PlanningActionStyle(prominent: true))
                     .disabled(selectedVolumeID == nil)
@@ -1662,10 +1604,10 @@ private struct StageSectionView: View {
                     .onSubmit(save)
                 Spacer()
                 Button(role: .destructive) { showingDeleteConfirmation = true } label: {
-                    Label("刪除階段", systemImage: "trash")
+                    Label(SailuneActionCopy.deleteStage, systemImage: SailuneSymbol.delete.systemName)
                 }
                 .buttonStyle(PlanningActionStyle())
-                .help("刪除階段")
+                .help(SailuneActionCopy.deleteStage)
             }
             Text(stageStartDescription)
                 .font(.caption)
@@ -1685,18 +1627,18 @@ private struct StageSectionView: View {
                         errorMessage: $errorMessage
                     )
                 }
-                Button("新增大綱項目", systemImage: "plus", action: createItem)
+                Button(SailuneActionCopy.addOutlineItem, systemImage: SailuneSymbol.add.systemName, action: createItem)
                     .buttonStyle(PlanningActionStyle(prominent: true))
             }
         }
         .padding(10)
-        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+        .background(SailuneTheme.subtleSurface, in: RoundedRectangle(cornerRadius: 10))
         .sheet(isPresented: $showingStartEditor) {
             StageStartEditorSheet(book: book, storyLine: storyLine, stage: stage, errorMessage: $errorMessage)
         }
         .confirmationDialog("刪除階段？", isPresented: $showingDeleteConfirmation) {
-            Button("刪除階段", role: .destructive, action: deleteStage)
-            Button("取消", role: .cancel) { }
+            Button(SailuneActionCopy.deleteStage, role: .destructive, action: deleteStage)
+            Button(SailuneActionCopy.cancel, role: .cancel) { }
         } message: {
             Text("將刪除「\(stage.title)」及其中 \(items.count) 個大綱項目與正文標記；正文內容不會被刪除。")
         }
@@ -1783,12 +1725,12 @@ private struct UnassignedStageSectionView: View {
                 ForEach(items) { item in
                     OutlineItemEditor(book: book, item: item, presentation: presentation, availableStages: allStages, onOpenOutlineItem: onOpenOutlineItem, errorMessage: $errorMessage)
                 }
-                Button("新增大綱項目", systemImage: "plus", action: createItem)
+                Button(SailuneActionCopy.addOutlineItem, systemImage: SailuneSymbol.add.systemName, action: createItem)
                     .buttonStyle(PlanningActionStyle(prominent: true))
             }
         }
         .padding(10)
-        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+        .background(SailuneTheme.subtleSurface, in: RoundedRectangle(cornerRadius: 10))
     }
 
     private func createItem() {
@@ -1860,7 +1802,7 @@ private struct OutlineItemEditor: View {
                     }
                     .buttonStyle(PlanningActionStyle())
                 } else if planningStore.anchor(outlineItemID: item.id) != nil {
-                    Label("來源已刪除", systemImage: "exclamationmark.triangle.fill")
+                    Label("來源已刪除", systemImage: SailuneSymbol.warning.systemName)
                         .font(.caption)
                         .foregroundStyle(.orange)
                 }
@@ -1876,7 +1818,7 @@ private struct OutlineItemEditor: View {
                             Button("改為預定") { setLegacyManualStatus(.planned) }
                             Button("改為背景") { setLegacyManualStatus(.background) }
                         } label: {
-                            Label("需要調整狀態", systemImage: "exclamationmark.triangle.fill")
+                            Label("需要調整狀態", systemImage: SailuneSymbol.warning.systemName)
                                 .foregroundStyle(.orange)
                                 .font(.caption)
                         }
@@ -1933,10 +1875,10 @@ private struct OutlineItemEditor: View {
 
                 HStack {
                     Spacer()
-                    Button("儲存", systemImage: "square.and.arrow.down", action: save)
+                    Button(SailuneActionCopy.save, systemImage: SailuneSymbol.save.systemName, action: save)
                     .buttonStyle(PlanningActionStyle(prominent: true))
                     Button(role: .destructive) { showingDeleteConfirmation = true } label: {
-                        Label("刪除項目", systemImage: "trash")
+                        Label("刪除項目", systemImage: SailuneSymbol.delete.systemName)
                     }
                     .buttonStyle(PlanningActionStyle())
                     .help("刪除大綱項目")
@@ -1956,11 +1898,11 @@ private struct OutlineItemEditor: View {
                 }
             }
             .padding(10)
-            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+            .background(SailuneTheme.navigationCardSurface, in: RoundedRectangle(cornerRadius: 10))
         }
         .confirmationDialog("刪除大綱項目？", isPresented: $showingDeleteConfirmation) {
-            Button("刪除", role: .destructive, action: deleteItem)
-            Button("取消", role: .cancel) { }
+            Button(SailuneActionCopy.delete, role: .destructive, action: deleteItem)
+            Button(SailuneActionCopy.cancel, role: .cancel) { }
         } message: {
             Text("大綱項目與其正文來源會移除；正文不會被刪除。")
         }

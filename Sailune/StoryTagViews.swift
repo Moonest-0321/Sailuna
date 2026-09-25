@@ -35,7 +35,7 @@ struct StoryTagListView: View {
                     if let tag = allTags.first(where: { $0.id == id }) { onOpen?(tag) }
                 }
             )
-            InspectorSearchField(placeholder: "搜尋標籤", text: $searchText)
+            SailuneSearchField(placeholder: "搜尋標籤", text: $searchText)
             if currentSection != nil {
                 Toggle("只顯示本節相關標籤", isOn: $showCurrentSectionOnly)
                     .font(.caption)
@@ -65,7 +65,7 @@ struct StoryTagListView: View {
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
-                                    Button("刪除", role: .destructive) { deleteTarget = tag }
+                                    Button(SailuneActionCopy.delete, role: .destructive) { deleteTarget = tag }
                                         .buttonStyle(.plain)
                                 }
                             }
@@ -78,13 +78,13 @@ struct StoryTagListView: View {
             .background(Color.workspacePanelBackground)
         }
         .confirmationDialog("刪除標籤？", isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } }), presenting: deleteTarget) { tag in
-            Button("刪除", role: .destructive) { delete(tag) }
-            Button("取消", role: .cancel) { deleteTarget = nil }
+            Button(SailuneActionCopy.delete, role: .destructive) { delete(tag) }
+            Button(SailuneActionCopy.cancel, role: .cancel) { deleteTarget = nil }
         } message: { tag in
             Text("「\(tag.title.isEmpty ? "未命名標籤" : tag.title)」的標籤提示會消失，但正文不會被刪除。")
         }
         .alert("標籤無法刪除", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
-            Button("好") { errorMessage = nil }
+            Button(SailuneActionCopy.acknowledge) { errorMessage = nil }
         } message: { Text(errorMessage ?? "未知錯誤") }
     }
 

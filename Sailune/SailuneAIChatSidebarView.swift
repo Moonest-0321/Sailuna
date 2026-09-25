@@ -53,17 +53,17 @@ struct SailuneAIChatSidebarView: View {
                     Image(systemName: "bubble.left.and.bubble.right")
                 }
                 .buttonStyle(.plain)
-                .help("切換對話")
-                .accessibilityLabel("切換對話")
+                .help(SailuneAccessibilityCopy.switchConversation)
+                .accessibilityLabel(SailuneAccessibilityCopy.switchConversation)
                 .popover(isPresented: $showingConversations) {
                     conversationPicker
                 }
                 Button(action: onClose) {
-                    Image(systemName: "xmark")
+                    Image(systemName: SailuneSymbol.close.systemName)
                 }
                 .buttonStyle(.plain)
-                .help("關閉 AI 助手")
-                .accessibilityLabel("關閉 AI 助手")
+                .help(SailuneAccessibilityCopy.closeAIAssistant)
+                .accessibilityLabel(SailuneAccessibilityCopy.closeAIAssistant)
             }
             .padding(.horizontal, 14)
             .padding(.vertical, 12)
@@ -107,24 +107,24 @@ struct SailuneAIChatSidebarView: View {
 
             if let characterTemplate {
                 HStack(alignment: .top, spacing: 6) {
-                    Label(templateSummary(characterTemplate), systemImage: "person.text.rectangle")
+                    Label(templateSummary(characterTemplate), systemImage: SailuneSymbol.aiCharacterTemplate.systemName)
                         .lineLimit(2)
                     Spacer(minLength: 0)
                     Button {
                         self.characterTemplate = nil
                     } label: {
-                        Image(systemName: "xmark")
+                        Image(systemName: SailuneSymbol.removeSelection.systemName)
                     }
                     .buttonStyle(.plain)
-                    .help("移除角色整理模板")
-                    .accessibilityLabel("移除角色整理模板")
+                    .help(SailuneAccessibilityCopy.removeCharacterTemplate)
+                    .accessibilityLabel(SailuneAccessibilityCopy.removeCharacterTemplate)
                 }
                 .font(.caption)
                 .padding(.horizontal, 12)
                 .padding(.top, 10)
             } else if let selectedScope {
                 HStack(spacing: 6) {
-                    Label(selectedScopeTitle(selectedScope), systemImage: "doc.text.magnifyingglass")
+                    Label(selectedScopeTitle(selectedScope), systemImage: SailuneSymbol.aiReadingScope.systemName)
                         .lineLimit(1)
                     Spacer(minLength: 0)
                     Button("生成摘要") {
@@ -135,11 +135,11 @@ struct SailuneAIChatSidebarView: View {
                     Button {
                         self.selectedScope = nil
                     } label: {
-                        Image(systemName: "xmark")
+                        Image(systemName: SailuneSymbol.removeSelection.systemName)
                     }
                     .buttonStyle(.plain)
-                    .help("移除閱讀範圍")
-                    .accessibilityLabel("移除閱讀範圍")
+                    .help(SailuneAccessibilityCopy.removeReadingScope)
+                    .accessibilityLabel(SailuneAccessibilityCopy.removeReadingScope)
                 }
                 .font(.caption)
                 .padding(.horizontal, 12)
@@ -148,7 +148,7 @@ struct SailuneAIChatSidebarView: View {
 
             HStack(alignment: .bottom, spacing: 8) {
                 Menu {
-                    Button("加入閱讀範圍…", systemImage: "doc.text.magnifyingglass") {
+                    Button("加入閱讀範圍…", systemImage: SailuneSymbol.aiReadingScope.systemName) {
                         prepareScopeSelection()
                         showingReadingRange = true
                     }
@@ -165,7 +165,7 @@ struct SailuneAIChatSidebarView: View {
                         comparisonCategories = Set(SailuneAICharacterCategory.allCases)
                         showingCharacterComparison = true
                     }
-                    Button("角色資訊整理…", systemImage: "person.text.rectangle") {
+                    Button("角色資訊整理…", systemImage: SailuneSymbol.aiCharacterTemplate.systemName) {
                         let sections = BookStructure.orderedSections(in: book)
                         let characters = bookCharacters
                         templateSectionID = sections.first?.id
@@ -174,7 +174,7 @@ struct SailuneAIChatSidebarView: View {
                         showingCharacterTemplate = true
                     }
                 } label: {
-                    Image(systemName: "plus")
+                    Image(systemName: SailuneSymbol.add.systemName)
                 }
                 .buttonStyle(.plain)
                 .frame(minWidth: 24, minHeight: 24)
@@ -210,8 +210,8 @@ struct SailuneAIChatSidebarView: View {
                         Image(systemName: "arrow.up")
                     }
                     .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    .help("送出訊息")
-                    .accessibilityLabel("送出訊息")
+                    .help(SailuneAccessibilityCopy.sendMessage)
+                    .accessibilityLabel(SailuneAccessibilityCopy.sendMessage)
                 }
             }
             .padding(12)
@@ -236,7 +236,7 @@ struct SailuneAIChatSidebarView: View {
                 }
                 conversationToDeleteID = nil
             }
-            Button("取消", role: .cancel) {
+            Button(SailuneActionCopy.cancel, role: .cancel) {
                 conversationToDeleteID = nil
             }
         } message: {
@@ -254,11 +254,11 @@ struct SailuneAIChatSidebarView: View {
                     model.newConversation()
                     showingConversations = false
                 } label: {
-                    Image(systemName: "plus")
+                    Image(systemName: SailuneSymbol.add.systemName)
                 }
                 .buttonStyle(.plain)
-                .help("新增對話")
-                .accessibilityLabel("新增對話")
+                .help(SailuneAccessibilityCopy.addConversation)
+                .accessibilityLabel(SailuneAccessibilityCopy.addConversation)
             }
             ScrollView {
                 LazyVStack(spacing: 4) {
@@ -270,7 +270,7 @@ struct SailuneAIChatSidebarView: View {
                             } label: {
                                 HStack(spacing: 6) {
                                     if conversation.id == model.selectedConversationID {
-                                        Image(systemName: "checkmark")
+                                        Image(systemName: SailuneSymbol.selected.systemName)
                                     }
                                     VStack(alignment: .leading, spacing: 2) {
                                         Text(conversation.title)
@@ -288,7 +288,7 @@ struct SailuneAIChatSidebarView: View {
                                 showingConversations = false
                                 conversationToDeleteID = conversation.id
                             } label: {
-                                Image(systemName: "trash")
+                                Image(systemName: SailuneSymbol.delete.systemName)
                             }
                             .buttonStyle(.plain)
                             .help("刪除對話")
@@ -430,7 +430,7 @@ struct SailuneAIChatSidebarView: View {
             .navigationTitle("加入閱讀範圍")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { showingReadingRange = false }
+                    Button(SailuneActionCopy.cancel) { showingReadingRange = false }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("加入範圍") {
@@ -489,7 +489,7 @@ struct SailuneAIChatSidebarView: View {
             .navigationTitle("設定分析")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { showingSettingAnalysis = false }
+                    Button(SailuneActionCopy.cancel) { showingSettingAnalysis = false }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("開始分析") { runSettingAnalysis() }
@@ -534,7 +534,7 @@ struct SailuneAIChatSidebarView: View {
             .navigationTitle("角色比較")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { showingCharacterComparison = false }
+                    Button(SailuneActionCopy.cancel) { showingCharacterComparison = false }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("開始比較") { runCharacterComparison() }
@@ -630,7 +630,7 @@ struct SailuneAIChatSidebarView: View {
             .navigationTitle("角色資訊整理")
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button("取消") { showingCharacterTemplate = false }
+                    Button(SailuneActionCopy.cancel) { showingCharacterTemplate = false }
                 }
                 ToolbarItem(placement: .confirmationAction) {
                     Button("套用") {

@@ -307,12 +307,12 @@ struct BeliefPresetCatalogView: View {
                     .safeAreaInset(edge: .bottom) {
                         if allowsSelection {
                             HStack {
-                                Button("不選擇") {
+                                Button(SailuneActionCopy.clearSelection) {
                                     onSelect?(nil)
                                     dismiss()
                                 }
                                 Spacer()
-                                Button("選擇\(displayedPreset.title)") {
+                                Button(SailuneActionCopy.selectPreset(displayedPreset.title)) {
                                     onSelect?(displayedPreset)
                                     dismiss()
                                 }
@@ -323,12 +323,12 @@ struct BeliefPresetCatalogView: View {
                         }
                     }
             } else {
-                ContentUnavailableView("請選擇信仰", systemImage: "hands.sparkles")
+                ContentUnavailableView("請選擇信仰", systemImage: SailuneSymbol.belief.systemName)
             }
         }
         .frame(minWidth: 760, minHeight: 620)
         .toolbar {
-            Button("關閉") { dismiss() }
+            Button(SailuneActionCopy.close) { dismiss() }
         }
     }
 }

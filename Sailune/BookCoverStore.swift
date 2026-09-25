@@ -1,5 +1,8 @@
 import AppKit
 import Foundation
+import OSLog
+
+private let coverReadLogger = Logger(subsystem: "com.MooNest.Sailune", category: "CoverRead")
 
 /// Stores optional custom book covers outside SwiftData so existing libraries
 /// remain compatible when the cover feature is introduced.
@@ -42,9 +45,17 @@ enum BookCoverStore {
     /// Reads the persisted PNG directly so exports always use the latest file,
     /// independent of the in-memory artwork cache used by the UI.
     static func pngData(for book: Book) -> Data? {
-        guard let data = try? Data(contentsOf: url(for: book)),
-              !data.isEmpty,
-              NSImage(data: data) != nil else {
+        let coverURL = url(for: book)
+        guard FileManager.default.fileExists(atPath: coverURL.path) else { return nil }
+        let data: Data
+        do {
+            data = try Data(contentsOf: coverURL)
+        } catch {
+            coverReadLogger.error("Custom cover read failed: \(error.localizedDescription, privacy: .private)")
+            return nil
+        }
+        guard !data.isEmpty, NSImage(data: data) != nil else {
+            coverReadLogger.error("Custom cover content is empty or invalid")
             return nil
         }
         return data

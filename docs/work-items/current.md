@@ -2,9 +2,9 @@
 
 > 整體狀態：active
 >
-> 目前階段：V8.2 AI 閱讀、設定分析與角色一致性比較（R／U／I approved；實作及 Debug build 完成，待隔離資料 UI 驗收）
+> 目前階段：V10 文書匯入與 TXT 發布相容輸出（僅限 V10；優先 `.docx`／`.txt`，`.pages` 可暫緩；R 草案見 [v10-content-transfer.md](v10-content-transfer.md)）
 >
-> 單一下一步：以隔離資料驗收單節／單卷／全書、設定分析、角色比較及超長拒絕流程。
+> 單一下一步：使用者核准 R 提案的待定預設，再核准 U 線框；之後依已授權的 I 計畫開始實作。已確認文件匯入建立一本新書，不追加到目前書籍；已確認移除 `#`／`##`、整本及單節 TXT 均帶卷次／節次、單一字級及超過四級回退規則。網站架設與其他產品版本均不在本工作範圍；本工作單不改變其他工作流的決策或批准狀態。V8.2 的 4,096 token 議題保留為後續待議。
 
 ## V8.2 AI 閱讀、設定分析與角色一致性比較（R approved）
 
@@ -112,7 +112,9 @@ AI 助手                                      [對話 ▾]
 - 對話沿用舊 `SailuneAISectionAttachment` Codable 形狀，不改 schema；未操作正式作者資料。
 - 已檢查跨書目標查找與附件資料邊界，並補齊目前勢力狀態、成員／職務節點時間、世界條目內容及能力資產名稱快照。
 - 驗證：受影響 Swift 檔 `swiftc -frontend -parse`、`git diff --check` 與無簽章 macOS Debug build 通過。沙盒內兩次 build 曾遇 `swift-plugin-server` macro `produced malformed response`；在主機環境以同一 Xcode 和隔離 DerivedData 重跑後，修正真實 Swift 錯誤並完成 build。未新增或執行 XCTest。隔離資料 UI 驗收尚未執行。
-- 未解決項目：隔離資料 UI 驗收待完成；工作單維持 active。
+- 使用者於 2026-09-23 確認完成；目前唯一提出的問題是 4K 上下文。Apple 裝置端 Foundation Models 上限為 4,096 tokens；程式按 API `contextSize` 預檢，並為生成回覆預留 `contextSize / 4`（在 4,096 時為 1,024 tokens），所以可用輸入還需扣除系統指示、對話歷史與附件。此限制不是產品版本或 schema 設定，不能透過程式把本機模型容量調大。參考：[Apple Managing the context window](https://developer.apple.com/documentation/foundationmodels/managing-the-context-window)。
+- 已決定的限制仍有效：超限明確停止，不自動分段／彙整，也不轉送雲端。若要突破 4,096，需重新確認需求（R）與 UI／實作計畫；不在本輪自行改變既有決策。
+- 未解決項目：4,096 token 上限是否接受，或要重新討論分段／其他模型；工作單維持 active。
 
 ## 設定集資料查詢與章節角色資訊整理
 

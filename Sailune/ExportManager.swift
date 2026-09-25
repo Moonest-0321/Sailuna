@@ -61,7 +61,7 @@ private struct SailuneFileExporterModifier: ViewModifier {
                 get: { errorMessage != nil },
                 set: { if !$0 { errorMessage = nil } }
             )) {
-                Button("好", role: .cancel) { errorMessage = nil }
+                Button(SailuneActionCopy.acknowledge, role: .cancel) { errorMessage = nil }
             } message: {
                 Text(errorMessage ?? "未知錯誤")
             }

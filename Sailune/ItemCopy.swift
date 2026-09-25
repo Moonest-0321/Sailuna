@@ -1,6 +1,12 @@
 import Foundation
 import Observation
 import SwiftData
+import OSLog
+
+private let itemCopyHistoryCodingLogger = Logger(
+    subsystem: "com.MooNest.Sailune",
+    category: "ItemCopyHistoryCoding"
+)
 
 enum ItemCopySchemaV1: VersionedSchema {
     static var versionIdentifier = Schema.Version(1, 0, 0)
@@ -104,11 +110,25 @@ final class ItemCopyHistory {
     }
 
     private static func encode(_ ids: [UUID]) -> Data {
-        (try? JSONEncoder().encode(ids)) ?? Data()
+        do {
+            return try JSONEncoder().encode(ids)
+        } catch {
+            itemCopyHistoryCodingLogger.error(
+                "Failed to encode related character IDs; returning empty data. \(String(describing: error), privacy: .private)"
+            )
+            return Data()
+        }
     }
 
     private static func decode(_ data: Data) -> [UUID] {
-        (try? JSONDecoder().decode([UUID].self, from: data)) ?? []
+        do {
+            return try JSONDecoder().decode([UUID].self, from: data)
+        } catch {
+            itemCopyHistoryCodingLogger.error(
+                "Failed to decode related character IDs; returning an empty list. \(String(describing: error), privacy: .private)"
+            )
+            return []
+        }
     }
 }
 
@@ -175,6 +195,7 @@ enum ItemCopyOperations {
 @MainActor
 @Observable
 final class ItemCopyStore {
+    private static let logger = Logger(subsystem: "com.MooNest.Sailune", category: "ItemCopyStore")
     let container: ModelContainer
     private let context: ModelContext
     private let levelSelectionContext: ModelContext
@@ -324,7 +345,8 @@ final class ItemCopyStore {
         } catch {
             context.rollback()
             if levelSelectionContext !== context { levelSelectionContext.rollback() }
-            try? refresh()
+            do { try refresh() }
+            catch { Self.logger.error("Refresh after reconciliation rollback failed: \(String(describing: error), privacy: .private)") }
             throw error
         }
     }
@@ -415,7 +437,8 @@ final class ItemCopyStore {
         } catch {
             context.rollback()
             if levelSelectionContext !== context { levelSelectionContext.rollback() }
-            try? refresh()
+            do { try refresh() }
+            catch { Self.logger.error("Refresh after save rollback failed: \(String(describing: error), privacy: .private)") }
             let nsError = error as NSError
             persistenceErrorMessage = "\(nsError.domain) \(nsError.code)：\(nsError.localizedDescription)"
         }

@@ -432,12 +432,12 @@ struct TechnologyPresetCatalogView: View {
                     .safeAreaInset(edge: .bottom) {
                         if allowsSelection {
                             HStack {
-                                Button("不選擇") {
+                                Button(SailuneActionCopy.clearSelection) {
                                     onSelect?(nil)
                                     dismiss()
                                 }
                                 Spacer()
-                                Button("選擇\(displayedPreset.title)") {
+                                Button(SailuneActionCopy.selectPreset(displayedPreset.title)) {
                                     onSelect?(displayedPreset)
                                     dismiss()
                                 }
@@ -448,12 +448,12 @@ struct TechnologyPresetCatalogView: View {
                         }
                     }
             } else {
-                ContentUnavailableView("請選擇技術階段", systemImage: "gearshape.2")
+                ContentUnavailableView("請選擇技術階段", systemImage: SailuneSymbol.technology.systemName)
             }
         }
         .frame(minWidth: 760, minHeight: 620)
         .toolbar {
-            Button("關閉") { dismiss() }
+            Button(SailuneActionCopy.close) { dismiss() }
         }
     }
 }

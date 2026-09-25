@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import Observation
+import OSLog
 
 enum AbilityProgressSchemaV1: VersionedSchema {
     static var versionIdentifier = Schema.Version(1, 0, 0)
@@ -45,6 +46,7 @@ enum AbilityProgressSchemaV1: VersionedSchema {
 }
 
 @MainActor @Observable final class AbilityProgressStore {
+    private static let logger = Logger(subsystem: "com.MooNest.Sailune", category: "AbilityProgressStore")
     /// Keep the container alive for as long as any of its model instances are
     /// displayed. Releasing it resets the context and invalidates those models.
     let container: ModelContainer
@@ -60,7 +62,8 @@ enum AbilityProgressSchemaV1: VersionedSchema {
             persistenceErrorMessage = nil
         } catch {
             context.rollback()
-            try? reload()
+            do { try reload() }
+            catch { Self.logger.error("Reload after save rollback failed: \(String(describing: error), privacy: .private)") }
             let nsError = error as NSError
             persistenceErrorMessage = "\(nsError.domain) \(nsError.code)：\(nsError.localizedDescription)"
         }
@@ -86,7 +89,8 @@ enum AbilityProgressSchemaV1: VersionedSchema {
             persistenceErrorMessage = nil
         } catch {
             context.rollback()
-            try? reload()
+            do { try reload() }
+            catch { Self.logger.error("Reload after link registration rollback failed: \(String(describing: error), privacy: .private)") }
             let nsError = error as NSError
             persistenceErrorMessage = "\(nsError.domain) \(nsError.code)：\(nsError.localizedDescription)"
             throw error
@@ -144,7 +148,8 @@ enum AbilityProgressSchemaV1: VersionedSchema {
             persistenceErrorMessage = nil
         } catch {
             context.rollback()
-            try? reload()
+            do { try reload() }
+            catch { Self.logger.error("Reload after legacy migration rollback failed: \(String(describing: error), privacy: .private)") }
             throw error
         }
     }
@@ -215,7 +220,8 @@ enum AbilityProgressSchemaV1: VersionedSchema {
             persistenceErrorMessage = nil
         } catch {
             context.rollback()
-            try? reload()
+            do { try reload() }
+            catch { Self.logger.error("Reload after reconciliation rollback failed: \(String(describing: error), privacy: .private)") }
             throw error
         }
     }

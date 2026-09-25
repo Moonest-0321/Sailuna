@@ -134,16 +134,9 @@ struct BookOverviewView: View {
                     Text("故事背景")
                         .font(.title3.weight(.semibold))
                     Spacer()
-                    Button {
+                    SailuneIconButton(symbol: .close, label: SailuneActionCopy.closeStoryBackground) {
                         isEditingBackground = false
-                    } label: {
-                        Image(systemName: "xmark")
-                            .frame(width: 28, height: 28)
-                            .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
-                    .help("關閉故事背景")
-                    .accessibilityLabel("關閉故事背景")
                 }
                 .padding(.horizontal, 20)
                 .padding(.vertical, 14)
@@ -185,7 +178,7 @@ struct BookInfoPanel: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                         .contentShape(Rectangle())
                         .contextMenu {
-                            Button("更換封面…", systemImage: "photo") {
+                            Button("更換封面…", systemImage: SailuneSymbol.imageAsset.systemName) {
                                 showingCoverImporter = true
                             }
                             if hasCustomCover {
@@ -193,7 +186,7 @@ struct BookInfoPanel: View {
                                 Button(role: .destructive) {
                                     removeCover()
                                 } label: {
-                                    Label("移除封面", systemImage: "trash")
+                                    Label("移除封面", systemImage: SailuneSymbol.removeCover.systemName)
                                 }
                             }
                         }
@@ -202,18 +195,16 @@ struct BookInfoPanel: View {
 
                     VStack(alignment: .leading, spacing: 8) {
                         Text("書名").font(.subheadline).foregroundStyle(.secondary)
-                        TextField("書名", text: Binding(
+                        SailuneFormTextField(title: "書名", text: Binding(
                             get: { book.title },
                             set: { book.title = $0; book.updatedAt = Date() }
                         ))
-                        .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         Text("作者").font(.subheadline).foregroundStyle(.secondary)
-                        TextField("作者", text: Binding(
+                        SailuneFormTextField(title: "作者", text: Binding(
                             get: { book.author },
                             set: { book.author = $0; book.updatedAt = Date() }
                         ))
-                        .textFieldStyle(.roundedBorder)
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
                     .frame(minWidth: 120, maxWidth: .infinity, alignment: .leading)
@@ -233,7 +224,7 @@ struct BookInfoPanel: View {
                             Text("故事背景")
                                 .font(.headline)
                             Spacer()
-                            Image(systemName: "chevron.right")
+                            Image(systemName: SailuneSymbol.disclosure.systemName)
                                 .foregroundStyle(.secondary)
                         }
                         Text(backgroundSummary)
@@ -244,7 +235,7 @@ struct BookInfoPanel: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12)
-                    .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
+                    .background(SailuneTheme.navigationCardSurface, in: RoundedRectangle(cornerRadius: 10))
                     .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -268,7 +259,7 @@ struct BookInfoPanel: View {
             get: { coverOperationError != nil },
             set: { if !$0 { coverOperationError = nil } }
         )) {
-            Button("好", role: .cancel) { coverOperationError = nil }
+            Button(SailuneActionCopy.acknowledge, role: .cancel) { coverOperationError = nil }
         } message: {
             Text(coverOperationError ?? "")
         }
@@ -365,19 +356,19 @@ struct VolumeSectionTreeView: View {
                         let content = ExportManager.exportBookToTXT(book: book)
                         exportRequest = ExportManager.textExportRequest(defaultName: book.title, content: content)
                     } label: {
-                        Label("匯出 TXT", systemImage: "doc.text")
+                        Label(SailuneActionCopy.exportText, systemImage: SailuneSymbol.exportText.systemName)
                     }
                     Button { exportRequest = EpubExporter.exportRequest(book: book) } label: {
-                        Label("匯出 EPUB", systemImage: "book.closed")
+                        Label(SailuneActionCopy.exportEpub, systemImage: SailuneSymbol.exportEpub.systemName)
                     }
                 } label: {
-                    Label("匯出", systemImage: "square.and.arrow.up")
+                    Label("匯出", systemImage: SailuneSymbol.export.systemName)
                 }
                 .help("選擇 TXT 或 EPUB 後匯出整本書")
                 Button { addVolume() } label: {
-                    Label("新增卷", systemImage: "folder.badge.plus").labelStyle(.iconOnly)
+                    Label(SailuneActionCopy.addVolume, systemImage: SailuneSymbol.addVolume.systemName).labelStyle(.iconOnly)
                 }
-                .buttonStyle(.borderless).help("新增卷")
+                .buttonStyle(.borderless).help(SailuneActionCopy.addVolume)
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
             Divider()
@@ -387,8 +378,8 @@ struct VolumeSectionTreeView: View {
         .alert("確認刪除",
                isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } }),
                presenting: deleteTarget) { target in
-            Button("取消", role: .cancel) { }
-            Button("刪除", role: .destructive) { performDelete(target) }
+            Button(SailuneActionCopy.cancel, role: .cancel) { }
+            Button(SailuneActionCopy.delete, role: .destructive) { performDelete(target) }
         } message: { target in
             switch target {
             case .volume(let v): Text("確定要刪除卷「\(v.title)」嗎？其下所有節將一併刪除，且無法復原。")
@@ -402,7 +393,7 @@ struct VolumeSectionTreeView: View {
                         .font(.caption)
                         .lineLimit(1)
                     Spacer()
-                    Button("復原") { restore(undoTarget) }
+                    Button(SailuneActionCopy.restore) { restore(undoTarget) }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
                 }
@@ -436,7 +427,7 @@ struct VolumeSectionTreeView: View {
                         if volume.sections.isEmpty {
                             VStack(alignment: .leading, spacing: 6) {
                                 Text("這一卷還沒有節").font(.subheadline).foregroundStyle(.secondary)
-                                Button("新增第一節", systemImage: "plus") { addSection(to: volume) }
+                                Button(SailuneActionCopy.addFirstSection, systemImage: SailuneSymbol.add.systemName) { addSection(to: volume) }
                                     .buttonStyle(.borderedProminent)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -492,8 +483,8 @@ struct VolumeSectionTreeView: View {
             Button {
                 commitCurrentRename()
                 addSection(to: volume)
-            } label: { Image(systemName: "plus").foregroundStyle(.secondary) }
-                .buttonStyle(.borderless).help("在此卷新增節")
+            } label: { Image(systemName: SailuneSymbol.add.systemName).foregroundStyle(.secondary) }
+                .buttonStyle(.borderless).help(SailuneAccessibilityCopy.addSectionInVolume)
             Rectangle()
                 .fill(Color.clear)
                 .frame(maxWidth: .infinity, minHeight: 30)
@@ -514,10 +505,10 @@ struct VolumeSectionTreeView: View {
             rowFrames: $outlineRowFrames
         )
         .contextMenu {
-            Button { addSection(to: volume) } label: { Label("新增節", systemImage: "doc.badge.plus") }
-            Button { addVolume() } label: { Label("新增卷", systemImage: "folder.badge.plus") }
+            Button { addSection(to: volume) } label: { Label(SailuneActionCopy.addSection, systemImage: SailuneSymbol.addSection.systemName) }
+            Button { addVolume() } label: { Label(SailuneActionCopy.addVolume, systemImage: SailuneSymbol.addVolume.systemName) }
             Divider()
-            Button(role: .destructive) { deleteTarget = .volume(volume) } label: { Label("刪除卷", systemImage: "trash") }
+            Button(role: .destructive) { deleteTarget = .volume(volume) } label: { Label(SailuneActionCopy.deleteVolume, systemImage: SailuneSymbol.delete.systemName) }
         }
     }
 
@@ -529,7 +520,7 @@ struct VolumeSectionTreeView: View {
         HStack(spacing: 6) {
             dragHandle
                 .highPriorityGesture(outlineDragGesture(for: .section(section.id, volumeID: volume.id)))
-            Image(systemName: "doc.text").foregroundStyle(.secondary).frame(width: 14)
+            Image(systemName: SailuneSymbol.sectionDocument.systemName).foregroundStyle(.secondary).frame(width: 14)
                 .contentShape(Rectangle())
                 .onTapGesture { onSelectSection?(section) }
             if renamingID == section.id {
@@ -572,19 +563,19 @@ struct VolumeSectionTreeView: View {
             rowFrames: $outlineRowFrames
         )
         .contextMenu {
-            Button { startRenaming(id: section.id, currentName: section.title) } label: { Label("重新命名", systemImage: "pencil") }
+            Button { startRenaming(id: section.id, currentName: section.title) } label: { Label(SailuneActionCopy.rename, systemImage: SailuneSymbol.edit.systemName) }
             Button {
                 commitCurrentRename()
                 addSection(to: volume)
-            } label: { Label("新增節", systemImage: "doc.badge.plus") }
+            } label: { Label(SailuneActionCopy.addSection, systemImage: SailuneSymbol.addSection.systemName) }
             Divider()
-            Button(role: .destructive) { deleteTarget = .section(section) } label: { Label("刪除節", systemImage: "trash") }
+            Button(role: .destructive) { deleteTarget = .section(section) } label: { Label(SailuneActionCopy.deleteSection, systemImage: SailuneSymbol.delete.systemName) }
         }
     }
 
     // MARK: 拖曳把手
     private var dragHandle: some View {
-        Image(systemName: "line.3.horizontal").font(.system(size: 9, weight: .bold)).foregroundStyle(.tertiary)
+        Image(systemName: SailuneSymbol.reorderHandle.systemName).font(.system(size: 9, weight: .bold)).foregroundStyle(.tertiary)
             .frame(width: 24, height: 22).contentShape(Rectangle()).help("拖曳以排序")
     }
 
@@ -606,10 +597,10 @@ struct VolumeSectionTreeView: View {
                     .onSubmit { commitAndClose(commit: commit) }
             }
             .frame(minWidth: 60)
-            Button { commitAndClose(commit: commit) } label: { Image(systemName: "checkmark").foregroundStyle(.green) }
-                .buttonStyle(.borderless).help("確認 (Enter)")
-            Button { cancelRenaming() } label: { Image(systemName: "xmark").foregroundStyle(.secondary) }
-                .buttonStyle(.borderless).help("取消")
+            Button { commitAndClose(commit: commit) } label: { Image(systemName: SailuneSymbol.confirm.systemName).foregroundStyle(.green) }
+                .buttonStyle(.borderless).help(SailuneAccessibilityCopy.confirmEnter)
+            Button { cancelRenaming() } label: { Image(systemName: SailuneSymbol.cancel.systemName).foregroundStyle(.secondary) }
+                .buttonStyle(.borderless).help(SailuneActionCopy.cancel)
         }
         .onChange(of: renameFocused) { _, focused in if !focused { commitAndClose(commit: commit) } }
     }

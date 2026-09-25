@@ -1,6 +1,12 @@
 import Foundation
 import SwiftData
 import AppKit
+import OSLog
+
+private let storyBackgroundCodingLogger = Logger(
+    subsystem: "com.MooNest.Sailune",
+    category: "StoryBackgroundCoding"
+)
 
 enum StoryPlanningSchemaV2: VersionedSchema {
     static var versionIdentifier = Schema.Version(2, 0, 0)
@@ -390,19 +396,34 @@ struct StoryBackgroundContent: Codable, Equatable {
     var otherBackground = ""
 
     init(storedValue: String = "") {
-        if let data = storedValue.data(using: .utf8),
-           let decoded = try? JSONDecoder().decode(Self.self, from: data) {
-            self = decoded
-        } else {
-            otherBackground = storedValue
+        if let data = storedValue.data(using: .utf8) {
+            do {
+                self = try JSONDecoder().decode(Self.self, from: data)
+                return
+            } catch {
+                if storedValue.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") {
+                    storyBackgroundCodingLogger.error(
+                        "Failed to decode structured story background; preserving the original text. \(String(describing: error), privacy: .private)"
+                    )
+                }
+            }
         }
+        otherBackground = storedValue
     }
 
     func encodedValue() -> String {
-        guard let data = try? JSONEncoder().encode(self), let value = String(data: data, encoding: .utf8) else {
-            return otherBackground
+        do {
+            let data = try JSONEncoder().encode(self)
+            if let value = String(data: data, encoding: .utf8) {
+                return value
+            }
+            storyBackgroundCodingLogger.error("Story background JSON was not valid UTF-8; returning the other background text.")
+        } catch {
+            storyBackgroundCodingLogger.error(
+                "Failed to encode structured story background; returning the other background text. \(String(describing: error), privacy: .private)"
+            )
         }
-        return value
+        return otherBackground
     }
 }
 

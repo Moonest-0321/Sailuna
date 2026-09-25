@@ -301,7 +301,7 @@ struct GovernmentPresetCatalogView: View {
                     .safeAreaInset(edge: .bottom) {
                         if allowsSelection {
                             HStack {
-                                Button("不選擇") {
+                                Button(SailuneActionCopy.clearSelection) {
                                     onSelect?(nil)
                                     dismiss()
                                 }
@@ -317,12 +317,12 @@ struct GovernmentPresetCatalogView: View {
                         }
                     }
             } else {
-                ContentUnavailableView("請選擇政體", systemImage: "building.columns")
+                ContentUnavailableView("請選擇政體", systemImage: SailuneSymbol.government.systemName)
             }
         }
         .frame(minWidth: 760, minHeight: 620)
         .toolbar {
-            Button("關閉") { dismiss() }
+            Button(SailuneActionCopy.close) { dismiss() }
         }
     }
 }

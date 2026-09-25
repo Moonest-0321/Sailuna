@@ -1,6 +1,9 @@
 import SwiftUI
 import SwiftData
 import AppKit
+import OSLog
+
+private let editorCharacterCreationLogger = Logger(subsystem: "com.MooNest.Sailune", category: "EditorCharacterCreation")
 
 private final class EditorKeyboardMonitor {
     private var monitor: Any?
@@ -278,15 +281,15 @@ struct EditorWorkspaceView: View {
                         let content = ExportManager.exportBookToTXT(book: book)
                         exportRequest = ExportManager.textExportRequest(defaultName: book.title, content: content)
                     }
-                } label: { Label("匯出 TXT", systemImage: "doc.text") }
-                Button { exportRequest = EpubExporter.exportRequest(book: book) } label: { Label("匯出 EPUB", systemImage: "book.closed") }
-            } label: { Label("更多", systemImage: "ellipsis.circle") }
+                } label: { Label(SailuneActionCopy.exportText, systemImage: SailuneSymbol.exportText.systemName) }
+                Button { exportRequest = EpubExporter.exportRequest(book: book) } label: { Label(SailuneActionCopy.exportEpub, systemImage: SailuneSymbol.exportEpub.systemName) }
+            } label: { Label("更多", systemImage: SailuneSymbol.more.systemName) }
             ControlGroup {
                 Button { switchWorkspace(to: .writing) } label: {
                     Label("編輯", systemImage: EditorWorkspaceMode.writing.systemImage)
                         .foregroundStyle(workspaceMode == .writing ? Color.accentColor : Color.primary)
                 }
-                .help("編輯")
+                .help(SailuneActionCopy.edit)
                 Button { setAIAssistantPresented(!showAIAssistant) } label: {
                     Label("AI 助手", systemImage: "sparkles")
                         .foregroundStyle(showAIAssistant ? Color.accentColor : Color.primary)
@@ -305,7 +308,7 @@ struct EditorWorkspaceView: View {
             }
             .labelsHidden()
             Button { setInspectorPresented(!showInspector) } label: {
-                Label("設定集", systemImage: "sidebar.right")
+                Label("設定集", systemImage: SailuneSymbol.settingsSidebar.systemName)
             }
             .help("顯示/隱藏右欄設定集")
         }
@@ -538,11 +541,11 @@ private struct CommandPaletteView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                Image(systemName: SailuneSymbol.search.systemName).foregroundStyle(.secondary)
                 TextField("輸入指令…", text: $query)
                     .textFieldStyle(.plain)
                     .focused($searchFocused)
-                Button("取消") { dismiss() }
+                Button(SailuneActionCopy.cancel) { dismiss() }
                     .buttonStyle(.borderless)
             }
             .padding(14)
@@ -579,7 +582,7 @@ private struct ShortcutHelpView: View {
             HStack {
                 Text("快捷鍵").font(.title2.weight(.semibold))
                 Spacer()
-                Button("完成") { dismiss() }
+                Button(SailuneActionCopy.done) { dismiss() }
             }
             Divider()
             shortcut("⌘K", "開啟指令面板")
@@ -625,15 +628,15 @@ struct EditorSidebarView: View {
             // MARK: 頂部全域操作按鈕
             HStack(spacing: 12) {
                 Button(action: addVolume) {
-                    Label("新增卷", systemImage: "folder.badge.plus")
+                    Label(SailuneActionCopy.addVolume, systemImage: SailuneSymbol.addVolume.systemName)
                 }
                 .buttonStyle(.borderless)
-                .help("新增卷")
+                .help(SailuneActionCopy.addVolume)
                 Button(action: addSection) {
-                    Label("新增節", systemImage: "doc.badge.plus")
+                    Label(SailuneActionCopy.addSection, systemImage: SailuneSymbol.addSection.systemName)
                 }
                 .buttonStyle(.borderless)
-                .help("新增節")
+                .help(SailuneActionCopy.addSection)
                 Spacer()
             }
             .padding(.horizontal, 12)
@@ -649,7 +652,7 @@ struct EditorSidebarView: View {
                             if volume.sections.isEmpty {
                                 VStack(alignment: .leading, spacing: 6) {
                                     Text("這一卷還沒有節").font(.caption).foregroundStyle(.secondary)
-                                    Button("新增第一節", systemImage: "plus") { addSection(to: volume) }
+                                    Button(SailuneActionCopy.addFirstSection, systemImage: SailuneSymbol.add.systemName) { addSection(to: volume) }
                                         .buttonStyle(.borderedProminent)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -672,8 +675,8 @@ struct EditorSidebarView: View {
         .alert("確認刪除",
                isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } }),
                presenting: deleteTarget) { target in
-            Button("取消", role: .cancel) { }
-            Button("刪除", role: .destructive) { performDelete(target) }
+            Button(SailuneActionCopy.cancel, role: .cancel) { }
+            Button(SailuneActionCopy.delete, role: .destructive) { performDelete(target) }
         } message: { target in
             switch target {
             case .volume(let v): Text("確定要刪除卷「\(v.title)」嗎？其下所有節將一併刪除，且無法復原。")
@@ -687,7 +690,7 @@ struct EditorSidebarView: View {
                         .font(.caption)
                         .lineLimit(1)
                     Spacer()
-                    Button("復原") { restore(undoTarget) }
+                    Button(SailuneActionCopy.restore) { restore(undoTarget) }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.small)
                 }
@@ -740,24 +743,24 @@ struct EditorSidebarView: View {
                 commitCurrentRename()
                 addSection(to: volume)
             }) {
-                Image(systemName: "plus")
+                Image(systemName: SailuneSymbol.add.systemName)
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(.secondary)
                     .frame(width: 20, height: 20)
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain) // 使用 plain 避免破壞 List 的選取背景色
-                .help("在此卷新增節")
+                .help(SailuneAccessibilityCopy.addSectionInVolume)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 2)
         .frame(maxWidth: .infinity, alignment: .leading)
         .contentShape(Rectangle())
         .contextMenu {
-            Button { startRenaming(id: volume.id, currentName: volume.title) } label: { Label("重新命名", systemImage: "pencil") }
+            Button { startRenaming(id: volume.id, currentName: volume.title) } label: { Label(SailuneActionCopy.rename, systemImage: SailuneSymbol.edit.systemName) }
             Divider()
-            Button { addSection(to: volume) } label: { Label("新增節", systemImage: "doc.badge.plus") }
-            Button(role: .destructive) { deleteTarget = .volume(volume) } label: { Label("刪除卷", systemImage: "trash") }
+            Button { addSection(to: volume) } label: { Label(SailuneActionCopy.addSection, systemImage: SailuneSymbol.addSection.systemName) }
+            Button(role: .destructive) { deleteTarget = .volume(volume) } label: { Label(SailuneActionCopy.deleteVolume, systemImage: SailuneSymbol.delete.systemName) }
         }
     }
 
@@ -766,10 +769,10 @@ struct EditorSidebarView: View {
     private func sectionRow(for section: Section, in volume: Volume) -> some View {
         let index = sectionIndex(for: section, in: book)
         HStack(spacing: 6) {
-            Image(systemName: "line.3.horizontal").font(.system(size: 9, weight: .bold)).foregroundStyle(.tertiary)
+            Image(systemName: SailuneSymbol.reorderHandle.systemName).font(.system(size: 9, weight: .bold)).foregroundStyle(.tertiary)
                 .frame(width: 24, height: 22).contentShape(Rectangle())
                 .highPriorityGesture(outlineDragGesture(for: .section(section.id, volumeID: volume.id)))
-            Image(systemName: "doc.text").foregroundStyle(.secondary).frame(width: 14)
+            Image(systemName: SailuneSymbol.sectionDocument.systemName).foregroundStyle(.secondary).frame(width: 14)
             if renamingID == section.id {
                 renameEditor(commit: { newName in section.title = newName.isEmpty ? section.title : newName })
             } else {
@@ -812,13 +815,13 @@ struct EditorSidebarView: View {
             selectedSection = section
         }
         .contextMenu {
-            Button { startRenaming(id: section.id, currentName: section.title) } label: { Label("重新命名", systemImage: "pencil") }
+            Button { startRenaming(id: section.id, currentName: section.title) } label: { Label(SailuneActionCopy.rename, systemImage: SailuneSymbol.edit.systemName) }
             Button {
                 commitCurrentRename()
                 addSection(to: volume)
-            } label: { Label("新增節", systemImage: "doc.badge.plus") }
+            } label: { Label(SailuneActionCopy.addSection, systemImage: SailuneSymbol.addSection.systemName) }
             Divider()
-            Button(role: .destructive) { deleteTarget = .section(section) } label: { Label("刪除節", systemImage: "trash") }
+            Button(role: .destructive) { deleteTarget = .section(section) } label: { Label(SailuneActionCopy.deleteSection, systemImage: SailuneSymbol.delete.systemName) }
         }
     }
 
@@ -840,10 +843,10 @@ struct EditorSidebarView: View {
                     .onSubmit { commitAndClose(commit: commit) }
             }
             .frame(minWidth: 60, maxWidth: .infinity)
-            Button { commitAndClose(commit: commit) } label: { Image(systemName: "checkmark").foregroundStyle(.green) }
-                .buttonStyle(.borderless).help("確認 (Enter)")
-            Button { cancelRenaming() } label: { Image(systemName: "xmark").foregroundStyle(.secondary) }
-                .buttonStyle(.borderless).help("取消")
+            Button { commitAndClose(commit: commit) } label: { Image(systemName: SailuneSymbol.confirm.systemName).foregroundStyle(.green) }
+                .buttonStyle(.borderless).help(SailuneAccessibilityCopy.confirmEnter)
+            Button { cancelRenaming() } label: { Image(systemName: SailuneSymbol.cancel.systemName).foregroundStyle(.secondary) }
+                .buttonStyle(.borderless).help(SailuneActionCopy.cancel)
         }
         .frame(maxWidth: .infinity)
         .layoutPriority(1)
@@ -1180,6 +1183,7 @@ struct EditorCenterView: View {
             onOpenCharacter(character)
             return CharacterReference(characterID: character.id, source: .canonical)
         } catch {
+            editorCharacterCreationLogger.error("Creating character from editor selection failed: \(String(describing: error), privacy: .private)")
             modelContext.delete(character)
             return nil
         }
@@ -1406,7 +1410,7 @@ struct EditorCenterView: View {
                 .padding(.vertical, 8)
                 .background(Color.appBackground)
             } else {
-                ContentUnavailableView("從目錄選擇節，或新增一節開始寫作", systemImage: "doc.text")
+                ContentUnavailableView("從目錄選擇節，或新增一節開始寫作", systemImage: SailuneSymbol.sectionDocument.systemName)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
@@ -1415,7 +1419,7 @@ struct EditorCenterView: View {
             get: { planningUndoError != nil },
             set: { if !$0 { planningUndoError = nil } }
         )) {
-            Button("好") { planningUndoError = nil }
+            Button(SailuneActionCopy.acknowledge) { planningUndoError = nil }
         } message: {
             Text(planningUndoError ?? "請再試一次。")
         }

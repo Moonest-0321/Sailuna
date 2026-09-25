@@ -221,13 +221,15 @@ enum SailuneBackupService {
             schemas[name] = schema
         }
         let covers = locations.coversDirectory
-        if let urls = try? fm.contentsOfDirectory(at: covers, includingPropertiesForKeys: nil) {
+        if fm.fileExists(atPath: covers.path) {
+            let urls = try fm.contentsOfDirectory(at: covers, includingPropertiesForKeys: nil)
             for url in urls where url.pathExtension.lowercased() == "png" {
                 files.append(ArchiveFile(path: "covers/\(url.lastPathComponent)", data: try Data(contentsOf: url)))
             }
         }
         let maps = locations.mapsDirectory
-        if let relativePaths = try? fm.subpathsOfDirectory(atPath: maps.path) {
+        if fm.fileExists(atPath: maps.path) {
+            let relativePaths = try fm.subpathsOfDirectory(atPath: maps.path)
             for relativePath in relativePaths where URL(fileURLWithPath: relativePath).pathExtension.lowercased() == "pdf" {
                 let url = maps.appendingPathComponent(relativePath)
                 files.append(ArchiveFile(path: "maps/\(relativePath)", data: try Data(contentsOf: url)))

@@ -50,8 +50,7 @@ struct AuthorSettingsView: View {
                     .font(.headline)
                     .foregroundColor(.secondary)
                 
-                TextField("請輸入您的筆名", text: $bindableProfile.penName)
-                    .textFieldStyle(.roundedBorder)
+                SailuneFormTextField(title: "請輸入您的筆名", text: $bindableProfile.penName)
                     .font(.title3)
             }
 
@@ -74,25 +73,10 @@ struct AuthorSettingsView: View {
                     .font(.headline)
                     .foregroundColor(.secondary)
                 
-                TextEditor(text: Binding(
+                SailuneAuthorBioEditor(text: Binding(
                     get: { bindableProfile.bio ?? "" },
                     set: { bindableProfile.bio = $0 }
-                ))
-                    .font(.body)
-                    .frame(height: 100)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 6)
-                            .stroke(Color.gray.opacity(0.3), lineWidth: 1)
-                    )
-                // 找到這段程式碼：
-                .overlay(alignment: .topLeading) {
-                    if bindableProfile.bio?.isEmpty != false {
-                        Text("一句話介紹自己... (選填)")
-                            .foregroundColor(.secondary.opacity(0.5))
-                            .padding(8)
-                            .allowsHitTesting(false)
-                    }
-                }
+                ), height: 100, borderColor: Color.gray.opacity(0.3), placeholder: "一句話介紹自己... (選填)")
             }
             
             Spacer()
@@ -100,7 +84,7 @@ struct AuthorSettingsView: View {
             // 4. 底部按鈕
             HStack {
                 Spacer()
-                Button("完成") {
+                Button(SailuneActionCopy.done) {
                     dismiss()
                 }
                 .keyboardShortcut(.defaultAction) // 支援按 Enter 鍵關閉
@@ -117,7 +101,7 @@ struct AuthorSettingsView: View {
             get: { dataOperationMessage != nil },
             set: { if !$0 { dataOperationMessage = nil } }
         )) {
-            Button("好") { dataOperationMessage = nil }
+            Button(SailuneActionCopy.acknowledge) { dataOperationMessage = nil }
         } message: {
             Text(dataOperationMessage ?? "")
         }

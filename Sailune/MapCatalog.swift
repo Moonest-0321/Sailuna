@@ -40,6 +40,7 @@ enum MapCatalogError: LocalizedError {
     case lastVersion
     case invalidCoordinate
     case invalidNavigationSource
+    case invalidMarkerSource
 
     var errorDescription: String? {
         switch self {
@@ -50,6 +51,7 @@ enum MapCatalogError: LocalizedError {
         case .lastVersion: "每張地圖至少要保留一個版本。"
         case .invalidCoordinate: "地圖座標超出有效範圍。"
         case .invalidNavigationSource: "此地圖標記無法跳轉至下一層級地圖。"
+        case .invalidMarkerSource: "找不到原有地圖標記，請重新載入地圖。"
         }
     }
 }
@@ -67,24 +69,44 @@ struct MapMarkerRecord: Identifiable {
 extension V5SettingsStore {
     func maps(for bookID: UUID, level: MapLevel? = nil) -> [BookMap] {
         _ = revision
-        return ((try? context.fetch(FetchDescriptor<BookMap>())) ?? [])
+        return fetchOrEmptyWithDiagnostic(BookMap.self, operation: "maps")
+            .filter { $0.bookID == bookID && (level == nil || $0.levelRawValue == level?.rawValue) }
+            .sorted { lhs, rhs in
+                lhs.sortOrder == rhs.sortOrder
+                    ? lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+                    : lhs.sortOrder < rhs.sortOrder
+            }
+    }
+
+    func versions(for map: BookMap) -> [BookMapVersion] {
+        _ = revision
+        return fetchOrEmptyWithDiagnostic(BookMapVersion.self, operation: "versions")
+            .filter { $0.bookID == map.bookID && $0.mapID == map.id }
+            .sorted { lhs, rhs in
+                lhs.sortOrder == rhs.sortOrder
+                    ? lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+                    : lhs.sortOrder < rhs.sortOrder
+            }
+    }
+
+    func placements(for map: BookMap) -> [MapPlacement] {
+        _ = revision
+        return fetchOrEmptyWithDiagnostic(MapPlacement.self, operation: "placements")
+            .filter { $0.bookID == map.bookID && $0.mapID == map.id }
+    }
+
+    private func mapsForDecision(bookID: UUID, level: MapLevel? = nil) throws -> [BookMap] {
+        try context.fetch(FetchDescriptor<BookMap>())
             .filter { $0.bookID == bookID && (level == nil || $0.levelRawValue == level?.rawValue) }
             .sorted { lhs, rhs in
                 lhs.sortOrder == rhs.sortOrder ? lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending : lhs.sortOrder < rhs.sortOrder
             }
     }
 
-    func versions(for map: BookMap) -> [BookMapVersion] {
-        _ = revision
-        return ((try? context.fetch(FetchDescriptor<BookMapVersion>())) ?? [])
+    private func versionsForDecision(map: BookMap) throws -> [BookMapVersion] {
+        try context.fetch(FetchDescriptor<BookMapVersion>())
             .filter { $0.bookID == map.bookID && $0.mapID == map.id }
             .sorted { $0.sortOrder == $1.sortOrder ? $0.name.localizedStandardCompare($1.name) == .orderedAscending : $0.sortOrder < $1.sortOrder }
-    }
-
-    func placements(for map: BookMap) -> [MapPlacement] {
-        _ = revision
-        return ((try? context.fetch(FetchDescriptor<MapPlacement>())) ?? [])
-            .filter { $0.bookID == map.bookID && $0.mapID == map.id }
     }
 
     func markerRecords(for map: BookMap) -> [MapMarkerRecord] {
@@ -104,10 +126,11 @@ extension V5SettingsStore {
     @discardableResult
     func ensureDefaultMap(for bookID: UUID) throws -> (BookMap, BookMapVersion)? {
         let profiles = try context.fetch(FetchDescriptor<MapCatalogProfile>())
+        let bookMaps = try mapsForDecision(bookID: bookID)
         if profiles.contains(where: { $0.bookID == bookID }) {
-            guard let map = maps(for: bookID).first else { return nil }
+            guard let map = bookMaps.first else { return nil }
             let version: BookMapVersion
-            if let existing = versions(for: map).first {
+            if let existing = try versionsForDecision(map: map).first {
                 version = existing
             } else {
                 version = BookMapVersion(bookID: bookID, mapID: map.id, name: "地圖")
@@ -116,25 +139,20 @@ extension V5SettingsStore {
             try BookMapPDFStore.migrateLegacyMapIfNeeded(bookID: bookID, mapID: map.id, versionID: version.id)
             return (map, version)
         }
+        let existingMap = bookMaps.first
+        let map = existingMap ?? BookMap(bookID: bookID, levelRawValue: MapLevel.overview.rawValue, name: "總體地圖")
+        let existingVersion = try existingMap.flatMap { try versionsForDecision(map: $0).first }
+        let version = existingVersion ?? BookMapVersion(bookID: bookID, mapID: map.id, name: "地圖")
+        let existingPlaceIDs = Set(try context.fetch(FetchDescriptor<MapPlacement>())
+            .filter { $0.bookID == bookID && $0.mapID == map.id }
+            .map(\.placeID))
+        let bookPlaces = try context.fetch(FetchDescriptor<Place>())
+            .filter { $0.bookID == bookID }
+
         context.insert(MapCatalogProfile(bookID: bookID))
-        let map: BookMap
-        if let existing = maps(for: bookID).first {
-            map = existing
-        } else {
-            map = BookMap(bookID: bookID, levelRawValue: MapLevel.overview.rawValue, name: "總體地圖")
-            context.insert(map)
-        }
-
-        let version: BookMapVersion
-        if let existing = versions(for: map).first {
-            version = existing
-        } else {
-            version = BookMapVersion(bookID: bookID, mapID: map.id, name: "地圖")
-            context.insert(version)
-        }
-
-        let existingPlaceIDs = Set(placements(for: map).map(\.placeID))
-        for place in places(for: bookID) where !existingPlaceIDs.contains(place.id) {
+        if existingMap == nil { context.insert(map) }
+        if existingVersion == nil { context.insert(version) }
+        for place in bookPlaces where !existingPlaceIDs.contains(place.id) {
             guard let x = place.coordinateX, let y = place.coordinateY,
                   x.isFinite, y.isFinite,
                   (0...MapCoordinate.maximumX).contains(x),
@@ -151,7 +169,7 @@ extension V5SettingsStore {
     @discardableResult
     func createMap(bookID: UUID, level: MapLevel, name: String) throws -> (BookMap, BookMapVersion) {
         let cleaned = try validatedMapName(name, bookID: bookID, level: level, excluding: nil)
-        let order = (maps(for: bookID, level: level).map(\.sortOrder).max() ?? -1) + 1
+        let order = (try mapsForDecision(bookID: bookID, level: level).map(\.sortOrder).max() ?? -1) + 1
         let map = BookMap(bookID: bookID, levelRawValue: level.rawValue, name: cleaned, sortOrder: order)
         let version = BookMapVersion(bookID: bookID, mapID: map.id, name: "地圖")
         context.insert(map); context.insert(version)
@@ -166,15 +184,39 @@ extension V5SettingsStore {
     }
 
     func deleteMap(_ map: BookMap) throws {
-        versions(for: map).forEach(context.delete)
-        placements(for: map).forEach(context.delete)
+        let mapVersions = try context.fetch(FetchDescriptor<BookMapVersion>())
+            .filter { $0.bookID == map.bookID && $0.mapID == map.id }
         // A destination can be shared by markers on several source maps.
-        let linkedPlacements = try context.fetch(FetchDescriptor<MapPlacement>())
-            .filter { $0.bookID == map.bookID && $0.targetMapID == map.id }
+        let bookPlacements = try context.fetch(FetchDescriptor<MapPlacement>())
+            .filter { $0.bookID == map.bookID }
+        mapVersions.forEach(context.delete)
+        bookPlacements.filter { $0.mapID == map.id }.forEach(context.delete)
+        let linkedPlacements = bookPlacements.filter { $0.targetMapID == map.id }
         linkedPlacements.forEach { $0.targetMapID = nil }
         context.delete(map)
         try context.save(); didSave()
         try BookMapPDFStore.removeMap(bookID: map.bookID, mapID: map.id)
+    }
+
+    /// Resolves the saved marker without treating a failed fetch as a missing marker.
+    func markerSource(
+        placeID: UUID, placementID: UUID, bookID: UUID, on map: BookMap,
+        missingError: MapCatalogError = .invalidMarkerSource
+    ) throws -> (Place, MapPlacement) {
+        guard map.bookID == bookID else { throw missingError }
+        let bookPlaces = try context.fetch(FetchDescriptor<Place>())
+        let bookPlacements = try context.fetch(FetchDescriptor<MapPlacement>())
+        guard let place = bookPlaces.first(where: { $0.id == placeID && $0.bookID == bookID }),
+              let placement = bookPlacements.first(where: {
+                  $0.id == placementID && $0.bookID == bookID && $0.mapID == map.id && $0.placeID == placeID
+              })
+        else { throw missingError }
+        return (place, placement)
+    }
+
+    func markerPlaceForDeletion(placeID: UUID, bookID: UUID) throws -> Place? {
+        try context.fetch(FetchDescriptor<Place>())
+            .first { $0.id == placeID && $0.bookID == bookID }
     }
 
     /// Resolves one marker's lower-level map. Map creation and binding share
@@ -186,7 +228,7 @@ extension V5SettingsStore {
               let targetLevel = sourceLevel.destinationLevel else {
             throw MapCatalogError.invalidNavigationSource
         }
-        let destinationMaps = maps(for: source.bookID, level: targetLevel)
+        let destinationMaps = try mapsForDecision(bookID: source.bookID, level: targetLevel)
         if let targetID = placement.targetMapID,
            let boundMap = destinationMaps.first(where: { $0.id == targetID }) {
             return boundMap
@@ -219,7 +261,7 @@ extension V5SettingsStore {
     func createVersion(for map: BookMap, name: String) throws -> BookMapVersion {
         guard MapLevel(rawValue: map.levelRawValue)?.supportsMultipleVersions == true else { throw MapCatalogError.invalidBook }
         let cleaned = try validatedVersionName(name, map: map, excluding: nil)
-        let order = (versions(for: map).map(\.sortOrder).max() ?? -1) + 1
+        let order = (try versionsForDecision(map: map).map(\.sortOrder).max() ?? -1) + 1
         let version = BookMapVersion(bookID: map.bookID, mapID: map.id, name: cleaned, sortOrder: order)
         context.insert(version); try context.save(); didSave()
         return version
@@ -233,7 +275,9 @@ extension V5SettingsStore {
 
     func deleteVersion(_ version: BookMapVersion, from map: BookMap) throws {
         guard version.bookID == map.bookID, version.mapID == map.id else { throw MapCatalogError.invalidBook }
-        guard versions(for: map).count > 1 else { throw MapCatalogError.lastVersion }
+        let versionCount = try context.fetch(FetchDescriptor<BookMapVersion>())
+            .filter { $0.bookID == map.bookID && $0.mapID == map.id }.count
+        guard versionCount > 1 else { throw MapCatalogError.lastVersion }
         context.delete(version); try context.save(); didSave()
         try BookMapPDFStore.removeVersion(bookID: map.bookID, mapID: map.id, versionID: version.id)
     }
@@ -242,7 +286,9 @@ extension V5SettingsStore {
     func createMapPlace(bookID: UUID, map: BookMap, name: String, placeType: String?, coordinate: MapCoordinate) throws -> Place {
         guard map.bookID == bookID else { throw MapCatalogError.invalidBook }
         try validate(coordinate)
-        let nextSortOrder = (places(for: bookID).map(\.sortOrder).max() ?? -1) + 1
+        let nextSortOrder = (try context.fetch(FetchDescriptor<Place>())
+            .filter { $0.bookID == bookID }
+            .map(\.sortOrder).max() ?? -1) + 1
         let place = Place(bookID: bookID, name: name, placeType: placeType, sortOrder: nextSortOrder)
         let placement = MapPlacement(bookID: bookID, mapID: map.id, placeID: place.id, coordinateX: coordinate.x, coordinateY: coordinate.y)
         context.insert(place); context.insert(placement); try context.save(); didSave()
@@ -269,7 +315,7 @@ extension V5SettingsStore {
     private func validatedMapName(_ name: String, bookID: UUID, level: MapLevel, excluding mapID: UUID?) throws -> String {
         let cleaned = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { throw MapCatalogError.invalidName }
-        guard !maps(for: bookID, level: level).contains(where: { $0.id != mapID && $0.name.localizedCaseInsensitiveCompare(cleaned) == .orderedSame }) else {
+        guard try !mapsForDecision(bookID: bookID, level: level).contains(where: { $0.id != mapID && $0.name.localizedCaseInsensitiveCompare(cleaned) == .orderedSame }) else {
             throw MapCatalogError.duplicateMapName(cleaned)
         }
         return cleaned
@@ -278,7 +324,7 @@ extension V5SettingsStore {
     private func validatedVersionName(_ name: String, map: BookMap, excluding versionID: UUID?) throws -> String {
         let cleaned = name.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !cleaned.isEmpty else { throw MapCatalogError.invalidName }
-        guard !versions(for: map).contains(where: { $0.id != versionID && $0.name.localizedCaseInsensitiveCompare(cleaned) == .orderedSame }) else {
+        guard try !versionsForDecision(map: map).contains(where: { $0.id != versionID && $0.name.localizedCaseInsensitiveCompare(cleaned) == .orderedSame }) else {
             throw MapCatalogError.duplicateVersionName(cleaned)
         }
         return cleaned

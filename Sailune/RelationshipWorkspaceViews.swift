@@ -106,7 +106,7 @@ struct RelationshipListView: View {
     var body: some View {
         Group {
             if visibleGroups.isEmpty {
-                ContentUnavailableView("尚未建立角色關係", systemImage: "point.3.connected.trianglepath.dotted")
+                ContentUnavailableView("尚未建立角色關係", systemImage: SailuneSymbol.relationship.systemName)
             } else {
                 List(visibleGroups) { group in
                     Button { selectedGroup = group } label: {
@@ -165,7 +165,7 @@ struct RelationshipDetailSheet: View {
                     Text("\(group.source.realName) → \(group.target.realName)")
                         .font(.headline)
                     Spacer()
-                    Button("完成") { dismiss() }
+                    Button(SailuneActionCopy.done) { dismiss() }
                 }
 
                 VStack(alignment: .leading, spacing: 6) {
@@ -211,7 +211,7 @@ private struct RelationshipDetailRelationRow: View {
                 Text(currentType).fontWeight(.medium)
                 Spacer()
                 Button(role: .destructive) { confirmDelete = true } label: {
-                    Image(systemName: "trash")
+                    Image(systemName: SailuneSymbol.delete.systemName)
                 }
                 .buttonStyle(.plain)
             }
@@ -221,7 +221,7 @@ private struct RelationshipDetailRelationRow: View {
             RelationshipHistoryEditor(relationship: relationship, book: book)
         }
         .confirmationDialog("刪除關係？", isPresented: $confirmDelete) {
-            Button("刪除", role: .destructive) {
+            Button(SailuneActionCopy.delete, role: .destructive) {
                 modelContext.delete(relationship)
                 onDeleted()
             }
@@ -242,12 +242,12 @@ private struct KinshipDetailRelationRow: View {
             Text(kinship.role.displayName).fontWeight(.medium)
             Spacer()
             Button(role: .destructive) { confirmDelete = true } label: {
-                Image(systemName: "trash")
+                Image(systemName: SailuneSymbol.delete.systemName)
             }
             .buttonStyle(.plain)
         }
         .confirmationDialog("刪除血緣關係？", isPresented: $confirmDelete) {
-            Button("刪除", role: .destructive) { deleteKinship() }
+            Button(SailuneActionCopy.delete, role: .destructive) { deleteKinship() }
         }
     }
 
@@ -317,9 +317,9 @@ struct AddGeneralRelationshipSheet: View {
                 }
             }
             HStack {
-                Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(SailuneActionCopy.cancel) { dismiss() }.keyboardShortcut(.cancelAction)
                 Spacer()
-                Button("建立", action: create)
+                Button(SailuneActionCopy.create, action: create)
                     .keyboardShortcut(.defaultAction)
                     .disabled(targetID == nil || relationshipName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }

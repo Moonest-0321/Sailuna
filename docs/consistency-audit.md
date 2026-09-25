@@ -1,6 +1,6 @@
 # 文件與實作一致性檢查
 
-> 稽核日期：2026-09-23。範圍包含 Swift 原始碼、XCTest、Xcode 設定與 `docs/`；本文件記錄程式事實和產品文件的差異，不代表已修正程式。
+> 稽核快照：2026-09-23 至 2026-09-24。範圍包含當時的 Swift 原始碼、XCTest、Xcode 設定與 `docs/`；不是目前狀態總表。後續狀態以 [project-status.md](project-status.md)、目前 work item／handoff 及各 V9 專題紀錄為準。本文列出的測試數字與待驗收項目均保留其快照日期，不應當作最新數據。
 
 ## 已確認一致
 
@@ -30,8 +30,15 @@ EPUB 匯出會使用畫面目前顯示的封面：優先直接讀取書籍 UUID 
 
 - Book／Character／Item／Ability／Node／Timeline／Event 的破壞性操作已透過 `CrossStoreDeletionCoordinator` 協調；Volume／Section 的五秒 Undo 保留，但標記與最終儲存也改由協調服務進入。
 - 啟動與刪除後會以主 store UUID／book 對照冪等修復 V5 settings、ItemCopy 與 AbilityProgress；失效 Node 只清除定位，保留歷史文字。
+- V9.2j：地點刪除需先讀到相關 `MapPlacement`；世界條目刪除需先讀到同書勢力及相關 `PowerAssetLink`。任一查詢失敗便在變更模型前停止並記錄錯誤，避免主資料已刪而關聯清理被跳過。兩個方法仍用既有 `save()`，保存失敗與畫面提示未由此批保證。
+- V9.2o：具體地圖刪除先讀完版本與同書 placement，才刪版本／來源 placement、解除指向目標的綁定並刪地圖；版本刪除也需成功讀取版本數量。任一必要查詢失敗會在變更模型前拋錯，現有管理畫面 catch 顯示錯誤。資料庫保存後的 PDF 清理失敗仍是另一個部分成功路徑。
+- V9.2p～2s：地圖建立／改名／目的地配對、預設初始化與標記跳轉／編輯的必要查詢改走可拋錯入口；初始化先讀完資料才插入，編輯既有標記的來源缺失不再轉成新增，避免重複 Place／placement。原 UUID 關係及版本 PDF 結構未改。標記刪除與畫面列表仍可能吞掉查詢錯誤；各失敗路徑尚未經故障注入或 GUI 驗收。
 
-已提供單檔 `.sailunebackup`，內含六個 SQLite online snapshot、封面、遞迴地圖 PDF、schema manifest 與 SHA-256；還原保留安全相對路徑並拒絕路徑穿越，先建安全備份且可 rollback。沒有地圖的舊備份可還原並清除目前地圖；settings V10／V11／V12 manifest 可交由現行 V13 migration 升級，其他 store schema 仍須完全相符。
+已提供單檔 `.sailunebackup`，內含六個 SQLite online snapshot、封面、遞迴地圖 PDF、schema manifest 與 SHA-256；還原保留安全相對路徑並拒絕路徑穿越，先建安全備份並嘗試 rollback。沒有地圖的舊備份可還原並清除目前地圖；settings V10／V11／V12 manifest 可交由現行 V13 migration 升級，其他 store schema 仍須完全相符。
+
+2026-09-24 V9 備份匯出核對：`makeArchive` 在封面或地圖目錄存在但列舉失敗時已改為拋錯，不再把資產漏列視為成功；目錄不存在仍可形成零資產備份。這項靜態檢查與 Debug 編譯已通過，故障注入、完整備份／還原測試及還原 rollback 失敗路徑尚未驗證；不得以本次變更宣稱還原 rollback 已改善。
+
+2026-09-24 V9 還原差異：還原 catch 中的原檔搬回及 rollback 目錄清理目前使用 `try?`；若搬回失敗，原檔是否完整復位沒有證據，後續清理還可能移除 rollback 目錄。啟動錯誤文字已依使用者決定改為「備份還原失敗，原資料回復狀態未確認」，避免宣稱成功。rollback 及重啟政策另見 `docs/work-items/v9.2g-backup-restore-rollback.md`，目前未改程式。
 
 ## P1：產品宣稱邊界
 

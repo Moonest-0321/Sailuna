@@ -2,9 +2,19 @@
 
 > 整體狀態：active
 >
-> 目前階段：V8.2 AI 閱讀、設定分析與角色一致性比較（R／U／I approved；實作及 Debug build 通過，待隔離資料 UI 驗收）
+> 目前階段：V10 文書匯入與 TXT 發布相容輸出（僅限 V10；優先 `.docx`／`.txt`，`.pages` 可暫緩；細節見 [docs/work-items/v10-content-transfer.md](../work-items/v10-content-transfer.md)）
 >
-> 唯一下一步：以隔離資料驗收單節／單卷／全書、設定分析、角色比較及超長拒絕流程。
+> 唯一下一步：使用者核准 R 提案的待定預設，再核准 U 線框；之後依已授權的 I 計畫開始實作。文件匯入建立一本新書，不追加到目前書籍；整本及單節 TXT 均帶卷次／節次，移除 `#`／`##`、單一字級及超過四級的回退規則已確認。網站架設與其他產品版本均不在本工作範圍；V10 工作單不得改變其他工作流的決策或批准狀態。V8.2 的 4,096 token 議題保留，待另行決定。
+
+## 2026-09-25 V10 R／U／I 提案 checkpoint
+
+- **已決定**：V10 優先 DOCX／TXT 匯入；Pages 可暫緩；按第一章及字級映射，四級＝卷／節／幕標題／內文，兩級＝節／內文，三級最小級為內文並由作者選較大兩級；單級或超過四級忽略字級、按卷／章／節／張／次文字標示切分且全部當內文；無法辨識時不匯入。TXT 匯出移除 `#`／`##`，可選節／章，整本與既有單節匯出都帶卷次／節次。
+- **已決定**：使用者已更正並確認匯入建立一本全新書，不追加到目前書籍，也不覆寫既有書。
+- **暫時假設**：一次匯入一檔；新書書名以來源檔名預填，作者使用既有新書流程的預設並可編輯（待 R 確認）；先讀首章決定映射，全文驗證同規則；V10 首版保留文字與段落邊界，不承諾頁面排版或非正文物件。
+- **待確認**：來源標題正式語法；三字級缺少必要父層的處理；無標題 TXT 的錯誤行為；內容格式保留；純文字匯出序號與空行；首章映射及全文一致性錯誤樣式；新書書名／作者預填方式與建立時機。
+- **工作樹邊界**：`main`，HEAD `5459db7`。工作樹已有多項 V9 code／docs 未提交變更，特別 `Sailune/EditorWorkspaceView.swift`、`Sailune/BookOverviewView.swift`、`Sailune/ExportManager.swift` 已有 V9 改動；本輪只調整 V10／current 文件，未改任何 Swift 檔，不覆蓋或還原既有變更。
+- **批准狀態**：R 草案、U 提案、I 計畫提案。使用者已明確授權開始 V10 規劃與實作；依 `AGENTS.md` 仍須 R、U 核准後才能開始 feature code。
+- **驗證**：本輪只需文件格式檢查；未執行 build／tests。
 
 ## 2026-09-23 V8.2 AI 閱讀與分析需求起點
 
@@ -19,9 +29,11 @@
 - 工作樹：`main`，起始 HEAD `1589745`；起始工作樹乾淨。此前 AI 角色整理的人工 UI 驗收仍未完成，保留為未驗收事項。
 - 本輪已改：`Sailune/EditorWorkspaceView.swift`、`Sailune/SailuneAICharacterContext.swift`、`Sailune/SailuneAIChatSidebarView.swift`、`Sailune/SailuneAIChatViewModel.swift`、`Sailune/SailuneAIClient.swift`、`Sailune/SailuneAIModels.swift`，新增 `Sailune/SailuneAIAnalysisContext.swift`；文件改 `docs/spec-ai-v8.md`、`docs/project-status.md`、本工作單與交接。未改 SwiftData schema／設定欄位／測試或作者資料；起始工作樹乾淨，無使用者既有未提交程式修改需保留。
 - 實作：單節／單卷／全書正文快照及摘要／範圍提問；角色、物品、能力、勢力既有維度單目標分析；角色分類比較；token 預檢與回覆空間預留；附件可檢視快照，對話 JSON 格式延用舊 Codable 形狀。
-- 驗證：受影響 Swift 檔 `swiftc -frontend -parse`、`git diff --check` 與無簽章 macOS Debug build 通過。沙盒內 build 曾遇 Swift macro server malformed response；主機環境重跑後發現並修正快照作用域、字串 shadowing 與 SwiftUI 回傳值，再成功編譯連結。未新增或執行 XCTest；V8.2 隔離資料 UI 驗收未執行。
-- 未操作正式作者資料。上一工作「角色資料查詢與章節整理」的人工隔離驗收仍待完成。
-- 唯一下一步：以隔離資料驗收 V8.2 四條流程、超長拒絕與訊息附件檢視；目前工作單維持 active。
+- 驗證：受影響 Swift 檔 `swiftc -frontend -parse`、`git diff --check` 與無簽章 macOS Debug build 通過。沙盒內 build 曾遇 Swift macro server malformed response；主機環境重跑後發現並修正快照作用域、字串 shadowing 與 SwiftUI 回傳值，再成功編譯連結。未新增或執行 XCTest；本 agent 未另行執行隔離 UI 冒煙，使用者已確認 V8.2 完成。
+- 使用者於 2026-09-23 回覆「確認完成，唯一的問題剩下4k上下文」。依此記錄 V8.2 已由使用者確認；唯一待處理問題為本機模型上下文容量。此前角色查詢／單節整理沒有本 agent 的獨立 UI 冒煙紀錄，若要將該歷史驗收也一併關閉仍需另行確認。
+- Apple Foundation Models 裝置端 context window 為 4,096 tokens；App 動態讀 `contextSize`，並預留四分之一給回覆（目前 4,096 時為 1,024），提示容量還需扣除系統指示、對話歷史與附件。這是模型上限，不能由 App 設定調高。[Apple context window 說明](https://developer.apple.com/documentation/foundationmodels/managing-the-context-window)。
+- 已決定邊界仍是超限停止，不自動分段／彙整、不轉雲端。若要突破 4,096，需重新確認需求（R）與 UI／實作計畫。未新增或執行 XCTest；未操作正式作者資料。
+- 唯一下一步：確認接受現行本機上限，或重新開 R 討論分段處理／其他模型；工作單維持 active。
 
 ## 2026-09-23 設定集資料查詢與章節角色資訊整理需求起點
 

@@ -26,7 +26,7 @@ struct CharacterTimelinePlacementEditor: View {
             Button {
                 showingTimelineEditor = true
             } label: {
-                Image(systemName: "clock")
+                Image(systemName: SailuneSymbol.timeline.systemName)
                     .frame(width: 22, height: 22)
             }
             .buttonStyle(.borderless)
@@ -119,9 +119,9 @@ private struct CharacterNarrativePlacementSheet: View {
                 .disabled(selectedVolumeID == nil)
             }
             HStack {
-                Button("取消") { dismiss() }
+                Button(SailuneActionCopy.cancel) { dismiss() }
                 Spacer()
-                Button("儲存") {
+                Button(SailuneActionCopy.save) {
                     onSave(selectedSectionID.flatMap { id in sections.first { $0.id == id } })
                     dismiss()
                 }
@@ -181,9 +181,9 @@ private struct CharacterTimelineDateSheet: View {
                 }
             }
             HStack {
-                Button("取消") { dismiss() }
+                Button(SailuneActionCopy.cancel) { dismiss() }
                 Spacer()
-                Button("儲存") {
+                Button(SailuneActionCopy.save) {
                     onSave(selectedEraID.flatMap { id in eras.first { $0.id == id } }, Int(yearText) ?? 0, month, day)
                     dismiss()
                 }
@@ -372,7 +372,7 @@ private struct CharacterTimestampEditorSheet: View {
                         }
                         .disabled(selectedStoryLineID == nil || stages.isEmpty)
                         if storyLines.isEmpty {
-                            Label("請先在敘事大綱建立故事線。", systemImage: "exclamationmark.circle")
+                            Label("請先在敘事大綱建立故事線。", systemImage: SailuneSymbol.requirementNotice.systemName)
                                 .font(.caption)
                                 .foregroundStyle(.orange)
                         }
@@ -387,7 +387,7 @@ private struct CharacterTimestampEditorSheet: View {
             .formStyle(.grouped)
 
             HStack {
-                Button("取消") { dismiss() }.keyboardShortcut(.cancelAction)
+                Button(SailuneActionCopy.cancel) { dismiss() }.keyboardShortcut(.cancelAction)
                 Spacer()
                 Button(existingNode == nil ? "建立" : "儲存", action: saveTimestamp)
                     .keyboardShortcut(.defaultAction)
@@ -414,7 +414,7 @@ private struct CharacterTimestampEditorSheet: View {
             get: { saveErrorMessage != nil },
             set: { if !$0 { saveErrorMessage = nil } }
         )) {
-            Button("好", role: .cancel) { saveErrorMessage = nil }
+            Button(SailuneActionCopy.acknowledge, role: .cancel) { saveErrorMessage = nil }
         } message: {
             Text(saveErrorMessage ?? "請稍後再試。")
         }
@@ -521,13 +521,13 @@ private struct AbilityHistoryRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
-                TextField("階段", text: $history.stage).textFieldStyle(.roundedBorder)
+                SailuneFormTextField(title: "階段", text: $history.stage)
                 CharacterTimelinePlacementEditor(book: book, node: $history.node) {
                     history.updatedAt = Date()
                 }
-                Button(role: .destructive, action: onDelete) { Image(systemName: "trash") }.buttonStyle(.plain)
+                Button(role: .destructive, action: onDelete) { Image(systemName: SailuneSymbol.delete.systemName) }.buttonStyle(.plain)
             }
-            TextField("描述", text: $history.descriptionText).textFieldStyle(.roundedBorder)
+            SailuneFormTextField(title: "描述", text: $history.descriptionText)
         }
         .onChange(of: history.stage) { history.updatedAt = Date() }
         .onChange(of: history.descriptionText) { history.updatedAt = Date() }
@@ -570,7 +570,7 @@ struct ItemUnifiedHistoryEditor: View {
                 ForEach(histories) { history in
                     ItemUnifiedHistoryRow(history: history, book: book, characters: characters, onDelete: { modelContext.delete(history) })
                 }
-                Button("新增歷史", systemImage: "plus", action: addHistory)
+                Button(SailuneActionCopy.addHistory, systemImage: SailuneSymbol.add.systemName, action: addHistory)
             }.frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -597,19 +597,19 @@ private struct ItemUnifiedHistoryRow: View {
                         Toggle(character.realName.isEmpty ? "未命名角色" : character.realName, isOn: selected(character))
                     }
                 } label: {
-                    Label(history.relatedCharacters.isEmpty ? "關聯角色（選填）" : "關聯角色：\(history.relatedCharacters.map { $0.realName }.joined(separator: "、"))", systemImage: "person.2")
+                    Label(history.relatedCharacters.isEmpty ? "關聯角色（選填）" : "關聯角色：\(history.relatedCharacters.map { $0.realName }.joined(separator: "、"))", systemImage: SailuneSymbol.relatedCharacters.systemName)
                 }
-                Button(role: .destructive, action: onDelete) { Image(systemName: "trash") }.buttonStyle(.plain)
+                Button(role: .destructive, action: onDelete) { Image(systemName: SailuneSymbol.delete.systemName) }.buttonStyle(.plain)
             }
             InsetTextEditor(text: $history.content, minHeight: 72)
             if history.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Label("歷史描述不可空白", systemImage: "exclamationmark.circle")
+                Label("歷史描述不可空白", systemImage: SailuneSymbol.requirementNotice.systemName)
                     .font(.caption)
                     .foregroundStyle(.red)
             }
         }
         .padding(8)
-        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+        .background(SailuneTheme.subtleSurface, in: RoundedRectangle(cornerRadius: 8))
         .onChange(of: history.content) { history.updatedAt = Date() }
         .onDisappear {
             if history.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -633,11 +633,11 @@ private struct ItemHistoryRow: View {
     let onDelete: () -> Void
     var body: some View {
         HStack {
-            TextField("自由文字紀錄", text: $history.content).textFieldStyle(.roundedBorder)
+            SailuneFormTextField(title: "自由文字紀錄", text: $history.content)
             CharacterTimelinePlacementEditor(book: book, node: $history.node) {
                 history.updatedAt = Date()
             }
-            Button(role: .destructive, action: onDelete) { Image(systemName: "trash") }.buttonStyle(.plain)
+            Button(role: .destructive, action: onDelete) { Image(systemName: SailuneSymbol.delete.systemName) }.buttonStyle(.plain)
         }
         .onChange(of: history.content) { history.updatedAt = Date() }
     }
@@ -671,13 +671,13 @@ private struct RelationshipHistoryRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 5) {
             HStack {
-                TextField("關係", text: $history.type).textFieldStyle(.roundedBorder)
+                SailuneFormTextField(title: "關係", text: $history.type)
                 CharacterTimelinePlacementEditor(book: book, node: $history.node) {
                     history.updatedAt = Date()
                 }
-                Button(role: .destructive, action: onDelete) { Image(systemName: "trash") }.buttonStyle(.plain)
+                Button(role: .destructive, action: onDelete) { Image(systemName: SailuneSymbol.delete.systemName) }.buttonStyle(.plain)
             }
-            TextField("備註", text: $history.note).textFieldStyle(.roundedBorder)
+            SailuneFormTextField(title: "備註", text: $history.note)
         }
         .onChange(of: history.type) { history.updatedAt = Date() }
         .onChange(of: history.note) { history.updatedAt = Date() }
@@ -689,7 +689,7 @@ private func historyContainer<Content: View>(title: String, addTitle: String, ad
     DisclosureGroup {
         VStack(alignment: .leading, spacing: 7) {
             content()
-            Button(action: add) { Label(addTitle, systemImage: "plus") }.buttonStyle(.borderless)
+            Button(action: add) { Label(addTitle, systemImage: SailuneSymbol.add.systemName) }.buttonStyle(.borderless)
         }
         .padding(.top, 7)
     } label: {

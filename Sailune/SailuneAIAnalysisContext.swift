@@ -170,14 +170,14 @@ enum SailuneAIAnalysisContextBuilder {
             guard let item = try context.fetch(FetchDescriptor<Item>()).first(where: {
                 $0.id == targetID && $0.book?.id == book.id
             }) else { throw SailuneAIAnalysisContextError.targetUnavailable }
-            return itemSnapshot(item, dimensions: dimensions, bookID: book.id, context: context)
+            return try itemSnapshot(item, dimensions: dimensions, bookID: book.id, context: context)
         case .ability:
             let abilities = try context.fetch(FetchDescriptor<CharacterAbility>())
             let resolvedBookIDs = abilityStore.resolvedBookIDs(for: abilities)
             guard let ability = abilities.first(where: {
                 $0.id == targetID && resolvedBookIDs[$0.id] == book.id
             }) else { throw SailuneAIAnalysisContextError.targetUnavailable }
-            return abilitySnapshot(
+            return try abilitySnapshot(
                 ability,
                 dimensions: dimensions,
                 bookID: book.id,
@@ -185,10 +185,12 @@ enum SailuneAIAnalysisContextBuilder {
                 abilityStore: abilityStore
             )
         case .power:
-            guard let power = settingsStore.powers(for: book.id).first(where: { $0.id == targetID }) else {
+            guard let power = try settingsStore.fetchForAnalysis(PowerUnit.self).first(where: {
+                $0.bookID == book.id && $0.id == targetID
+            }) else {
                 throw SailuneAIAnalysisContextError.targetUnavailable
             }
-            return powerSnapshot(
+            return try powerSnapshot(
                 power,
                 dimensions: dimensions,
                 bookID: book.id,
@@ -204,7 +206,7 @@ enum SailuneAIAnalysisContextBuilder {
         dimensions: Set<SailuneAISettingDimension>,
         bookID: UUID,
         context: ModelContext
-    ) -> String {
+    ) throws -> String {
         var output: [String] = ["名稱：\(item.name)"]
         if dimensions.contains(.itemProfile) {
             output += [
@@ -219,7 +221,7 @@ enum SailuneAIAnalysisContextBuilder {
             if !holders.isEmpty { output.append("持有角色：" + holders.joined(separator: "、")) }
         }
         if dimensions.contains(.itemHistory) {
-            let nodes = (try? context.fetch(FetchDescriptor<Node>())) ?? []
+            let nodes = try context.fetch(FetchDescriptor<Node>())
             let histories = item.histories.sorted { $0.sortOrder < $1.sortOrder }.map { history in
                 let characters = history.relatedCharacters.filter { $0.book?.id == bookID }.map(\.realName)
                 let location = history.node.flatMap { nodeLabel($0.id, nodes: nodes, bookID: bookID) }
@@ -237,7 +239,7 @@ enum SailuneAIAnalysisContextBuilder {
         bookID: UUID,
         context: ModelContext,
         abilityStore: AbilityProgressStore
-    ) -> String {
+    ) throws -> String {
         var output: [String] = ["名稱：\(ability.name)"]
         if dimensions.contains(.abilityProfile) {
             output += [line("目前階段", ability.currentStage), line("階段說明", ability.stageDescription), line("摘要", ability.summary)].compactMap { $0 }
@@ -245,7 +247,7 @@ enum SailuneAIAnalysisContextBuilder {
         let connections = abilityStore.connections.filter { $0.abilityID == ability.id }
         if dimensions.contains(.abilityLevels) {
             let levels = abilityStore.levels.filter { $0.abilityID == ability.id }.sorted { $0.sortOrder < $1.sortOrder }
-            let characters = (try? context.fetch(FetchDescriptor<Character>()))?.filter { $0.book?.id == bookID } ?? []
+            let characters = try context.fetch(FetchDescriptor<Character>()).filter { $0.book?.id == bookID }
             let currentLevels = connections.compactMap { connection -> String? in
                 guard let levelID = connection.currentLevelID,
                       let level = levels.first(where: { $0.id == levelID }) else { return nil }
@@ -260,7 +262,7 @@ enum SailuneAIAnalysisContextBuilder {
             if !currentLevels.isEmpty { output.append("角色目前等級：" + currentLevels.joined(separator: "、")) }
         }
         if dimensions.contains(.abilityHistory) {
-            let nodes = (try? context.fetch(FetchDescriptor<Node>())) ?? []
+            let nodes = try context.fetch(FetchDescriptor<Node>())
             let legacy = ability.history.sorted { $0.sortOrder < $1.sortOrder }.map {
                 let location = $0.node.flatMap { nodeLabel($0.id, nodes: nodes, bookID: bookID) }
                 return ["\($0.stage)：\($0.descriptionText)", location].compactMap { cleaned($0) }.joined(separator: "｜")
@@ -284,31 +286,45 @@ enum SailuneAIAnalysisContextBuilder {
         context: ModelContext,
         abilityStore: AbilityProgressStore,
         settingsStore: V5SettingsStore
-    ) -> String {
-        let allPowers = settingsStore.powers(for: bookID)
-        let characters = (try? context.fetch(FetchDescriptor<Character>()))?.filter { $0.book?.id == bookID } ?? []
-        let items = (try? context.fetch(FetchDescriptor<Item>()))?.filter { $0.book?.id == bookID } ?? []
-        let abilities = (try? context.fetch(FetchDescriptor<CharacterAbility>())) ?? []
+    ) throws -> String {
+        let allPowers = try settingsStore.fetchForAnalysis(PowerUnit.self).filter { $0.bookID == bookID }
+        let characters = try context.fetch(FetchDescriptor<Character>()).filter { $0.book?.id == bookID }
+        let items = try context.fetch(FetchDescriptor<Item>()).filter { $0.book?.id == bookID }
+        let abilities = try context.fetch(FetchDescriptor<CharacterAbility>())
         let abilityBookIDs = abilityStore.resolvedBookIDs(for: abilities)
         let bookAbilities = abilities.filter { abilityBookIDs[$0.id] == bookID }
-        let nodes = (try? context.fetch(FetchDescriptor<Node>())) ?? []
+        let nodes = try context.fetch(FetchDescriptor<Node>())
         var output: [String] = ["名稱：\(power.name)"]
         if dimensions.contains(.powerProfile) {
+            let levels = try settingsStore.fetchForAnalysis(PowerLevel.self)
+                .filter { $0.bookID == bookID }
+                .sorted { $0.sortOrder < $1.sortOrder }
             output += [
                 line("簡介", power.powerDescription), line("曾用名", power.formerNames),
                 line("外文名", power.foreignNames), line("簡稱", power.shortName),
-                line("層級", settingsStore.levels(for: bookID).first(where: { $0.id == power.levelID })?.name),
+                line("層級", levels.first(where: { $0.id == power.levelID })?.name),
                 line("存在狀態", power.existenceStatus.title)
             ].compactMap { $0 }
         }
         if dimensions.contains(.powerMembership) {
-            let members = settingsStore.members(for: power, bookID: bookID).map { member in
+            let powerMembers = try settingsStore.fetchForAnalysis(PowerMember.self)
+                .filter { $0.bookID == bookID && $0.powerID == power.id }
+                .sorted { $0.sortOrder < $1.sortOrder }
+            let memberRoles: [PowerMemberRole]
+            if powerMembers.isEmpty {
+                memberRoles = []
+            } else {
+                memberRoles = try settingsStore.fetchForAnalysis(PowerMemberRole.self)
+                    .filter { $0.bookID == bookID }
+            }
+            let members = powerMembers.map { member in
                 let character = characters.first(where: {
                     $0.id == member.characterID && $0.book?.id == bookID
                 })
                 let joined = nodeLabel(member.joinedNodeID, nodes: nodes, bookID: bookID)
                 let left = nodeLabel(member.leftNodeID, nodes: nodes, bookID: bookID)
-                let roles = settingsStore.roles(for: member, bookID: bookID).map { role in
+                let roles = memberRoles.filter { $0.memberID == member.id }
+                    .sorted { $0.sortOrder < $1.sortOrder }.map { role in
                     let leadership = role.isLeadership ? "領導職" : "職務"
                     let start = nodeLabel(role.startNodeID, nodes: nodes, bookID: bookID)
                     let end = nodeLabel(role.endNodeID, nodes: nodes, bookID: bookID)
@@ -322,12 +338,15 @@ enum SailuneAIAnalysisContextBuilder {
             if !members.isEmpty { output.append("成員：\n" + members.joined(separator: "\n")) }
         }
         if dimensions.contains(.powerRelations) {
-            let edges = settingsStore.edges(for: bookID).filter { $0.lowerPowerID == power.id || $0.upperPowerID == power.id }.map { edge in
+            let edges = try settingsStore.fetchForAnalysis(PowerSubordination.self)
+                .filter { $0.bookID == bookID && ($0.lowerPowerID == power.id || $0.upperPowerID == power.id) }.map { edge in
                 let lower = allPowers.first(where: { $0.id == edge.lowerPowerID })?.name ?? "勢力資料不存在"
                 let upper = allPowers.first(where: { $0.id == edge.upperPowerID })?.name ?? "勢力資料不存在"
                 return "- \(lower) 隸屬於 \(upper)"
             }
-            let relations = settingsStore.powerRelations(for: power, bookID: bookID).map { relation in
+            let relations = try settingsStore.fetchForAnalysis(PowerRelation.self)
+                .filter { $0.bookID == bookID && ($0.sourcePowerID == power.id || $0.targetPowerID == power.id) }
+                .sorted { $0.createdAt < $1.createdAt }.map { relation in
                 let otherID = relation.sourcePowerID == power.id ? relation.targetPowerID : relation.sourcePowerID
                 let other = allPowers.first(where: { $0.id == otherID })?.name ?? "勢力資料不存在"
                 return "- \(relation.kind?.title ?? "關係")：\(other)｜\(relation.detail)"
@@ -337,7 +356,7 @@ enum SailuneAIAnalysisContextBuilder {
             if !merged.isEmpty { output.append("已建立關係：\n" + merged.joined(separator: "\n")) }
         }
         if dimensions.contains(.powerGovernment) {
-            let terms = settingsStore.worldTerms(for: bookID)
+            let terms = try settingsStore.fetchForAnalysis(WorldTerm.self).filter { $0.bookID == bookID }
             output += [
                 line("政治", power.politics), line("宗教", power.religion),
                 linkedTerm("宗教條目", power.religionWorldTermID, terms),
@@ -348,8 +367,10 @@ enum SailuneAIAnalysisContextBuilder {
         }
         if dimensions.contains(.powerPurpose) { output += [line("目的", power.purpose)].compactMap { $0 } }
         if dimensions.contains(.powerAssets) {
-            let links = settingsStore.assets(for: power, bookID: bookID)
-            let terms = settingsStore.worldTerms(for: bookID)
+            let links = try settingsStore.fetchForAnalysis(PowerAssetLink.self)
+                .filter { $0.bookID == bookID && $0.powerID == power.id }
+                .sorted { $0.sortOrder < $1.sortOrder }
+            let terms = try settingsStore.fetchForAnalysis(WorldTerm.self).filter { $0.bookID == bookID }
             let assets = links.map { link -> String in
                 let name: String
                 switch link.kind {
@@ -367,17 +388,23 @@ enum SailuneAIAnalysisContextBuilder {
             if !assets.isEmpty { output.append("資產：\n" + assets.joined(separator: "\n")) }
         }
         if dimensions.contains(.powerAdvantages) {
-            let advantages = settingsStore.advantages(for: power, bookID: bookID).map {
+            let advantages = try settingsStore.fetchForAnalysis(PowerAdvantage.self)
+                .filter { $0.bookID == bookID && $0.powerID == power.id }
+                .sorted { $0.sortOrder < $1.sortOrder }.map {
                 "- \($0.kind?.title ?? "優勢")：\($0.name)｜\($0.detail)"
             }
             if !advantages.isEmpty { output.append("優勢：\n" + advantages.joined(separator: "\n")) }
         }
         if dimensions.contains(.powerHistory) {
-            let lifecycle = settingsStore.lifecycleEvents(for: power, bookID: bookID).map { event in
+            let lifecycle = try settingsStore.fetchForAnalysis(PowerLifecycleEvent.self)
+                .filter { $0.bookID == bookID && $0.powerID == power.id }
+                .sorted { $0.sortOrder < $1.sortOrder }.map { event in
                 let date = nodeLabel(event.nodeID, nodes: nodes, bookID: bookID).map { "｜\($0)" } ?? ""
                 return "- \(event.kind?.title ?? "沿革")：\(event.title)｜\(event.detail)\(date)"
             }
-            let succession = settingsStore.successionLinks(for: power, bookID: bookID).map { link in
+            let succession = try settingsStore.fetchForAnalysis(PowerSuccessionLink.self)
+                .filter { $0.bookID == bookID && ($0.predecessorPowerID == power.id || $0.successorPowerID == power.id) }
+                .map { link in
                 let predecessor = allPowers.first(where: { $0.id == link.predecessorPowerID })?.name ?? "勢力資料不存在"
                 let successor = allPowers.first(where: { $0.id == link.successorPowerID })?.name ?? "勢力資料不存在"
                 let date = nodeLabel(link.nodeID, nodes: nodes, bookID: bookID).map { "｜\($0)" } ?? ""

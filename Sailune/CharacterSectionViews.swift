@@ -2,23 +2,6 @@ import SwiftUI
 import SwiftData
 import AppKit
 
-struct InsetTextEditor: View {
-    @Binding var text: String
-    var minHeight: CGFloat = 90
-
-    var body: some View {
-        TextEditor(text: $text)
-            .scrollContentBackground(.hidden)
-            .font(.body)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 8)
-            .frame(minHeight: minHeight)
-            .background(Color(nsColor: .textBackgroundColor).opacity(0.7))
-            .clipShape(RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.secondary.opacity(0.25)))
-    }
-}
-
 struct CharacterSummarySectionView: View {
     let character: Character
     @Environment(\.modelContext) private var modelContext
@@ -144,7 +127,7 @@ struct CharacterSummarySectionView: View {
     }
 }
 
-private struct CharacterSectionEmptyState: View {
+struct CharacterSectionEmptyState: View {
     let title: String
     let detail: String
 
@@ -177,7 +160,7 @@ struct CharacterAliasSectionView: View {
                 }
             }
             Button { modelContext.insert(CharacterAlias(name: "新別名", character: character)) } label: {
-                Label("新增別名", systemImage: "plus")
+                Label("新增別名", systemImage: SailuneSymbol.add.systemName)
             }
             .buttonStyle(.borderless)
         }
@@ -188,7 +171,7 @@ struct CharacterAliasSectionView: View {
                 set: { if !$0 { deletionErrorMessage = nil } }
             )
         ) {
-            Button("好", role: .cancel) { deletionErrorMessage = nil }
+            Button(SailuneActionCopy.acknowledge, role: .cancel) { deletionErrorMessage = nil }
         } message: {
             Text(deletionErrorMessage ?? "請稍後再試。")
         }
@@ -246,8 +229,8 @@ private struct AliasRow: View {
             TextField("別名", text: $alias.name)
                 .textFieldStyle(.roundedBorder)
                 .focused($nameFieldFocused)
-            TextField("備註", text: $alias.note).textFieldStyle(.roundedBorder)
-            Button(role: .destructive, action: onDelete) { Image(systemName: "trash") }.buttonStyle(.plain)
+            SailuneFormTextField(title: "備註", text: $alias.note)
+            Button(role: .destructive, action: onDelete) { Image(systemName: SailuneSymbol.delete.systemName) }.buttonStyle(.plain)
         }
         .onAppear { nameBeforeEditing = alias.name }
         .onChange(of: nameFieldFocused) { _, isFocused in
@@ -318,7 +301,7 @@ private struct CharacterAbilityConnectionRow: View {
                         .buttonStyle(.link)
                 } else { Text("未命名能力").fontWeight(.medium) }
                 Spacer()
-                Button(role: .destructive, action: onDelete) { Image(systemName: "trash") }.buttonStyle(.plain)
+                Button(role: .destructive, action: onDelete) { Image(systemName: SailuneSymbol.delete.systemName) }.buttonStyle(.plain)
             }
             Picker("目前等級", selection: Binding(get: { connection.currentLevelID }, set: { connection.currentLevelID = $0; abilityStore.save() })) {
                 Text("未設定").tag(Optional<UUID>.none)
@@ -327,7 +310,7 @@ private struct CharacterAbilityConnectionRow: View {
             CharacterAbilityTimelineEditor(connection: connection, book: book, levels: levels, history: history)
         }
         .padding(10)
-        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+        .background(SailuneTheme.subtleSurface, in: RoundedRectangle(cornerRadius: 8))
     }
 }
 
@@ -366,10 +349,10 @@ private struct CharacterAbilityTimelineEditor: View {
                         ),
                         onChange: { entry.updatedAt = Date(); abilityStore.save() }
                     )
-                    Button(role: .destructive) { abilityStore.deleteHistory(entry) } label: { Image(systemName: "trash") }.buttonStyle(.plain)
+                    Button(role: .destructive) { abilityStore.deleteHistory(entry) } label: { Image(systemName: SailuneSymbol.delete.systemName) }.buttonStyle(.plain)
                 }
             }
-            Button("新增時間序", systemImage: "plus") {
+            Button("新增時間序", systemImage: SailuneSymbol.add.systemName) {
                 abilityStore.addHistory(connectionID: connection.id)
             }
             .buttonStyle(.borderless)
@@ -392,60 +375,6 @@ private struct CharacterAbilityTimelineEditor: View {
         if current > previous { return "上升" }
         if current < previous { return "下降" }
         return "維持"
-    }
-}
-
-struct CharacterAppearanceSectionView: View {
-    let character: Character
-    let book: Book
-    @Environment(\.modelContext) private var modelContext
-    @Query(sort: \CharacterAppearance.createdAt) private var allAppearances: [CharacterAppearance]
-    private var appearances: [CharacterAppearance] { allAppearances.filter { $0.character?.id == character.id } }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            if appearances.isEmpty {
-                CharacterSectionEmptyState(title: "尚無外觀資料", detail: "可新增服裝與身體特徵。")
-            } else {
-                ForEach(appearances) { appearance in AppearanceRow(appearance: appearance, book: book, onDelete: { modelContext.delete(appearance) }) }
-            }
-            Menu("新增外觀") {
-                Button("服裝") { add(.outfit) }
-                Button("身體特徵") { add(.bodyFeature) }
-            }
-            .menuStyle(.borderlessButton)
-        }
-    }
-
-    private func add(_ kind: CharacterAppearanceKind) {
-        modelContext.insert(CharacterAppearance(kind: kind, descriptionText: "新外觀", character: character))
-    }
-}
-
-private struct AppearanceRow: View {
-    @Bindable var appearance: CharacterAppearance
-    let book: Book
-    let onDelete: () -> Void
-    var body: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack(alignment: .top) {
-                Picker("類型", selection: $appearance.kindRawValue) {
-                    Text("服裝").tag(CharacterAppearanceKind.outfit.rawValue)
-                    Text("身體特徵").tag(CharacterAppearanceKind.bodyFeature.rawValue)
-                }.frame(width: 150)
-                Button(role: .destructive, action: onDelete) { Image(systemName: "trash") }.buttonStyle(.plain)
-            }
-            Text("外觀描述").font(.caption).foregroundStyle(.secondary)
-            InsetTextEditor(text: $appearance.descriptionText, minHeight: 110)
-            TextField(appearance.kind == .outfit ? "場景／用途" : "備註", text: appearance.kind == .outfit ? $appearance.usage : $appearance.note)
-                .textFieldStyle(.roundedBorder)
-            HStack {
-                Text("時間定位").font(.caption).foregroundStyle(.secondary)
-                CharacterTimelinePlacementEditor(book: book, node: $appearance.node) {
-                    appearance.updatedAt = Date()
-                }
-            }
-        }
     }
 }
 
@@ -494,15 +423,14 @@ private struct PsychologyRow: View {
                 Spacer(minLength: 0)
 
                 Button(role: .destructive, action: onDelete) {
-                    Label("刪除心理資料", systemImage: "trash")
+                    Label("刪除心理資料", systemImage: SailuneSymbol.delete.systemName)
                         .labelStyle(.iconOnly)
                 }
                 .buttonStyle(.plain)
                 .help("刪除心理資料")
             }
 
-            TextField("內容", text: $psychology.content)
-                .textFieldStyle(.roundedBorder)
+            SailuneFormTextField(title: "內容", text: $psychology.content)
 
             HStack(spacing: 10) {
                 Text("時間定位")
@@ -515,7 +443,7 @@ private struct PsychologyRow: View {
             }
         }
         .padding(10)
-        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .background(SailuneTheme.subtleSurface, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
         .onChange(of: psychology.kindRawValue) { psychology.updatedAt = Date() }
         .onChange(of: psychology.content) { psychology.updatedAt = Date() }
     }
@@ -603,7 +531,7 @@ private struct ItemCopyCharacterRow: View {
                 Spacer()
                 if let onOpenItem {
                     Button { onOpenItem(item) } label: {
-                        Image(systemName: "chevron.right")
+                        Image(systemName: SailuneSymbol.disclosure.systemName)
                             .foregroundStyle(.secondary)
                             .frame(width: 32, height: 32)
                             .contentShape(Rectangle())
@@ -612,10 +540,10 @@ private struct ItemCopyCharacterRow: View {
                     .help("前往物品設定")
                 }
                 Button(role: .destructive, action: onRemoveHolder) {
-                    Image(systemName: "trash")
+                    Image(systemName: SailuneSymbol.removeHolder.systemName)
                 }
                 .buttonStyle(.plain)
-                .help("移除持有人；副本仍保留")
+                .help(SailuneActionCopy.removeHolder)
             }
             Text("物品設定：\(item.name.isEmpty ? "未命名物品" : item.name) · 數量 1")
                 .font(.caption)
@@ -650,7 +578,7 @@ struct CharacterRelationshipSectionView: View {
                     Text("選擇角色").tag(Optional<UUID>.none)
                     ForEach(targets) { Text($0.realName.isEmpty ? "未命名" : $0.realName).tag(Optional($0.id)) }
                 }
-                Button("新增關係", action: addRelationship).disabled(selectedTargetID == nil)
+                Button(SailuneActionCopy.addRelationship, action: addRelationship).disabled(selectedTargetID == nil)
             }
         }
     }
@@ -677,9 +605,9 @@ private struct RelationshipRow: View {
         VStack(alignment: .leading, spacing: 7) {
             HStack {
                 Text(relationship.targetCharacter?.realName ?? "未知角色").frame(minWidth: 80, alignment: .leading)
-                TextField("關係類型", text: $relationship.type).textFieldStyle(.roundedBorder)
-                TextField("備註", text: $relationship.note).textFieldStyle(.roundedBorder)
-                Button(role: .destructive, action: onDelete) { Image(systemName: "trash") }.buttonStyle(.plain)
+                SailuneFormTextField(title: "關係類型", text: $relationship.type)
+                SailuneFormTextField(title: "備註", text: $relationship.note)
+                Button(role: .destructive, action: onDelete) { Image(systemName: SailuneSymbol.delete.systemName) }.buttonStyle(.plain)
             }
             RelationshipHistoryEditor(relationship: relationship, book: book)
         }
@@ -871,14 +799,14 @@ struct CharacterEventSectionView: View {
                 }
             }
             Button(action: addEvent) {
-                Label("新增事件", systemImage: "plus")
+                Label(SailuneActionCopy.addEvent, systemImage: SailuneSymbol.add.systemName)
             }
             .buttonStyle(.borderless)
         }
         .alert("無法刪除事件", isPresented: Binding(
             get: { deletionErrorMessage != nil },
             set: { if !$0 { deletionErrorMessage = nil } }
-        )) { Button("好") { deletionErrorMessage = nil } } message: {
+        )) { Button(SailuneActionCopy.acknowledge) { deletionErrorMessage = nil } } message: {
             Text(deletionErrorMessage ?? "請稍後再試。")
         }
     }
@@ -929,9 +857,9 @@ private struct CharacterEventRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 7) {
             HStack {
-                TextField("事件標題", text: $event.title).textFieldStyle(.roundedBorder)
+                SailuneFormTextField(title: "事件標題", text: $event.title)
                 Button(role: .destructive, action: onDelete) {
-                    Image(systemName: "trash")
+                    Image(systemName: SailuneSymbol.delete.systemName)
                 }
                 .buttonStyle(.plain)
             }
@@ -962,7 +890,7 @@ private struct CharacterEventRow: View {
                             Button {
                                 event.characters.removeAll { $0.id == related.id }
                             } label: {
-                                Label(related.realName.isEmpty ? "未命名角色" : related.realName, systemImage: "xmark")
+                                Label(related.realName.isEmpty ? "未命名角色" : related.realName, systemImage: SailuneSymbol.removeRelatedCharacter.systemName)
                                     .font(.caption)
                             }
                             .buttonStyle(.borderless)
@@ -972,6 +900,6 @@ private struct CharacterEventRow: View {
             }
         }
         .padding(10)
-        .background(Color.secondary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+        .background(SailuneTheme.subtleSurface, in: RoundedRectangle(cornerRadius: 8))
     }
 }

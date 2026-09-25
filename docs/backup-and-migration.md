@@ -59,8 +59,9 @@ V4.4.8 在主 container 與 StoryPlanning store 都成功開啟後，會以現�
 
 - 作者設定可輸出單一 `.sailunebackup`；內容是帶 manifest 的版本化封裝，包含六個 SQLite online snapshot、封面、遞迴地圖 PDF、每書 AI 對話 JSON 的安全相對路徑、檔案大小與 SHA-256 checksum。
 - 建立備份前先提交全部 store；任一儲存或 snapshot 失敗時不產生成功備份。
+- V9 起，封面或地圖資產目錄存在但無法列舉時也會中止備份並回報錯誤；目錄不存在仍表示沒有該類資產。PNG／PDF 篩選、相對路徑與 manifest 檢查維持原規則。
 - 還原選擇時先驗證封裝版本、schema、檔案清單與 checksum，只排程已驗證備份。
-- 正式置換在下次啟動、container 開啟前執行；先強制建立 `Sailune/Recovery Backups` 安全備份，再整組置換。失敗會復原原 store、封面與地圖，並停止啟動顯示原因。
+- 正式置換在下次啟動、container 開啟前執行；先強制建立 `Sailune/Recovery Backups` 安全備份，再整組置換。失敗路徑會嘗試復位原 store、封面、地圖及 AI 對話並停止啟動；原檔搬回與清理錯誤仍會被 `try?` 忽略，因此目前無法確認復位是否完整。啟動訊息已改為「備份還原失敗，原資料回復狀態未確認」。rollback 保留與重啟政策仍待另行核定。
 - 沒有 `maps/` 的舊備份仍可還原，且會清除還原前的目前地圖資產，避免背景與舊座標資料錯配。
 - 沒有 `ai-conversations/` 的舊備份仍可還原，且會清除還原前的 AI 對話；每書對話檔隨書籍刪除並在還原失敗時 rollback。
 - settings manifest 為 V10、V11 或 V12 的備份可由 V13 應用接受；還原後依 migration plan 升級至 V13。舊平面 map 路徑由地圖 bootstrap 搬移；其他五個 store schema 仍必須完全相符。

@@ -35,8 +35,8 @@ struct MapManagementView: View {
                 HStack {
                     Text(map.name)
                     Spacer()
-                    Button("重新命名") { nameText = map.name; nameOperation = .rename(map.id) }
-                    Button("刪除", role: .destructive) { mapToDelete = map }
+                    Button(SailuneActionCopy.rename) { nameText = map.name; nameOperation = .rename(map.id) }
+                    Button(SailuneActionCopy.delete, role: .destructive) { mapToDelete = map }
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { selectedMapID = map.id }
@@ -45,9 +45,9 @@ struct MapManagementView: View {
             .frame(minHeight: 220)
 
             HStack {
-                Button { nameText = ""; nameOperation = .add } label: { Label("新增地圖", systemImage: "plus") }
+                Button { nameText = ""; nameOperation = .add } label: { Label("新增地圖", systemImage: SailuneSymbol.add.systemName) }
                 Spacer()
-                Button("完成") { onSelectionChanged(); dismiss() }
+                Button(SailuneActionCopy.done) { onSelectionChanged(); dismiss() }
             }
         }
         .padding(20)
@@ -55,18 +55,16 @@ struct MapManagementView: View {
         .onChange(of: selectedLevel) { _, _ in selectedMapID = maps.first?.id }
         .alert(nameOperationTitle, isPresented: Binding(get: { nameOperation != nil }, set: { if !$0 { nameOperation = nil } })) {
             TextField("地圖名稱", text: $nameText)
-            Button("取消", role: .cancel) { nameOperation = nil }
-            Button("儲存") { performNameOperation() }
+            Button(SailuneActionCopy.cancel, role: .cancel) { nameOperation = nil }
+            Button(SailuneActionCopy.save) { performNameOperation() }
         }
         .alert("刪除地圖？", isPresented: Binding(get: { mapToDelete != nil }, set: { if !$0 { mapToDelete = nil } })) {
-            Button("取消", role: .cancel) { mapToDelete = nil }
-            Button("刪除", role: .destructive) { deleteSelectedMap() }
+            Button(SailuneActionCopy.cancel, role: .cancel) { mapToDelete = nil }
+            Button(SailuneActionCopy.delete, role: .destructive) { deleteSelectedMap() }
         } message: {
             Text("會刪除此地圖的所有背景版本與標記位置，但不會刪除設定集中的地點。")
         }
-        .alert("無法完成操作", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
-            Button("好", role: .cancel) { errorMessage = nil }
-        } message: { Text(errorMessage ?? "未知錯誤") }
+        .sailuneErrorAlert("無法完成操作", errorMessage: $errorMessage, acknowledgeRole: .cancel)
     }
 
     private var nameOperationTitle: String {
@@ -121,8 +119,8 @@ struct MapVersionManagementView: View {
                     Image(systemName: selectedVersionID == version.id ? "largecircle.fill.circle" : "circle")
                     Text(version.name)
                     Spacer()
-                    Button("重新命名") { nameText = version.name; nameOperation = .rename(version.id) }
-                    Button("刪除", role: .destructive) { versionToDelete = version }
+                    Button(SailuneActionCopy.rename) { nameText = version.name; nameOperation = .rename(version.id) }
+                    Button(SailuneActionCopy.delete, role: .destructive) { versionToDelete = version }
                         .disabled(versions.count <= 1)
                 }
                 .contentShape(Rectangle())
@@ -131,25 +129,23 @@ struct MapVersionManagementView: View {
             }
             .frame(minHeight: 210)
             HStack {
-                Button { nameText = ""; nameOperation = .add } label: { Label("新增版本", systemImage: "plus") }
+                Button { nameText = ""; nameOperation = .add } label: { Label("新增版本", systemImage: SailuneSymbol.add.systemName) }
                 Spacer()
-                Button("完成") { onSelectionChanged(); dismiss() }
+                Button(SailuneActionCopy.done) { onSelectionChanged(); dismiss() }
             }
         }
         .padding(20)
         .frame(width: 560, height: 330)
         .alert(nameOperationTitle, isPresented: Binding(get: { nameOperation != nil }, set: { if !$0 { nameOperation = nil } })) {
             TextField("版本名稱", text: $nameText)
-            Button("取消", role: .cancel) { nameOperation = nil }
-            Button("儲存") { performNameOperation() }
+            Button(SailuneActionCopy.cancel, role: .cancel) { nameOperation = nil }
+            Button(SailuneActionCopy.save) { performNameOperation() }
         }
         .alert("刪除版本？", isPresented: Binding(get: { versionToDelete != nil }, set: { if !$0 { versionToDelete = nil } })) {
-            Button("取消", role: .cancel) { versionToDelete = nil }
-            Button("刪除", role: .destructive) { deleteSelectedVersion() }
+            Button(SailuneActionCopy.cancel, role: .cancel) { versionToDelete = nil }
+            Button(SailuneActionCopy.delete, role: .destructive) { deleteSelectedVersion() }
         } message: { Text("只會刪除這個背景版本，不會刪除地點或標記位置。") }
-        .alert("無法完成操作", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
-            Button("好", role: .cancel) { errorMessage = nil }
-        } message: { Text(errorMessage ?? "未知錯誤") }
+        .sailuneErrorAlert("無法完成操作", errorMessage: $errorMessage, acknowledgeRole: .cancel)
     }
 
     private var nameOperationTitle: String {

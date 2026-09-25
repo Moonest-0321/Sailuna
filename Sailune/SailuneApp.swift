@@ -34,11 +34,7 @@ struct SailuneApp: App {
                 .appendingPathComponent("Sailune-test-host-\(UUID().uuidString).store")
         }
         #endif
-        let fileManager = FileManager.default
-        let appSupportURL = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        if !fileManager.fileExists(atPath: appSupportURL.path) {
-            try? fileManager.createDirectory(at: appSupportURL, withIntermediateDirectories: true)
-        }
+        let appSupportURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
         return appSupportURL.appendingPathComponent("Sailune-v5.store")
     }()
 
@@ -85,9 +81,17 @@ struct SailuneApp: App {
 
     private static func makeModelContainer() throws -> (ModelContainer, V5SettingsStore, ItemCopyStore, AbilityProgressStore, StoryPlanningStore) {
         do {
+            try FileManager.default.createDirectory(
+                at: storeURL.deletingLastPathComponent(),
+                withIntermediateDirectories: true
+            )
+        } catch {
+            throw StartupStageError(stage: "資料目錄建立失敗", underlying: error)
+        }
+        do {
             try SailuneBackupService.applyPendingRestoreIfNeeded(locations: SailuneDataLocations(mainStore: storeURL))
         } catch {
-            throw StartupStageError(stage: "備份還原失敗，原資料已回復", underlying: error)
+            throw StartupStageError(stage: "備份還原失敗，原資料回復狀態未確認", underlying: error)
         }
         // Open the released schema before V5. SwiftData caches model metadata
         // for shared top-level model types, so reversing this order makes it
@@ -319,22 +323,22 @@ private struct SailuneRootView: View {
             .environment(abilityStore)
             .environment(planningStore)
             .alert("物品副本無法儲存", isPresented: persistenceErrorBinding) {
-                Button("好") { copyStore.clearPersistenceError() }
+                Button(SailuneActionCopy.acknowledge) { copyStore.clearPersistenceError() }
             } message: {
                 Text(copyStore.persistenceErrorMessage ?? "未知錯誤")
             }
             .alert("設定集無法儲存", isPresented: settingsPersistenceErrorBinding) {
-                Button("好") { settingsStore.clearPersistenceError() }
+                Button(SailuneActionCopy.acknowledge) { settingsStore.clearPersistenceError() }
             } message: {
                 Text(settingsStore.persistenceErrorMessage ?? "未知錯誤")
             }
             .alert("能力資料無法儲存", isPresented: abilityPersistenceErrorBinding) {
-                Button("好") { abilityStore.clearPersistenceError() }
+                Button(SailuneActionCopy.acknowledge) { abilityStore.clearPersistenceError() }
             } message: {
                 Text(abilityStore.persistenceErrorMessage ?? "未知錯誤")
             }
             .alert("故事規劃無法儲存", isPresented: planningPersistenceErrorBinding) {
-                Button("好") { planningStore.clearPersistenceError() }
+                Button(SailuneActionCopy.acknowledge) { planningStore.clearPersistenceError() }
             } message: {
                 Text(planningStore.persistenceErrorMessage ?? "未知錯誤")
             }

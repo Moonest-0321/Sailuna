@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import SwiftData
+import OSLog
 
 /// The settings catalog is intentionally small in V5. New setting types can be
 /// added later without changing the meaning of the saved visibility rows.
@@ -31,8 +32,8 @@ enum SidebarSettingKey: String, CaseIterable, Codable, Hashable, Identifiable {
         switch self {
         case .character: "person.2"
         case .power: "building.2"
-        case .item: "shippingbox"
-        case .ability: "sparkles"
+        case .item: SailuneSymbol.item.systemName
+        case .ability: SailuneSymbol.ability.systemName
         case .storyTag: "tag"
         case .place: "mappin.and.ellipse"
         case .worldTerm: "book.closed"
@@ -2172,41 +2173,6 @@ typealias MapPlacement = V5SettingsSchemaV13.MapPlacement
 typealias MapCatalogProfile = V5SettingsSchemaV12.MapCatalogProfile
 typealias WorldTerm = V5SettingsSchemaV9.WorldTerm
 
-enum PowerHierarchyError: LocalizedError {
-    case invalidBook
-    case invalidLevelName
-    case duplicateLevelName(String)
-    case levelInUse(String)
-    case levelNotAssigned(String)
-    case duplicateRelation
-    case invalidDirection
-    case invalidLevelOrder
-    case conflictingRelations([String])
-
-    var errorDescription: String? {
-        switch self {
-        case .invalidBook:
-            "勢力與層級必須屬於同一本書。"
-        case .invalidLevelName:
-            "層級名稱不可空白。"
-        case .duplicateLevelName(let name):
-            "同一本書已經有「\(name)」層級。"
-        case .levelInUse(let name):
-            "「\(name)」仍有勢力使用，無法刪除。"
-        case .levelNotAssigned(let name):
-            "「\(name)」尚未指定層級，不能建立隸屬關係。"
-        case .duplicateRelation:
-            "這項直屬關係已經存在。"
-        case .invalidDirection:
-            "只有較低層級的勢力可以隸屬較高層級的勢力。"
-        case .invalidLevelOrder:
-            "層級順序不完整，無法儲存。"
-        case .conflictingRelations(let relations):
-            "這項變更會破壞既有隸屬：\(relations.joined(separator: "、"))"
-        }
-    }
-}
-
 enum PowerWorldTermField: CaseIterable, Equatable, Identifiable {
     case religion, government
     var id: Self { self }
@@ -2252,6 +2218,7 @@ enum PowerDetailError: LocalizedError {
 @MainActor
 @Observable
 final class V5SettingsStore {
+    private static let logger = Logger(subsystem: "com.MooNest.Sailune", category: "V5SettingsStore")
     @ObservationIgnored let container: ModelContainer
     @ObservationIgnored let context: ModelContext
     private(set) var revision = 0
@@ -2263,49 +2230,66 @@ final class V5SettingsStore {
         context.autosaveEnabled = true
     }
 
+    func fetchForAnalysis<Model: PersistentModel>(_ model: Model.Type) throws -> [Model] {
+        _ = revision
+        return try context.fetch(FetchDescriptor<Model>())
+    }
+
+    func fetchOrEmptyWithDiagnostic<Model: PersistentModel>(
+        _ model: Model.Type,
+        operation: String
+    ) -> [Model] {
+        do {
+            return try context.fetch(FetchDescriptor<Model>())
+        } catch {
+            Self.logger.error("Fetch fallback returned an empty list (\(operation, privacy: .public)): \(String(describing: error), privacy: .private)")
+            return []
+        }
+    }
+
     func sidebarRows(for bookID: UUID) -> [BookSidebarSetting] {
         _ = revision
-        return (try? context.fetch(FetchDescriptor<BookSidebarSetting>()))?
+        return fetchOrEmptyWithDiagnostic(BookSidebarSetting.self, operation: "sidebarRows")
             .filter { $0.bookID == bookID }
-            .sorted { $0.sortOrder < $1.sortOrder } ?? []
+            .sorted { $0.sortOrder < $1.sortOrder }
     }
 
     func powers(for bookID: UUID) -> [PowerUnit] {
         _ = revision
-        return (try? context.fetch(FetchDescriptor<PowerUnit>()))?
-            .filter { $0.bookID == bookID } ?? []
+        return fetchOrEmptyWithDiagnostic(PowerUnit.self, operation: "powers")
+            .filter { $0.bookID == bookID }
     }
 
     func levels(for bookID: UUID) -> [PowerLevel] {
         _ = revision
-        return (try? context.fetch(FetchDescriptor<PowerLevel>()))?
+        return fetchOrEmptyWithDiagnostic(PowerLevel.self, operation: "levels")
             .filter { $0.bookID == bookID }
-            .sorted { $0.sortOrder < $1.sortOrder } ?? []
+            .sorted { $0.sortOrder < $1.sortOrder }
     }
 
     func edges(for bookID: UUID) -> [PowerSubordination] {
         _ = revision
-        return (try? context.fetch(FetchDescriptor<PowerSubordination>()))?
-            .filter { $0.bookID == bookID } ?? []
+        return fetchOrEmptyWithDiagnostic(PowerSubordination.self, operation: "edges")
+            .filter { $0.bookID == bookID }
     }
 
     func places(for bookID: UUID) -> [Place] {
         _ = revision
-        return (try? context.fetch(FetchDescriptor<Place>()))?
-            .filter { $0.bookID == bookID } ?? []
+        return fetchOrEmptyWithDiagnostic(Place.self, operation: "places")
+            .filter { $0.bookID == bookID }
     }
 
     func worldTerms(for bookID: UUID) -> [WorldTerm] {
         _ = revision
-        return (try? context.fetch(FetchDescriptor<WorldTerm>()))?
-            .filter { $0.bookID == bookID } ?? []
+        return fetchOrEmptyWithDiagnostic(WorldTerm.self, operation: "worldTerms")
+            .filter { $0.bookID == bookID }
     }
 
     func members(for bookID: UUID) -> [PowerMember] {
         _ = revision
-        return (try? context.fetch(FetchDescriptor<PowerMember>()))?
+        return fetchOrEmptyWithDiagnostic(PowerMember.self, operation: "members")
             .filter { $0.bookID == bookID }
-            .sorted { $0.sortOrder < $1.sortOrder } ?? []
+            .sorted { $0.sortOrder < $1.sortOrder }
     }
 
     func members(for power: PowerUnit, bookID: UUID) -> [PowerMember] {
@@ -2314,38 +2298,43 @@ final class V5SettingsStore {
 
     func assets(for power: PowerUnit, bookID: UUID) -> [PowerAssetLink] {
         _ = revision
-        return (try? context.fetch(FetchDescriptor<PowerAssetLink>()))?
+        return fetchOrEmptyWithDiagnostic(PowerAssetLink.self, operation: "assets")
             .filter { $0.bookID == bookID && $0.powerID == power.id }
-            .sorted { $0.sortOrder < $1.sortOrder } ?? []
+            .sorted { $0.sortOrder < $1.sortOrder }
     }
 
     func advantages(for power: PowerUnit, bookID: UUID) -> [PowerAdvantage] {
         _ = revision
-        return (try? context.fetch(FetchDescriptor<PowerAdvantage>()))?
+        return fetchOrEmptyWithDiagnostic(PowerAdvantage.self, operation: "advantages")
             .filter { $0.bookID == bookID && $0.powerID == power.id }
-            .sorted { $0.sortOrder < $1.sortOrder } ?? []
+            .sorted { $0.sortOrder < $1.sortOrder }
     }
 
     func lifecycleEvents(for power: PowerUnit, bookID: UUID) -> [PowerLifecycleEvent] {
         _ = revision
-        return (try? context.fetch(FetchDescriptor<PowerLifecycleEvent>()))?.filter { $0.bookID == bookID && $0.powerID == power.id }.sorted { $0.sortOrder < $1.sortOrder } ?? []
+        return fetchOrEmptyWithDiagnostic(PowerLifecycleEvent.self, operation: "lifecycleEvents")
+            .filter { $0.bookID == bookID && $0.powerID == power.id }
+            .sorted { $0.sortOrder < $1.sortOrder }
     }
 
     func successionLinks(for power: PowerUnit, bookID: UUID) -> [PowerSuccessionLink] {
         _ = revision
-        return (try? context.fetch(FetchDescriptor<PowerSuccessionLink>()))?.filter { $0.bookID == bookID && ($0.predecessorPowerID == power.id || $0.successorPowerID == power.id) } ?? []
+        return fetchOrEmptyWithDiagnostic(PowerSuccessionLink.self, operation: "successionLinks")
+            .filter { $0.bookID == bookID && ($0.predecessorPowerID == power.id || $0.successorPowerID == power.id) }
     }
 
     func powerRelations(for power: PowerUnit, bookID: UUID) -> [PowerRelation] {
         _ = revision
-        return ((try? context.fetch(FetchDescriptor<PowerRelation>())) ?? [])
+        return fetchOrEmptyWithDiagnostic(PowerRelation.self, operation: "powerRelations")
             .filter { $0.bookID == bookID && ($0.sourcePowerID == power.id || $0.targetPowerID == power.id) }
             .sorted { $0.createdAt < $1.createdAt }
     }
 
     func roles(for member: PowerMember, bookID: UUID) -> [PowerMemberRole] {
         _ = revision
-        return (try? context.fetch(FetchDescriptor<PowerMemberRole>()))?.filter { $0.bookID == bookID && $0.memberID == member.id }.sorted { $0.sortOrder < $1.sortOrder } ?? []
+        return fetchOrEmptyWithDiagnostic(PowerMemberRole.self, operation: "roles")
+            .filter { $0.bookID == bookID && $0.memberID == member.id }
+            .sorted { $0.sortOrder < $1.sortOrder }
     }
 
     @discardableResult
@@ -2403,12 +2392,33 @@ final class V5SettingsStore {
     }
 
     func deletePlace(_ place: Place, bookID: UUID) {
-        guard place.bookID == bookID else { return }
-        (try? context.fetch(FetchDescriptor<MapPlacement>()))?
+        do {
+            guard try preparePlaceDeletion(place, bookID: bookID) else { return }
+            save()
+        } catch {
+            record(error)
+        }
+    }
+
+    /// 地圖標記刪除需要把 placement 查詢與保存錯誤交回地圖現有提示。
+    func deletePlaceForMap(_ place: Place, bookID: UUID) throws {
+        do {
+            guard try preparePlaceDeletion(place, bookID: bookID) else { return }
+            try context.save()
+            didSave()
+        } catch {
+            record(error)
+            throw error
+        }
+    }
+
+    private func preparePlaceDeletion(_ place: Place, bookID: UUID) throws -> Bool {
+        guard place.bookID == bookID else { return false }
+        let placements = try context.fetch(FetchDescriptor<MapPlacement>())
             .filter { $0.bookID == bookID && $0.placeID == place.id }
-            .forEach(context.delete)
+        placements.forEach(context.delete)
         context.delete(place)
-        save()
+        return true
     }
 
     @discardableResult
@@ -2422,15 +2432,24 @@ final class V5SettingsStore {
 
     func deleteWorldTerm(_ term: WorldTerm, bookID: UUID) {
         guard term.bookID == bookID else { return }
-        for power in powers(for: bookID) {
+        let linkedPowers: [PowerUnit]
+        let linkedAssets: [PowerAssetLink]
+        do {
+            linkedPowers = try context.fetch(FetchDescriptor<PowerUnit>())
+                .filter { $0.bookID == bookID }
+            linkedAssets = try context.fetch(FetchDescriptor<PowerAssetLink>())
+                .filter { $0.bookID == bookID && $0.sourceID == term.id && ($0.kind == .resource || $0.kind == .technology) }
+        } catch {
+            record(error)
+            return
+        }
+        for power in linkedPowers {
             if power.religionWorldTermID == term.id { power.religionWorldTermID = nil }
             if power.governmentWorldTermID == term.id { power.governmentWorldTermID = nil }
             if power.powerWorldTermID == term.id { power.powerWorldTermID = nil }
             if power.scopeWorldTermID == term.id { power.scopeWorldTermID = nil }
         }
-        (try? context.fetch(FetchDescriptor<PowerAssetLink>()))?
-            .filter { $0.bookID == bookID && $0.sourceID == term.id && ($0.kind == .resource || $0.kind == .technology) }
-            .forEach(context.delete)
+        linkedAssets.forEach(context.delete)
         context.delete(term)
         save()
     }
@@ -2530,7 +2549,7 @@ final class V5SettingsStore {
     @discardableResult
     func addSuccession(predecessor: PowerUnit, successor: PowerUnit, kind: PowerTransitionKind, bookID: UUID) throws -> PowerSuccessionLink {
         guard predecessor.bookID == bookID, successor.bookID == bookID, predecessor.id != successor.id else { throw PowerDetailError.invalidBook }
-        let all = (try? context.fetch(FetchDescriptor<PowerSuccessionLink>())) ?? []
+        let all = try context.fetch(FetchDescriptor<PowerSuccessionLink>())
         guard !all.contains(where: { $0.predecessorPowerID == predecessor.id && $0.successorPowerID == successor.id && $0.kindRawValue == kind.rawValue }) else { throw PowerDetailError.duplicateRelation }
         let link = PowerSuccessionLink(bookID: bookID, predecessorPowerID: predecessor.id, successorPowerID: successor.id, kind: kind)
         context.insert(link); try context.save(); didSave(); return link
@@ -2549,7 +2568,7 @@ final class V5SettingsStore {
         guard source.bookID == bookID, target.bookID == bookID else { throw PowerDetailError.invalidBook }
         guard source.id != target.id else { throw PowerDetailError.selfPowerRelation }
         let endpoints = Self.normalizedPowerRelationEndpoints(sourceID: source.id, targetID: target.id, kind: kind)
-        let existing = (try? context.fetch(FetchDescriptor<PowerRelation>())) ?? []
+        let existing = try context.fetch(FetchDescriptor<PowerRelation>())
         guard !existing.contains(where: {
             $0.bookID == bookID && $0.kindRawValue == kind.rawValue
                 && $0.sourcePowerID == endpoints.source && $0.targetPowerID == endpoints.target
@@ -2959,333 +2978,4 @@ final class V5SettingsStore {
         revision &+= 1
     }
 
-}
-
-enum V5SettingsSearch {
-    static func places(_ places: [Place], matching query: String) -> [Place] {
-        filter(places, query: query) { place in
-            [place.name, place.alternateNames ?? "", place.placeType ?? "", place.placeDescription]
-        }
-    }
-
-    static func worldTerms(_ terms: [WorldTerm], matching query: String) -> [WorldTerm] {
-        filter(terms, query: query) { term in
-            [term.name, term.alternateNames ?? "", term.termCategory ?? "", term.termDescription]
-        }
-    }
-
-    private static func filter<Model>(
-        _ models: [Model],
-        query: String,
-        fields: (Model) -> [String]
-    ) -> [Model] {
-        let normalizedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalizedQuery.isEmpty else { return models }
-        return models.filter { fields($0).contains { $0.localizedCaseInsensitiveContains(normalizedQuery) } }
-    }
-}
-
-@MainActor
-enum SidebarSettingCatalog {
-    static let currentRevision = 1
-
-    static func rows(for bookID: UUID, in context: ModelContext) throws -> [BookSidebarSetting] {
-        let rows = try context.fetch(FetchDescriptor<BookSidebarSetting>())
-            .filter { $0.bookID == bookID }
-        if !rows.isEmpty { return rows.sorted { $0.sortOrder < $1.sortOrder } }
-        return try ensureDefaults(for: bookID, in: context)
-    }
-
-    @discardableResult
-    static func ensureDefaults(for bookID: UUID, in context: ModelContext) throws -> [BookSidebarSetting] {
-        var rows = try context.fetch(FetchDescriptor<BookSidebarSetting>()).filter { $0.bookID == bookID }
-        let existing = Set(rows.compactMap(\.key))
-        for (index, key) in SidebarSettingKey.defaultOrder.enumerated() where !existing.contains(key) {
-            let row = BookSidebarSetting(
-                bookID: bookID,
-                key: key,
-                sortOrder: index,
-                isVisible: key.isDefaultVisible,
-                catalogRevision: currentRevision
-            )
-            context.insert(row)
-            rows.append(row)
-        }
-        if rows.contains(where: { $0.catalogRevision < currentRevision }) {
-            for row in rows {
-                if let key = row.key,
-                   let index = SidebarSettingKey.defaultOrder.firstIndex(of: key) {
-                    row.sortOrder = index
-                    if key == .worldTerm {
-                        row.isVisible = true
-                    }
-                }
-                row.catalogRevision = currentRevision
-            }
-        }
-        try context.save()
-        return rows.sorted { $0.sortOrder < $1.sortOrder }
-    }
-
-    static func visibleKeys(rows: [BookSidebarSetting]) -> [SidebarSettingKey] {
-        rows.sorted { $0.sortOrder < $1.sortOrder }.compactMap { $0.isVisible ? $0.key : nil }
-    }
-
-    static func resolvedSelection(
-        _ current: SidebarSettingKey,
-        visibleKeys: [SidebarSettingKey]
-    ) -> SidebarSettingKey {
-        visibleKeys.contains(current) ? current : (visibleKeys.first ?? current)
-    }
-}
-
-@MainActor
-enum PowerHierarchyStore {
-    static func ensureDefaultLevels(bookID: UUID, context: ModelContext) throws {
-        context.insert(PowerLevel(bookID: bookID, name: "層級 1", sortOrder: 0))
-        context.insert(PowerLevel(bookID: bookID, name: "層級 2", sortOrder: 1))
-        try context.save()
-    }
-
-    static func createLevel(
-        bookID: UUID,
-        levels: [PowerLevel],
-        context: ModelContext
-    ) throws -> PowerLevel {
-        var suffix = levels.count + 1
-        var name = "新層級 \(suffix)"
-        while levels.contains(where: { $0.name.localizedCaseInsensitiveCompare(name) == .orderedSame }) {
-            suffix += 1
-            name = "新層級 \(suffix)"
-        }
-        let nextOrder = (levels.map(\.sortOrder).max() ?? -1) + 1
-        let level = PowerLevel(bookID: bookID, name: name, sortOrder: nextOrder)
-        context.insert(level)
-        try context.save()
-        return level
-    }
-
-    static func renameLevel(
-        _ level: PowerLevel,
-        to proposedName: String,
-        bookID: UUID,
-        levels: [PowerLevel],
-        context: ModelContext
-    ) throws {
-        guard level.bookID == bookID else { throw PowerHierarchyError.invalidBook }
-        let name = proposedName.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !name.isEmpty else { throw PowerHierarchyError.invalidLevelName }
-        guard !levels.contains(where: {
-            $0.id != level.id && $0.name.localizedCaseInsensitiveCompare(name) == .orderedSame
-        }) else {
-            throw PowerHierarchyError.duplicateLevelName(name)
-        }
-        let oldName = level.name
-        level.name = name
-        do {
-            try context.save()
-        } catch {
-            level.name = oldName
-            throw error
-        }
-    }
-
-    static func deleteLevel(
-        _ level: PowerLevel,
-        bookID: UUID,
-        powers: [PowerUnit],
-        context: ModelContext
-    ) throws {
-        guard level.bookID == bookID else { throw PowerHierarchyError.invalidBook }
-        guard !powers.contains(where: { $0.levelID == level.id }) else {
-            throw PowerHierarchyError.levelInUse(level.name)
-        }
-        context.delete(level)
-        try context.save()
-    }
-
-    static func changeLevel(
-        of power: PowerUnit,
-        to level: PowerLevel,
-        bookID: UUID,
-        levels: [PowerLevel],
-        powers: [PowerUnit],
-        edges: [PowerSubordination],
-        context: ModelContext
-    ) throws {
-        guard power.bookID == bookID, level.bookID == bookID else {
-            throw PowerHierarchyError.invalidBook
-        }
-        let levelOrders = Dictionary(uniqueKeysWithValues: levels.map { ($0.id, $0.sortOrder) })
-        let conflicts = conflictingRelations(
-            powers: powers,
-            edges: edges,
-            levelOrders: levelOrders,
-            overridingPowerID: power.id,
-            withLevelID: level.id
-        )
-        guard conflicts.isEmpty else { throw PowerHierarchyError.conflictingRelations(conflicts) }
-
-        let oldLevelID = power.levelID
-        power.levelID = level.id
-        power.updatedAt = Date()
-        do {
-            try context.save()
-        } catch {
-            power.levelID = oldLevelID
-            throw error
-        }
-    }
-
-    static func reorderLevels(
-        bookID: UUID,
-        orderedIDs: [UUID],
-        levels: [PowerLevel],
-        powers: [PowerUnit],
-        edges: [PowerSubordination],
-        context: ModelContext
-    ) throws {
-        guard Set(orderedIDs) == Set(levels.map(\.id)), orderedIDs.count == levels.count else {
-            throw PowerHierarchyError.invalidLevelOrder
-        }
-        let proposedOrders = Dictionary(uniqueKeysWithValues: orderedIDs.enumerated().map { ($0.element, $0.offset) })
-        let conflicts = conflictingRelations(
-            powers: powers,
-            edges: edges,
-            levelOrders: proposedOrders
-        )
-        guard conflicts.isEmpty else { throw PowerHierarchyError.conflictingRelations(conflicts) }
-
-        let oldOrders = Dictionary(uniqueKeysWithValues: levels.map { ($0.id, $0.sortOrder) })
-        for level in levels {
-            level.sortOrder = proposedOrders[level.id] ?? level.sortOrder
-        }
-        do {
-            try context.save()
-        } catch {
-            for level in levels {
-                level.sortOrder = oldOrders[level.id] ?? level.sortOrder
-            }
-            throw error
-        }
-    }
-
-    static func upperCandidates(
-        for power: PowerUnit,
-        powers: [PowerUnit],
-        levels: [PowerLevel]
-    ) -> [PowerUnit] {
-        candidates(for: power, powers: powers, levels: levels) { $0 < $1 }
-    }
-
-    static func lowerCandidates(
-        for power: PowerUnit,
-        powers: [PowerUnit],
-        levels: [PowerLevel]
-    ) -> [PowerUnit] {
-        candidates(for: power, powers: powers, levels: levels) { $0 > $1 }
-    }
-
-    static func level(for power: PowerUnit, levels: [PowerLevel]) -> PowerLevel? {
-        guard let levelID = power.levelID else { return nil }
-        return levels.first { $0.id == levelID }
-    }
-
-    private static func candidates(
-        for power: PowerUnit,
-        powers: [PowerUnit],
-        levels: [PowerLevel],
-        matches: (Int, Int) -> Bool
-    ) -> [PowerUnit] {
-        let levelOrders = Dictionary(uniqueKeysWithValues: levels.map { ($0.id, $0.sortOrder) })
-        guard let currentLevelID = power.levelID,
-              let currentOrder = levelOrders[currentLevelID] else { return [] }
-        return powers.filter { candidate in
-            guard candidate.id != power.id,
-                  let candidateLevelID = candidate.levelID,
-                  let candidateOrder = levelOrders[candidateLevelID] else { return false }
-            return matches(candidateOrder, currentOrder)
-        }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-    }
-
-    private static func conflictingRelations(
-        powers: [PowerUnit],
-        edges: [PowerSubordination],
-        levelOrders: [UUID: Int],
-        overridingPowerID: UUID? = nil,
-        withLevelID: UUID? = nil
-    ) -> [String] {
-        let powerByID = Dictionary(uniqueKeysWithValues: powers.map { ($0.id, $0) })
-        return edges.compactMap { edge in
-            guard let lower = powerByID[edge.lowerPowerID],
-                  let upper = powerByID[edge.upperPowerID] else { return nil }
-            let lowerLevelID = lower.id == overridingPowerID ? withLevelID : lower.levelID
-            let upperLevelID = upper.id == overridingPowerID ? withLevelID : upper.levelID
-            guard let lowerLevelID,
-                  let upperLevelID,
-                  let lowerOrder = levelOrders[lowerLevelID],
-                  let upperOrder = levelOrders[upperLevelID],
-                  lowerOrder > upperOrder else {
-                return "\(displayName(lower)) → \(displayName(upper))"
-            }
-            return nil
-        }
-    }
-
-    private static func displayName(_ power: PowerUnit) -> String {
-        power.name.isEmpty ? "未命名勢力" : power.name
-    }
-}
-
-@MainActor
-enum PowerGraphStore {
-    static func directUpperPowers(of power: PowerUnit, edges: [PowerSubordination], powers: [PowerUnit]) -> [PowerUnit] {
-        let ids = Set(edges.filter { $0.lowerPowerID == power.id }.map(\.upperPowerID))
-        return powers.filter { ids.contains($0.id) }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-    }
-
-    static func directLowerPowers(of power: PowerUnit, edges: [PowerSubordination], powers: [PowerUnit]) -> [PowerUnit] {
-        let ids = Set(edges.filter { $0.upperPowerID == power.id }.map(\.lowerPowerID))
-        return powers.filter { ids.contains($0.id) }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-    }
-
-    static func addDirectSubordination(
-        lower: PowerUnit,
-        upper: PowerUnit,
-        bookID: UUID,
-        levels: [PowerLevel],
-        edges: inout [PowerSubordination],
-        context: ModelContext
-    ) throws {
-        guard lower.id != upper.id,
-              lower.bookID == bookID,
-              upper.bookID == bookID else { throw PowerHierarchyError.invalidBook }
-        guard !edges.contains(where: { $0.lowerPowerID == lower.id && $0.upperPowerID == upper.id }) else {
-            throw PowerHierarchyError.duplicateRelation
-        }
-        guard let lowerLevel = PowerHierarchyStore.level(for: lower, levels: levels) else {
-            throw PowerHierarchyError.levelNotAssigned(lower.name.isEmpty ? "未命名勢力" : lower.name)
-        }
-        guard let upperLevel = PowerHierarchyStore.level(for: upper, levels: levels) else {
-            throw PowerHierarchyError.levelNotAssigned(upper.name.isEmpty ? "未命名勢力" : upper.name)
-        }
-        guard lowerLevel.sortOrder > upperLevel.sortOrder else {
-            throw PowerHierarchyError.invalidDirection
-        }
-        let edge = PowerSubordination(bookID: bookID, lowerPowerID: lower.id, upperPowerID: upper.id)
-        context.insert(edge)
-        edges.append(edge)
-        try context.save()
-    }
-
-    static func delete(
-        _ power: PowerUnit,
-        edges: [PowerSubordination],
-        context: ModelContext
-    ) throws {
-        edges.filter { $0.lowerPowerID == power.id || $0.upperPowerID == power.id }
-            .forEach(context.delete)
-        context.delete(power)
-        try context.save()
-    }
 }

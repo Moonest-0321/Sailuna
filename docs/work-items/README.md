@@ -1,11 +1,25 @@
-# 功能工作單
+# 工作單導覽
 
-`current.md` 是唯一的目前功能工作單，保存這項工作的需求、UI、驗收條件、R／U／I 批准狀態，以及實作與測試計畫。
+## 目前工作
 
-- 新工作由 `template.md` 建立，狀態設為 `active`。
-- 討論結果與使用者批准應在切換聊天前寫回 `current.md`。
-- `current.md` 回答「要做什麼、已批准什麼」；`docs/handoffs/current.md` 回答「現在做到哪裡、下一步是什麼」。
-- 完成驗收後，將長期資訊分流到正式規格、ADR、測試及專案狀態，再把工作單標為 `closed`。
-- 不把逐字聊天或不再相關的探索過程永久堆在工作單中。
+- [current.md](current.md) 是唯一有效的目前工作單，保存目前工作需求、R／U／I 批准狀態、驗收條件及下一步。不要把已關閉歷史工作追加在目前工作單尾端。
+- [template.md](template.md) 是新工作單範本。
+- [V10 文書匯入工作單](v10-content-transfer.md) 是 `current.md` 指向的需求草案；兩者分別保存狀態摘要與完整需求內容。
+- [文件庫導覽與狀態整理](documentation-organization-2026-09-25.md) 記錄本輪文件索引整理範圍與保留項目。
 
-完整操作方式見 `docs/development-workflow.md`。
+## 已關閉工作與專題索引
+
+- 一般已完成的小型工作單保留在本資料夾，狀態由各文件標示；完成後的長期產品行為應分流至正式規格、ADR、測試文件或專案狀態。
+- [V9 工程規則化總計畫](v9-code-standardization-plan.md)
+- [V9 固定逐項盤點](v9-frozen-inventory.md)
+- [V9 共用資源採用狀態](../v9-adoption-matrix.md)
+- [V9 固定命中與範圍門檻](../v9-freeze/README.md)
+- [V9 失敗路徑稽核](v9-error-suppression-audit.md)
+
+V9.1／V9.2 切片工作單按家族及狀態保留在本資料夾，不逐項複製到主索引。以固定盤點 ID、採用矩陣及 [V9 專題交接](../handoffs/v9-current.md)作為導覽與現況來源。
+
+## 工作單與交接的分工
+
+- 工作單說明目標、範圍、非目標、批准及完成條件。
+- 交接說明工作樹邊界、實際進度、驗證結果、阻礙與唯一下一步。
+- 目前工作單與交接不可互相取代；操作流程見 [development-workflow.md](../development-workflow.md)。

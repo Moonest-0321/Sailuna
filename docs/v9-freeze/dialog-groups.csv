@@ -1,0 +1,5 @@
+group_id,kind,literal_title,count,frozen_ids,decision
+DIALOG-01,alert,大綱無法儲存,3,V9-1088 | V9-1110 | V9-1159,同標題候選；仍須逐 ID 核對 action、資料後果與取消，不能僅因同字共用。
+DIALOG-02,alert,無法完成操作,2,V9-0937 | V9-0963,同標題候選；仍須逐 ID 核對 action、資料後果與取消，不能僅因同字共用。
+DIALOG-03,alert,物品刪除未完成,2,V9-0763 | V9-0799,同標題候選；仍須逐 ID 核對 action、資料後果與取消，不能僅因同字共用。
+DIALOG-04,alert,確認刪除,2,V9-0153 | V9-0644,同標題候選；仍須逐 ID 核對 action、資料後果與取消，不能僅因同字共用。

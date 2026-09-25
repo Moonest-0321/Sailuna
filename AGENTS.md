@@ -7,10 +7,16 @@
 - 只讀取與當前任務直接相關的 `docs/spec-*.md`、技術文件或測試報告。
 - 若文件在本對話中沒有修改，後續工作沿用已建立的上下文；只有任務範圍改變、文件被更新或上下文不確定時才重新讀取。
 - 修改程式前遵守 `docs/coding-standards.md` 的相關章節；不需要載入整份規範。
+- 開始新增或重構前先搜尋既有型別、Store／Coordinator action、共用 UI、theme token、符號與文案資源；優先沿用既有契約，不能共用時在工作單／凍結清單記錄呼叫點與具體理由。
+- View 負責呈現與傳遞意圖；共用 UI 不讀領域 Store；多模型或跨 Store 不變條件集中於具名 Store／Coordinator action。搬檔／抽取不得順帶改變既有操作結果。
+- 新增 UI 前搜尋並重用共用元件、theme tokens、圖標與文案語意 key；同功能不得另造同義圖標或文字，例外依 coding standards 記錄理由。
+- UI code review 檢查共用按鈕／欄位／編輯器、hit area、父容器定位、accessibility label 與例外；細節以 `docs/coding-standards.md`、`docs/ux-principles.md` 為準。
+- 共用元件遷移要列出呼叫點及例外，並依 `docs/testing.md` 驗收 keyboard、錯誤／禁用狀態、互動命中及必要的輸入行為。
 - 技術架構或資料操作則讀取對應的 `architecture.md`、`data-model.md` 或 `backup-and-migration.md`。
 - 以目前程式、測試與文件共同判斷現況；不要只依提交訊息推測功能。
 - 注意工作目錄中可能已有使用者未提交的修改，不要覆蓋或回復它們。
 - 完整開發、檢查點與聊天交接流程見 `docs/development-workflow.md`。
+- 程式修改的共用資源搜尋、接線次序與驗收步驟見 `docs/development-workflow.md` 階段 4a；行為及命名細節依 `docs/coding-standards.md`、驗收依 `docs/testing.md`。
 
 ## 工作單元與檢查點
 

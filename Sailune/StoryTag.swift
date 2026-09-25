@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import SwiftData
+import OSLog
 
 enum StoryPlanningSchemaV1: VersionedSchema {
     static var versionIdentifier = Schema.Version(1, 0, 0)
@@ -179,6 +180,7 @@ final class ChapterAnnotation {
 @MainActor
 @Observable
 final class StoryPlanningStore {
+    private static let logger = Logger(subsystem: "com.MooNest.Sailune", category: "StoryPlanningStore")
     let container: ModelContainer
     private let context: ModelContext
     private(set) var tags: [StoryTag] = []
@@ -1341,7 +1343,8 @@ final class StoryPlanningStore {
             persistenceErrorMessage = nil
         } catch {
             context.rollback()
-            try? reload()
+            do { try reload() }
+            catch { Self.logger.error("Reload after save rollback failed: \(String(describing: error), privacy: .private)") }
             let nsError = error as NSError
             persistenceErrorMessage = "\(nsError.domain) \(nsError.code)：\(nsError.localizedDescription)"
         }
