@@ -303,7 +303,9 @@ struct ContentView: View {
                 navigationPath = NavigationPath()
                 navigationPath.append(BookRoute(id: bookID, opensEditor: false))
             }
-        case .forum, .about:
+        case .forum:
+            ForumView()
+        case .about:
             Color.clear
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }

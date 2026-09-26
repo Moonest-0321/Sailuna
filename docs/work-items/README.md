@@ -3,6 +3,7 @@
 ## 目前工作
 
 - [current.md](current.md) 是唯一有效的目前工作單，保存目前工作需求、R／U／I 批准狀態、驗收條件及下一步。不要把已關閉歷史工作追加在目前工作單尾端。
+- [v10.5-community-framework.md](v10.5-community-framework.md) 記錄 V10.5 模板搜尋欄與論壇介面骨架。
 - [v10.4-community-and-book-templates.md](v10.4-community-and-book-templates.md) 記錄 V10.4 社群模板與發布標籤需求、批准狀態、驗收條件及實作進度。
 - [template.md](template.md) 是新工作單範本。
 - [V10 文書匯入工作單](v10-content-transfer.md) 是 `current.md` 指向的需求草案；兩者分別保存狀態摘要與完整需求內容。

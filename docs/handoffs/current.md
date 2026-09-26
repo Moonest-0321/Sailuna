@@ -1,3 +1,12 @@
+# V10.5 社群介面骨架 checkpoint（2026-09-26）
+
+- **批准**：R 與 U 已分別由使用者回覆核准；I 由使用者先前「搜尋模板照我說的做、論壇先做框架」的直接指示授權。帳號後續處理。
+- **範圍**：搜尋框位於搜尋模板分頁上方、不接搜尋目錄；論壇頂欄橫向呈現官方公告、寫作交流、作品交流、帆夢交流、功能建議五個可切換分類，內容區保持空狀態。不加入登入、網路或貼文資料。
+- **工作單**：docs/work-items/v10.5-community-framework.md。
+- **實作狀態**：依使用者最新指示，已將搜尋框移到上方、論壇分類改為頂欄橫排；目前只待 GUI 驗收。
+- **驗證**：最新版面修正後，受影響 Swift 檔案 frontend parse、git diff --check 與主機環境無簽章 Debug build 通過。沙盒 build 遇 SwiftData macro server malformed response；未執行 XCTest 或 GUI 驗收，也未操作作者資料。
+- **前一工作**：V10.4 模板／發布標籤隔離 GUI 驗收仍待有可啟動 Sailune GUI 的環境，詳見下方歷史 checkpoint。
+
 # V10.4 implementation checkpoint（2026-09-26）
 
 - **批准狀態**：R／U／I 均 approved；「搜尋模板」只留白，不呈現公開內容。

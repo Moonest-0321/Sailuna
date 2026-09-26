@@ -1,8 +1,8 @@
 # 目前功能工作單
 
 > 整體狀態：active
-> 目前階段：V10.4 R／U／I 均 approved；發布標籤、側欄對齊、完整本機模板 snapshot/apply、我的模板 UI、搜尋空白頁與備份接線已實作。受影響 Swift parse、diff check 及 macOS Debug build 通過；隔離資料 GUI 尚無法啟動：`open -n` 回報 `kLSNoExecutableErr`，直接執行以 134 中止，隔離資料目錄未生成 store。工作單：[v10.4-community-and-book-templates.md](v10.4-community-and-book-templates.md)。
-> 單一下一步：待可啟動 Sailune GUI 的主機環境，以隔離書籍驗收發布標籤、模板快照／套用／空正文與地圖 PDF。V10.1／V10.2／V10.0 隔離 GUI 驗收待辦仍保留於各自工作紀錄。
+> 目前階段：V10.5 社群介面骨架依使用者最新版面修正完成；詳見 [工作單](v10.5-community-framework.md)。
+> 單一下一步：以 Debug app 驗收搜尋框上方位置及論壇頂欄五分類切換／空狀態；V10.4／V10.1／V10.2／V10.0 的隔離 GUI 驗收待辦仍保留於各自工作紀錄。
 
 ## V8.2 AI 閱讀、設定分析與角色一致性比較（R approved）
 

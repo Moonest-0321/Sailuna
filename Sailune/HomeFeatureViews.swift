@@ -204,6 +204,7 @@ struct BookTemplatesView: View {
     @Environment(ItemCopyStore.self) private var copyStore
     @Environment(AbilityProgressStore.self) private var abilityStore
     @State private var selectedTab = 0
+    @State private var templateQuery = ""
     @State private var templateStore: BookTemplateStore?
     @State private var showingSourcePicker = false
     @State private var selectedSourceBookID: UUID?
@@ -260,7 +261,11 @@ struct BookTemplatesView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             } else {
-                Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
+                VStack(spacing: 0) {
+                    SailuneSearchField(placeholder: "搜尋模板", text: $templateQuery)
+                        .padding(.horizontal, 8)
+                    Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }
         }
         .onAppear(perform: loadTemplates)

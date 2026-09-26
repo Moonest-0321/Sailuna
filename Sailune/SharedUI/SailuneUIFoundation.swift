@@ -338,6 +338,7 @@ struct SailuneSearchField: View {
             Image(systemName: SailuneSymbol.search.systemName)
                 .foregroundStyle(.secondary)
             TextField(placeholder, text: $text)
+                .accessibilityLabel(Text(placeholder))
                 .textFieldStyle(.plain)
             if !text.isEmpty {
                 Button { text = "" } label: {
