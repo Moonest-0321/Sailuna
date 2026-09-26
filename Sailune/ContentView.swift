@@ -643,6 +643,11 @@ private struct StartSettingsView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
 
+            GroupBox("版本") {
+                LabeledContent("開發版本", value: "V10.1")
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
             GroupBox("章節單位") {
                 Picker("預設單位", selection: $sectionUnit) {
                     ForEach(SectionUnitPreference.options) { unit in

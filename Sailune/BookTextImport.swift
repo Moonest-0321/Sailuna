@@ -1,7 +1,7 @@
 import Foundation
 import SwiftData
 
-enum BookTextSectionMarker: String, CaseIterable, Identifiable, Sendable {
+nonisolated enum BookTextSectionMarker: String, CaseIterable, Identifiable, Sendable {
     case chapter = "章"
     case zhang = "張"
     case section = "節"
@@ -55,7 +55,7 @@ enum BookTextImportError: Error, Equatable, Sendable, LocalizedError {
     }
 }
 
-enum BookTextImportParser {
+nonisolated enum BookTextImportParser {
     private struct MarkerMatch {
         var kind: String
         var title: String
@@ -148,7 +148,7 @@ enum BookTextImportParser {
     }
 
     private static func flushSection(in volume: inout VolumeDraft) throws {
-        guard let title = volume.sectionTitle, let line = volume.sectionLine else { return }
+        guard let title = volume.sectionTitle, volume.sectionLine != nil else { return }
         let content = volume.bodyLines.joined(separator: "\n").trimmingCharacters(in: .newlines)
         let resolvedContent = content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? "無" : content
         volume.sections.append(.init(title: title, content: resolvedContent))
