@@ -98,3 +98,7 @@ TimelineEventCardMetadata ─ eventID + 可選 outlineItemID
 - 伏筆目前沒有回收狀態或回收來源，不能從既有 StoryTag 推導「未回收」。
 - 物品正文引用是名稱掃描；重新命名或同名物品無穩定識別保證。
 - 備份必須同時包含六個 store、封面與地圖 PDF，不能只複製主 store。
+
+## V10.1 書籍發布狀態
+
+`Book.status` 仍是 V5 主 store 的暫存欄位，發布流程不以它作持久來源。`BookPublicationStore` 以書籍 UUID 為鍵，保存於獨立 `Sailune/Publication Status.json`；缺少紀錄即草稿，狀態只可依序進入發布中、完結。此路徑避免直接修改已發布的 V5 schema；未來若改存主 store，仍須完整 schema 遷移。

@@ -41,6 +41,7 @@ struct BookTextImportOverlay: View {
 
 private struct BookTextImportForm: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.sectionUnit) private var defaultSectionUnit
     @Query private var profiles: [AuthorProfile]
 
     let source: BookTextImportSource
@@ -138,6 +139,9 @@ private struct BookTextImportForm: View {
         }
         .padding(22)
         .onAppear {
+            if selectedMarker == nil {
+                selectedMarker = defaultSectionUnit
+            }
             if author.isEmpty {
                 author = profiles.first?.penName ?? NSFullUserName()
             }

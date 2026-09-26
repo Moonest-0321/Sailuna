@@ -4,6 +4,7 @@ struct UnlinkedReferenceReviewView: View {
     @Binding var candidates: [UnlinkedReferenceCandidate]
     let onApply: () -> Void
     let onDismiss: () -> Void
+    @Environment(\.sectionUnit) private var sectionUnit
 
     private var selectedCount: Int { candidates.filter(\.isSelected).count }
 
@@ -45,7 +46,7 @@ struct UnlinkedReferenceReviewView: View {
                         VStack(alignment: .leading, spacing: 2) {
                             Text("\(candidate.sourceLabel)：\(candidate.sourceName) → \(candidate.replacement)")
                                 .font(.caption.weight(.medium))
-                            Text("\(candidate.section.title.isEmpty ? "未命名章節" : candidate.section.title)　\(candidate.preview)")
+                            Text("\(candidate.section.title.isEmpty ? sectionUnit.unnamedTitle : sectionUnit.displayTitle(candidate.section.title))　\(candidate.preview)")
                                 .font(.caption2)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(2)
@@ -63,4 +64,3 @@ struct UnlinkedReferenceReviewView: View {
         .background(Color.accentColor.opacity(0.08), in: RoundedRectangle(cornerRadius: 10))
     }
 }
-

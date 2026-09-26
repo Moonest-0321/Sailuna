@@ -71,6 +71,7 @@ struct EditorWorkspaceView: View {
 
     let book: Book
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.sectionUnit) private var sectionUnit
     @Environment(AbilityProgressStore.self) private var aiAbilityStore
     @Environment(V5SettingsStore.self) private var aiSettingsStore
     @State private var selectedSection: Section?
@@ -275,10 +276,10 @@ struct EditorWorkspaceView: View {
                     .keyboardShortcut("k", modifiers: .command)
                 Button {
                     if let section = selectedSection {
-                        let content = ExportManager.exportSectionToTXT(section: section, marker: .section)
-                        exportRequest = ExportManager.textExportRequest(defaultName: section.title, content: content)
+                        let content = ExportManager.exportSectionToTXT(section: section, marker: sectionUnit)
+                        exportRequest = ExportManager.textExportRequest(defaultName: sectionUnit.displayTitle(section.title), content: content)
                     } else {
-                        let content = ExportManager.exportBookToTXT(book: book, marker: .section)
+                        let content = ExportManager.exportBookToTXT(book: book, marker: sectionUnit)
                         exportRequest = ExportManager.textExportRequest(defaultName: book.title, content: content)
                     }
                 } label: { Label(SailuneActionCopy.exportText, systemImage: SailuneSymbol.exportText.systemName) }
@@ -504,6 +505,13 @@ private enum PaletteCommand: String, CaseIterable, Identifiable {
     case showShortcuts = "開啟快捷鍵說明"
 
     var id: String { rawValue }
+    func title(unit: BookTextSectionMarker) -> String {
+        switch self {
+        case .previousSection: "上一\(unit.unitLabel)"
+        case .nextSection: "下一\(unit.unitLabel)"
+        default: rawValue
+        }
+    }
     var icon: String {
         switch self {
         case .toggleOutline: return "sidebar.left"
@@ -529,13 +537,14 @@ private enum PaletteCommand: String, CaseIterable, Identifiable {
 private struct CommandPaletteView: View {
     let onPerform: (PaletteCommand) -> Void
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.sectionUnit) private var sectionUnit
     @State private var query = ""
     @FocusState private var searchFocused: Bool
 
     private var commands: [PaletteCommand] {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return Array(PaletteCommand.allCases) }
-        return PaletteCommand.allCases.filter { $0.rawValue.localizedCaseInsensitiveContains(trimmed) }
+        return PaletteCommand.allCases.filter { $0.title(unit: sectionUnit).localizedCaseInsensitiveContains(trimmed) }
     }
 
     var body: some View {
@@ -556,7 +565,7 @@ private struct CommandPaletteView: View {
                 } label: {
                     HStack(spacing: 10) {
                         Image(systemName: command.icon).frame(width: 20)
-                        Text(command.rawValue)
+                        Text(command.title(unit: sectionUnit))
                         Spacer()
                         if !command.shortcut.isEmpty {
                             Text(command.shortcut).font(.caption).foregroundStyle(.secondary)
@@ -576,6 +585,7 @@ private struct CommandPaletteView: View {
 
 private struct ShortcutHelpView: View {
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.sectionUnit) private var sectionUnit
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -588,8 +598,8 @@ private struct ShortcutHelpView: View {
             shortcut("⌘K", "開啟指令面板")
             shortcut("⌘2", "切換幕標題／內文")
             shortcut("⌘↩", "開啟反白角色資料")
-            shortcut("⌥←", "上一節")
-            shortcut("⌥→", "下一節")
+            shortcut("⌥←", "上一\(sectionUnit.unitLabel)")
+            shortcut("⌥→", "下一\(sectionUnit.unitLabel)")
             Spacer()
         }
         .padding(24)
@@ -611,6 +621,7 @@ struct EditorSidebarView: View {
     let bridge: EditorBridge
     private let dragCoordinateSpace = "editor-outline-drag"
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.sectionUnit) private var sectionUnit
     @Environment(StoryPlanningStore.self) private var planningStore
 
     @State private var collapsedVolumeIDs: Set<UUID> = []
@@ -633,10 +644,10 @@ struct EditorSidebarView: View {
                 .buttonStyle(.borderless)
                 .help(SailuneActionCopy.addVolume)
                 Button(action: addSection) {
-                    Label(SailuneActionCopy.addSection, systemImage: SailuneSymbol.addSection.systemName)
+                    Label(SailuneActionCopy.addSection(unit: sectionUnit), systemImage: SailuneSymbol.addSection.systemName)
                 }
                 .buttonStyle(.borderless)
-                .help(SailuneActionCopy.addSection)
+                .help(SailuneActionCopy.addSection(unit: sectionUnit))
                 Spacer()
             }
             .padding(.horizontal, 12)
@@ -651,8 +662,8 @@ struct EditorSidebarView: View {
                         if !collapsedVolumeIDs.contains(volume.id) {
                             if volume.sections.isEmpty {
                                 VStack(alignment: .leading, spacing: 6) {
-                                    Text("這一卷還沒有節").font(.caption).foregroundStyle(.secondary)
-                                    Button(SailuneActionCopy.addFirstSection, systemImage: SailuneSymbol.add.systemName) { addSection(to: volume) }
+                                    Text("這一卷還沒有\(sectionUnit.unitLabel)").font(.caption).foregroundStyle(.secondary)
+                                    Button(SailuneActionCopy.addFirstSection(unit: sectionUnit), systemImage: SailuneSymbol.add.systemName) { addSection(to: volume) }
                                         .buttonStyle(.borderedProminent)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -679,8 +690,8 @@ struct EditorSidebarView: View {
             Button(SailuneActionCopy.delete, role: .destructive) { performDelete(target) }
         } message: { target in
             switch target {
-            case .volume(let v): Text("確定要刪除卷「\(v.title)」嗎？其下所有節將一併刪除，且無法復原。")
-            case .section(let s): Text("確定要刪除節「\(s.title)」嗎？此操作無法復原。")
+            case .volume(let v): Text("確定要刪除卷「\(v.title)」嗎？其下所有\(sectionUnit.unitLabel)將一併刪除，且無法復原。")
+            case .section(let s): Text("確定要刪除\(sectionUnit.unitLabel)「\(sectionUnit.displayTitle(s.title))」嗎？此操作無法復原。")
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -750,7 +761,7 @@ struct EditorSidebarView: View {
                     .contentShape(Rectangle())
             }
             .buttonStyle(.plain) // 使用 plain 避免破壞 List 的選取背景色
-                .help(SailuneAccessibilityCopy.addSectionInVolume)
+                .help(SailuneAccessibilityCopy.addSectionInVolume(unit: sectionUnit))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 2)
@@ -759,7 +770,7 @@ struct EditorSidebarView: View {
         .contextMenu {
             Button { startRenaming(id: volume.id, currentName: volume.title) } label: { Label(SailuneActionCopy.rename, systemImage: SailuneSymbol.edit.systemName) }
             Divider()
-            Button { addSection(to: volume) } label: { Label(SailuneActionCopy.addSection, systemImage: SailuneSymbol.addSection.systemName) }
+            Button { addSection(to: volume) } label: { Label(SailuneActionCopy.addSection(unit: sectionUnit), systemImage: SailuneSymbol.addSection.systemName) }
             Button(role: .destructive) { deleteTarget = .volume(volume) } label: { Label(SailuneActionCopy.deleteVolume, systemImage: SailuneSymbol.delete.systemName) }
         }
     }
@@ -777,11 +788,11 @@ struct EditorSidebarView: View {
                 renameEditor(commit: { newName in section.title = newName.isEmpty ? section.title : newName })
             } else {
                 HStack(spacing: 0) {
-                    Text("\(index)｜")
+                    Text("\(sectionUnit.numberedTitle(index))｜")
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: true, vertical: false)
                         .padding(.vertical, 6)
-                    Text(section.title)
+                    Text(sectionUnit.displayTitle(section.title))
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
                         .padding(.vertical, 6)
@@ -815,13 +826,13 @@ struct EditorSidebarView: View {
             selectedSection = section
         }
         .contextMenu {
-            Button { startRenaming(id: section.id, currentName: section.title) } label: { Label(SailuneActionCopy.rename, systemImage: SailuneSymbol.edit.systemName) }
+            Button { startRenaming(id: section.id, currentName: sectionUnit.displayTitle(section.title)) } label: { Label(SailuneActionCopy.rename, systemImage: SailuneSymbol.edit.systemName) }
             Button {
                 commitCurrentRename()
                 addSection(to: volume)
-            } label: { Label(SailuneActionCopy.addSection, systemImage: SailuneSymbol.addSection.systemName) }
+            } label: { Label(SailuneActionCopy.addSection(unit: sectionUnit), systemImage: SailuneSymbol.addSection.systemName) }
             Divider()
-            Button(role: .destructive) { deleteTarget = .section(section) } label: { Label(SailuneActionCopy.deleteSection, systemImage: SailuneSymbol.delete.systemName) }
+            Button(role: .destructive) { deleteTarget = .section(section) } label: { Label(SailuneActionCopy.deleteSection(unit: sectionUnit), systemImage: SailuneSymbol.delete.systemName) }
         }
     }
 
@@ -896,7 +907,7 @@ struct EditorSidebarView: View {
     }
     private func addSection(to volume: Volume) {
         let next = (volume.sections.map(\.sortOrder).max() ?? -1) + 1
-        let newSection = Section(title: "新節", sortOrder: next, volume: volume)
+        let newSection = Section(title: sectionUnit.draftTitle, sortOrder: next, volume: volume)
         volume.sections.append(newSection)
         bridge.flushPendingSave()
         selectedSection = newSection // 自動選取並跳轉至中欄編輯
@@ -989,7 +1000,7 @@ struct EditorSidebarView: View {
     private func deleteSummary(_ target: DeleteTarget) -> String {
         switch target {
         case .volume(let volume): return "已刪除卷「\(volume.title)」"
-        case .section(let section): return "已刪除節「\(section.title)」"
+        case .section(let section): return "已刪除\(sectionUnit.unitLabel)「\(sectionUnit.displayTitle(section.title))」"
         }
     }
 
@@ -1063,6 +1074,7 @@ struct EditorCenterView: View {
     let onOpenSettings: (EditorSettingsDestination) -> Void
     let onOpenMatchedSetting: (EditorSettingsTarget) -> Void
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.sectionUnit) private var sectionUnit
     @Environment(StoryPlanningStore.self) private var planningStore
     @Environment(V5SettingsStore.self) private var settingsStore
     @Environment(AbilityProgressStore.self) private var abilityStore
@@ -1194,15 +1206,15 @@ struct EditorCenterView: View {
             if let section {
                 let index = sectionIndex(for: section, in: book)
                 HStack(spacing: 4) {
-                    Text("第 \(index) 節｜")
+                    Text("\(sectionUnit.numberedTitle(index))｜")
                         .font(.system(size: 24, weight: .bold))
                         .foregroundStyle(.secondary)
                         .contentShape(Rectangle())
                         .onTapGesture {
                             titleFieldFocused = true
                         }
-                    TextField("節次標題", text: Binding(
-                        get: { section.title },
+                    TextField(sectionUnit.titleFieldLabel, text: Binding(
+                        get: { sectionUnit.displayTitle(section.title) },
                         set: { section.title = $0 }
                     ))
                     .font(.system(size: 24, weight: .bold))
@@ -1402,7 +1414,7 @@ struct EditorCenterView: View {
                         .font(.caption)
                         .foregroundStyle(saveState == .failed ? .red : .secondary)
                     Spacer()
-                    Text("\(liveWordCount) 字 · 第 \(index) 節 · \(section.volume?.title ?? "")")
+                    Text("\(liveWordCount) 字 · \(sectionUnit.numberedTitle(index)) · \(section.volume?.title ?? "")")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -1410,7 +1422,7 @@ struct EditorCenterView: View {
                 .padding(.vertical, 8)
                 .background(Color.appBackground)
             } else {
-                ContentUnavailableView("從目錄選擇節，或新增一節開始寫作", systemImage: SailuneSymbol.sectionDocument.systemName)
+                ContentUnavailableView("從目錄選擇\(sectionUnit.unitLabel)，或新增一\(sectionUnit.unitLabel)開始寫作", systemImage: SailuneSymbol.sectionDocument.systemName)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }

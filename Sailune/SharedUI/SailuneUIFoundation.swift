@@ -89,6 +89,8 @@ enum SailuneSymbol {
     case relatedCharacters
     case rowNavigation
     case sectionDocument
+    case template
+    case forum
 
     var systemName: String {
         switch self {
@@ -139,6 +141,8 @@ enum SailuneSymbol {
         case .relatedCharacters: "person.2"
         case .rowNavigation: "arrow.right"
         case .sectionDocument: "doc.text"
+        case .template: "doc.text"
+        case .forum: "text.bubble"
         }
     }
 }
@@ -164,7 +168,7 @@ enum SailuneActionCopy {
     static let removeHolder = String(localized: "action.removeHolder", defaultValue: "移除持有人；副本仍保留")
     static let rename = String(localized: "action.rename", defaultValue: "重新命名")
     static let clearSelection = String(localized: "action.clearSelection", defaultValue: "不選擇")
-    static let addSection = String(localized: "action.addSection", defaultValue: "新增節")
+    static func addSection(unit: BookTextSectionMarker) -> String { unit.addActionTitle }
     static func selectPreset(_ title: String) -> String {
         String(localized: "action.selectPreset", defaultValue: "選擇\(title)")
     }
@@ -178,12 +182,12 @@ enum SailuneActionCopy {
     static let deletePlace = String(localized: "action.deletePlace", defaultValue: "刪除地點")
     static let deleteStoryLine = String(localized: "action.deleteStoryLine", defaultValue: "刪除故事線")
     static let deleteItem = String(localized: "action.deleteItem", defaultValue: "刪除物品")
-    static let deleteSection = String(localized: "action.deleteSection", defaultValue: "刪除節")
+    static func deleteSection(unit: BookTextSectionMarker) -> String { "刪除\(unit.unitLabel)" }
     static let deleteStage = String(localized: "action.deleteStage", defaultValue: "刪除階段")
     static let restore = String(localized: "action.restore", defaultValue: "復原")
     static let addCopy = String(localized: "action.addCopy", defaultValue: "新增副本")
     static let addHistory = String(localized: "action.addHistory", defaultValue: "新增歷史")
-    static let addFirstSection = String(localized: "action.addFirstSection", defaultValue: "新增第一節")
+    static func addFirstSection(unit: BookTextSectionMarker) -> String { unit.addFirstActionTitle }
     static let addLevel = String(localized: "action.addLevel", defaultValue: "新增等級")
     static let manageLevels = String(localized: "action.manageLevels", defaultValue: "管理層級")
     static let editEra = String(localized: "action.editEra", defaultValue: "編輯紀元")
@@ -191,7 +195,7 @@ enum SailuneActionCopy {
 }
 
 enum SailuneAccessibilityCopy {
-    static let addSectionInVolume = String(localized: "accessibility.addSectionInVolume", defaultValue: "在此卷新增節")
+    static func addSectionInVolume(unit: BookTextSectionMarker) -> String { unit.addInVolumeAccessibilityLabel }
     static let confirmEnter = String(localized: "accessibility.confirmEnter", defaultValue: "確認 (Enter)")
     static let showOnMainTimeline = String(localized: "accessibility.showOnMainTimeline", defaultValue: "顯示於主時間軸")
     static let fitWindow = String(localized: "accessibility.fitWindow", defaultValue: "符合視窗")

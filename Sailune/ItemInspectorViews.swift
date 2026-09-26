@@ -157,6 +157,7 @@ struct ItemDetailView: View {
     let onOpenCopy: (ItemCopy) -> Void
     let onSelectSection: ((Section) -> Void)?
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.sectionUnit) private var sectionUnit
     @Environment(ItemCopyStore.self) private var copyStore
     @Environment(V5SettingsStore.self) private var settingsStore
     @Query(sort: \ItemLevel.sortOrder) private var allLevels: [ItemLevel]
@@ -210,7 +211,7 @@ struct ItemDetailView: View {
                     GroupBox("正文引用") {
                         if referencedSections.isEmpty { Text("尚未在正文中出現").foregroundStyle(.secondary) }
                         else { ForEach(referencedSections) { section in
-                            Button("第 \(sectionNumber(section)) 節｜\(section.title.isEmpty ? "未命名節" : section.title)") { onSelectSection?(section) }.buttonStyle(.link)
+                            Button("\(sectionUnit.numberedTitle(sectionNumber(section)))｜\(section.title.isEmpty ? sectionUnit.unnamedTitle : sectionUnit.displayTitle(section.title))") { onSelectSection?(section) }.buttonStyle(.link)
                         } }
                     }
                     HStack {

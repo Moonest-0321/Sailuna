@@ -4,7 +4,7 @@ import SwiftData
 @main
 struct SailuneApp: App {
     private enum StartupState {
-        case ready(ModelContainer, V5SettingsStore, ItemCopyStore, AbilityProgressStore, StoryPlanningStore)
+        case ready(ModelContainer, V5SettingsStore, ItemCopyStore, AbilityProgressStore, StoryPlanningStore, BookPublicationStore)
         case failed(String)
     }
 
@@ -73,7 +73,8 @@ struct SailuneApp: App {
     init() {
         do {
             let (container, settingsStore, copyStore, abilityStore, planningStore) = try Self.makeModelContainer()
-            startupState = .ready(container, settingsStore, copyStore, abilityStore, planningStore)
+            let publicationStore = try BookPublicationStore(url: SailuneDataLocations(mainStore: Self.storeURL).publicationStatusURL)
+            startupState = .ready(container, settingsStore, copyStore, abilityStore, planningStore, publicationStore)
         } catch {
             startupState = .failed(error.localizedDescription)
         }
@@ -298,8 +299,8 @@ struct SailuneApp: App {
     var body: some Scene {
         WindowGroup {
             switch startupState {
-            case .ready(let container, let settingsStore, let copyStore, let abilityStore, let planningStore):
-                SailuneRootView(container: container, settingsStore: settingsStore, copyStore: copyStore, abilityStore: abilityStore, planningStore: planningStore)
+            case .ready(let container, let settingsStore, let copyStore, let abilityStore, let planningStore, let publicationStore):
+                SailuneRootView(container: container, settingsStore: settingsStore, copyStore: copyStore, abilityStore: abilityStore, planningStore: planningStore, publicationStore: publicationStore)
             case .failed(let message):
                 DatabaseStartupFailureView(message: message)
             }
@@ -314,6 +315,7 @@ private struct SailuneRootView: View {
     @Bindable var copyStore: ItemCopyStore
     @Bindable var abilityStore: AbilityProgressStore
     @Bindable var planningStore: StoryPlanningStore
+    @Bindable var publicationStore: BookPublicationStore
 
     var body: some View {
         ContentView()
@@ -322,6 +324,7 @@ private struct SailuneRootView: View {
             .environment(copyStore)
             .environment(abilityStore)
             .environment(planningStore)
+            .environment(publicationStore)
             .alert("物品副本無法儲存", isPresented: persistenceErrorBinding) {
                 Button(SailuneActionCopy.acknowledge) { copyStore.clearPersistenceError() }
             } message: {
@@ -465,13 +468,13 @@ enum V4DataBackfill {
         for book in books {
             if book.volumes.isEmpty {
                 let volume = Volume(title: "第一卷", sortOrder: 0, book: book)
-                let section = Section(title: "第一節", sortOrder: 0, volume: volume)
+                let section = Section(title: SectionUnitPreference.current.firstTitle, sortOrder: 0, volume: volume)
                 volume.sections.append(section)
                 book.volumes.append(volume)
                 didChange = true
             } else if book.volumes.allSatisfy({ $0.sections.isEmpty }) {
                 let firstVolume = book.volumes.min { $0.sortOrder < $1.sortOrder }!
-                let section = Section(title: "第一節", sortOrder: 0, volume: firstVolume)
+                let section = Section(title: SectionUnitPreference.current.firstTitle, sortOrder: 0, volume: firstVolume)
                 firstVolume.sections.append(section)
                 didChange = true
             }

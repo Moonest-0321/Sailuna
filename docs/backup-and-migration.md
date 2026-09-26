@@ -86,3 +86,7 @@ V4.4.8 在主 container 與 StoryPlanning store 都成功開啟後，會以現�
 - 世界條目有限分類不另升級 schema；`termCategory` 仍以可空字串保存。既有 V4 自由文字分類（包括退役的「語言」）不被猜測或刪除，編輯器以「既有分類」保留，作者選擇制度、信仰、技術、資源、族群／種族、文化習俗或專有名詞後才替換。族群／種族預設只保存既有 WorldTerm 文字欄位，不新增遷移步驟。
 - V6→V7 只新增空的 `PlanningRecordMetadata` entity。既有時間序若有節次但沒有歸屬，執行期列入「未分類時間序」；作者儲存定位後才建立 metadata。來源刪除後，工作區開啟時會冪等清理孤立 metadata。
 - 新建／綁定採先保存主 Event、再保存 metadata；後者失敗時保留 Event 並允許重試。刪 Event 後若 metadata 清理失敗，孤立記錄不顯示，下一次時間軸載入時冪等清理。
+
+## V10.1 發布狀態備份
+
+備份可選包含 `publication-status.json`；還原時先移走現有檔案並納入 rollback，再寫入備份版本。舊備份沒有此檔時，還原後所有書籍回到預設草稿。備份解碼驗證狀態檔格式。

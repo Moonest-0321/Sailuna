@@ -82,6 +82,7 @@ private struct CharacterNarrativePlacementSheet: View {
     let existingSection: Section?
     let onSave: (Section?) -> Void
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.sectionUnit) private var sectionUnit
     @Query(sort: \Section.sortOrder) private var allSections: [Section]
     @State private var selectedVolumeID: UUID?
     @State private var selectedSectionID: UUID?
@@ -110,10 +111,10 @@ private struct CharacterNarrativePlacementSheet: View {
                         Text(volume.title.isEmpty ? "未命名卷" : volume.title).tag(Optional(volume.id))
                     }
                 }
-                Picker("節", selection: $selectedSectionID) {
-                    Text("無節").tag(Optional<UUID>.none)
+                Picker(sectionUnit.unitLabel, selection: $selectedSectionID) {
+                    Text("無\(sectionUnit.unitLabel)").tag(Optional<UUID>.none)
                     ForEach(sections) { section in
-                        Text(section.title.isEmpty ? "未命名節" : section.title).tag(Optional(section.id))
+                        Text(section.title.isEmpty ? sectionUnit.unnamedTitle : sectionUnit.displayTitle(section.title)).tag(Optional(section.id))
                     }
                 }
                 .disabled(selectedVolumeID == nil)
@@ -263,6 +264,7 @@ private struct CharacterTimestampEditorSheet: View {
     @Environment(\.modelContext) private var modelContext
     @Environment(StoryPlanningStore.self) private var planningStore
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.sectionUnit) private var sectionUnit
     @Query(sort: \Timeline.sortOrder) private var allTimelines: [Timeline]
     @Query(sort: \Era.startOrdinal) private var allEras: [Era]
     @Query(sort: \Section.sortOrder) private var allSections: [Section]
@@ -351,9 +353,9 @@ private struct CharacterTimestampEditorSheet: View {
                     }
                     .padding(.vertical, 2)
                 }
-                Picker("節", selection: $selectedSectionID) {
-                    Text("無節定位").tag(Optional<UUID>.none)
-                    ForEach(sections) { Text($0.title.isEmpty ? "未命名節" : $0.title).tag(Optional($0.id)) }
+                Picker(sectionUnit.unitLabel, selection: $selectedSectionID) {
+                    Text("無\(sectionUnit.unitLabel)定位").tag(Optional<UUID>.none)
+                    ForEach(sections) { Text($0.title.isEmpty ? sectionUnit.unnamedTitle : sectionUnit.displayTitle($0.title)).tag(Optional($0.id)) }
                 }
                 Toggle("顯示於規劃視圖", isOn: $isVisible)
                 if needsNarrativePlacement {

@@ -12,6 +12,7 @@ struct SailuneAIChatSidebarView: View {
     @Query(sort: \CharacterAbility.name) private var allAbilities: [CharacterAbility]
     @Environment(AbilityProgressStore.self) private var abilityStore
     @Environment(V5SettingsStore.self) private var settingsStore
+    @Environment(\.sectionUnit) private var sectionUnit
     @State private var draft = ""
     @State private var selectedScope: SailuneAIReadingScope?
     @State private var characterTemplate: SailuneAICharacterTemplateSelection?
@@ -178,7 +179,7 @@ struct SailuneAIChatSidebarView: View {
                 }
                 .buttonStyle(.plain)
                 .frame(minWidth: 24, minHeight: 24)
-                .help("加入節次或角色整理模板")
+                .help("加入\(sectionUnit.unitLabel)或角色整理模板")
                 .accessibilityLabel("加入內容")
                 .sheet(isPresented: $showingReadingRange) {
                     readingRangeSheet
@@ -394,12 +395,12 @@ struct SailuneAIChatSidebarView: View {
         Group {
             Picker("閱讀範圍", selection: $scopeLevel) {
                 ForEach(ScopeLevel.allCases) { level in
-                    Text(level.rawValue).tag(level)
+                    Text(level == .section ? "單\(sectionUnit.unitLabel)" : level.rawValue).tag(level)
                 }
             }
             if scopeLevel == .section {
-                Picker("節次", selection: $scopeSectionID) {
-                    Text("選擇節次").tag(Optional<UUID>.none)
+                Picker(sectionUnit.unitLabel, selection: $scopeSectionID) {
+                    Text("選擇\(sectionUnit.unitLabel)").tag(Optional<UUID>.none)
                     ForEach(BookStructure.orderedSections(in: book), id: \.id) { section in
                         Text(selectedSectionTitle(for: section.id)).tag(Optional(section.id))
                     }
@@ -604,7 +605,7 @@ struct SailuneAIChatSidebarView: View {
     private var characterTemplateSheet: some View {
         NavigationStack {
             Form {
-                Picker("節次", selection: $templateSectionID) {
+                Picker(sectionUnit.unitLabel, selection: $templateSectionID) {
                     ForEach(BookStructure.orderedSections(in: book), id: \.id) { section in
                         Text(selectedSectionTitle(for: section.id)).tag(Optional(section.id))
                     }
@@ -668,9 +669,9 @@ struct SailuneAIChatSidebarView: View {
 
     private func selectedSectionTitle(for sectionID: UUID) -> String {
         guard let section = BookStructure.orderedSections(in: book).first(where: { $0.id == sectionID }) else {
-            return "節次已不存在"
+            return "\(sectionUnit.unitLabel)已不存在"
         }
         let volumeTitle = section.volume.map { $0.title.isEmpty ? "未命名卷" : $0.title } ?? "未命名卷"
-        return "\(volumeTitle)／\(section.title.isEmpty ? "未命名節" : section.title)"
+        return "\(volumeTitle)／\(section.title.isEmpty ? sectionUnit.unnamedTitle : sectionUnit.displayTitle(section.title))"
     }
 }

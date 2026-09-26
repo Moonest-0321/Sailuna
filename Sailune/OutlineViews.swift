@@ -1461,6 +1461,7 @@ private struct StageStartEditorSheet: View {
     var stage: OutlineStage? = nil
     @Environment(StoryPlanningStore.self) private var planningStore
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.sectionUnit) private var sectionUnit
     @Binding var errorMessage: String?
     @State private var title = ""
     @State private var selectedVolumeID: UUID?
@@ -1499,13 +1500,13 @@ private struct StageStartEditorSheet: View {
                 Text("選擇卷次").tag(Optional<UUID>.none)
                 ForEach(volumes) { volume in Text(volume.title.isEmpty ? "未命名卷次" : volume.title).tag(Optional(volume.id)) }
             }
-            Picker("開始節次", selection: sectionSelection) {
+            Picker("開始\(sectionUnit.unitLabel)", selection: sectionSelection) {
                 Text("停在卷次").tag(Optional<UUID>.none)
-                ForEach(sections) { section in Text(section.title.isEmpty ? "未命名節次" : section.title).tag(Optional(section.id)) }
+                ForEach(sections) { section in Text(section.title.isEmpty ? sectionUnit.unnamedTitle : sectionUnit.displayTitle(section.title)).tag(Optional(section.id)) }
             }
             .disabled(selectedVolumeID == nil)
             Picker("開始幕標題", selection: $selectedHeadingOffset) {
-                Text("停在節次").tag(Optional<Int>.none)
+                Text("停在\(sectionUnit.unitLabel)").tag(Optional<Int>.none)
                 ForEach(headings, id: \.offset) { heading in Text(heading.title).tag(Optional(heading.offset)) }
             }
             .disabled(selectedSectionID == nil)

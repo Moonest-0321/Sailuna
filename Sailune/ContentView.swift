@@ -11,6 +11,7 @@ struct ContentView: View {
     @Environment(V5SettingsStore.self) private var settingsStore
     @Environment(StoryPlanningStore.self) private var planningStore
     @Environment(AbilityProgressStore.self) private var abilityStore
+    @Environment(BookPublicationStore.self) private var publicationStore
     @Query(sort: \Book.updatedAt, order: .reverse) private var books: [Book]
     @Query private var profiles: [AuthorProfile]
     @State private var navigationPath = NavigationPath()
@@ -24,6 +25,34 @@ struct ContentView: View {
     @State private var showingAboutMeSheet = false
     @State private var showingAccountPopover = false
     @State private var selectedPlan: AccountPlan = .light
+    @State private var sectionUnitUpdateError: String?
+    @AppStorage(SectionUnitPreference.storageKey) private var sectionUnitRawValue = BookTextSectionMarker.section.rawValue
+
+    private var selectedSectionUnit: BookTextSectionMarker {
+        SectionUnitPreference.resolve(sectionUnitRawValue)
+    }
+
+    private var sectionUnitBinding: Binding<BookTextSectionMarker> {
+        Binding(
+            get: { selectedSectionUnit },
+            set: { applySectionUnit($0) }
+        )
+    }
+
+    private func applySectionUnit(_ unit: BookTextSectionMarker) {
+        guard unit != selectedSectionUnit else { return }
+        do {
+            try SectionUnitCoordinator.apply(unit, to: books, in: modelContext)
+            sectionUnitRawValue = unit.rawValue
+            sectionUnitUpdateError = nil
+        } catch {
+            sectionUnitUpdateError = "無法更新章節單位，請再試一次。"
+        }
+    }
+
+    private var showsStartTopBar: Bool {
+        [.home, .find].contains(selectedSidebarItem)
+    }
 
     var filteredBooks: [Book] {
         if searchText.isEmpty {
@@ -65,7 +94,7 @@ struct ContentView: View {
                         .frame(width: 220)
                     Divider()
                     VStack(spacing: 0) {
-                        if selectedSidebarItem != .settings {
+                        if showsStartTopBar {
                             StartTopBarView(
                                 searchText: $searchText,
                                 isSearchPresented: selectedSidebarItem == .find,
@@ -178,7 +207,7 @@ struct ContentView: View {
 
                 if let bookDeletionError {
                     HomeMessagePopup(
-                        title: "書籍刪除結果",
+                        title: "書籍操作結果",
                         message: bookDeletionError,
                         onDismiss: { self.bookDeletionError = nil }
                     )
@@ -193,6 +222,7 @@ struct ContentView: View {
                     EditorWorkspaceView(book: book, initialSection: section)
                 }
             }
+            .environment(\.sectionUnit, selectedSectionUnit)
             .fileImporter(
                 isPresented: $showingBookTextImporter,
                 allowedContentTypes: [UTType(filenameExtension: "txt") ?? .plainText],
@@ -252,8 +282,16 @@ struct ContentView: View {
         case .home, .find:
             libraryBookContent(metrics: metrics)
         case .settings:
-            StartSettingsView()
-        case .publish, .achievements, .about:
+            StartSettingsView(sectionUnit: sectionUnitBinding, updateError: sectionUnitUpdateError)
+        case .publish:
+            StartPublishingView(
+                books: books,
+                statusForBook: { publicationStore.status(for: $0) },
+                onAdvance: advancePublication
+            )
+        case .achievements:
+            StartAchievementsView()
+        case .templates, .forum, .about:
             Color.clear
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -299,10 +337,10 @@ struct ContentView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 28) {
             ForEach(shelfStatuses) { status in
-                let statusBooks = displayedBooks.filter { $0.status == status }
+                let statusBooks = displayedBooks.filter { publicationStore.status(for: $0.id) == status }
                 VStack(alignment: .leading, spacing: 14) {
                     HStack(spacing: 12) {
-                        Text(status.rawValue)
+                        Text(status.publicationTitle)
                             .font(.headline)
                         Rectangle()
                             .fill(Color.primary.opacity(0.12))
@@ -310,7 +348,7 @@ struct ContentView: View {
                     }
 
                     if statusBooks.isEmpty {
-                        Text("尚無\(status.rawValue)作品")
+                        Text("尚無\(status.publicationTitle)作品")
                             .font(.callout)
                             .foregroundStyle(.tertiary)
                             .padding(.vertical, 10)
@@ -329,7 +367,7 @@ struct ContentView: View {
 
     private func bookLink(_ book: Book, wordCount: Int) -> some View {
         NavigationLink(value: BookRoute(id: book.id, opensEditor: false)) {
-            BookCardView(book: book, wordCount: wordCount)
+            BookCardView(book: book, wordCount: wordCount, status: publicationStore.status(for: book.id))
         }
         .buttonStyle(.plain)
         .contextMenu {
@@ -358,8 +396,21 @@ struct ContentView: View {
             if outcome.requiresRepair {
                 bookDeletionError = "書籍已刪除，但部分附屬資料將在下次啟動時繼續修復。\n\n\(outcome.deferredCleanupErrors.joined(separator: "\n"))"
             }
+            do {
+                try publicationStore.remove(request.id)
+            } catch {
+                bookDeletionError = "書籍已刪除，但發布狀態清理失敗：\(error.localizedDescription)"
+            }
         } catch {
             bookDeletionError = "無法刪除《\(request.title)》，內容仍完整保留。\n\n\(error.localizedDescription)"
+        }
+    }
+
+    private func advancePublication(_ bookID: UUID) {
+        do {
+            try publicationStore.advance(bookID)
+        } catch {
+            bookDeletionError = "無法更新書籍發布狀態：\(error.localizedDescription)"
         }
     }
 
@@ -369,6 +420,8 @@ private enum StartSidebarItem: String, CaseIterable, Identifiable {
     case home = "首頁"
     case find = "尋找"
     case publish = "發布"
+    case templates = "模板"
+    case forum = "論壇"
     case achievements = "成就"
     case about = "關於我"
     case settings = "設定"
@@ -380,6 +433,8 @@ private enum StartSidebarItem: String, CaseIterable, Identifiable {
         case .home: return "house"
         case .find: return SailuneSymbol.search.systemName
         case .publish: return "square.and.arrow.up"
+        case .templates: return SailuneSymbol.template.systemName
+        case .forum: return SailuneSymbol.forum.systemName
         case .achievements: return "trophy"
         case .about: return "person"
         case .settings: return SailuneSymbol.settings.systemName
@@ -423,6 +478,9 @@ private struct StartSidebarView: View {
                 .padding(.bottom, 8)
 
             Divider()
+
+            sidebarButton(.templates)
+            sidebarButton(.forum)
 
             Text("作者")
                 .font(.subheadline.weight(.semibold))
@@ -572,22 +630,36 @@ private struct AccountPopoverView: View {
 }
 
 private struct StartSettingsView: View {
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("開發階段")
-                    .foregroundStyle(.primary)
-                Spacer()
-                Text("V6.0d")
-                    .foregroundStyle(.secondary)
-            }
-            .font(.body)
-            .padding(.horizontal, 20)
-            .frame(height: 48)
+    @Binding var sectionUnit: BookTextSectionMarker
+    let updateError: String?
 
-            Divider()
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            GroupBox("AI 模型與 API") {
+                VStack(alignment: .leading, spacing: 10) {
+                    LabeledContent("使用模型", value: "Apple 裝置端模型")
+                    LabeledContent("API", value: "不使用外部 API")
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+
+            GroupBox("章節單位") {
+                Picker("預設單位", selection: $sectionUnit) {
+                    ForEach(SectionUnitPreference.options) { unit in
+                        Text(unit.label).tag(unit)
+                    }
+                }
+                .pickerStyle(.segmented)
+                if let updateError {
+                    Text(updateError)
+                        .font(.caption)
+                        .foregroundStyle(.red)
+                }
+            }
+
             Spacer(minLength: 0)
         }
+        .padding(20)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
@@ -839,6 +911,7 @@ private struct BookRouteDestination: View {
 struct BookCardView: View {
     let book: Book
     let wordCount: Int
+    let status: BookStatus
 
     var body: some View {
         VStack(spacing: 0) {
@@ -858,7 +931,7 @@ struct BookCardView: View {
                 HStack(spacing: 6) {
                     Text("狀態")
                         .foregroundStyle(.secondary)
-                    Text(book.status.rawValue)
+                    Text(status.publicationTitle)
                         .fontWeight(.medium)
                         .padding(.horizontal, 7)
                         .padding(.vertical, 2)
@@ -1005,6 +1078,7 @@ private struct HomeMessagePopup: View {
 // MARK: - 新建書籍視窗
 struct NewBookSheet: View {
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.sectionUnit) private var sectionUnit
     @Query private var profiles: [AuthorProfile]
     @State private var title = ""
     @State private var author = ""
@@ -1084,7 +1158,7 @@ struct NewBookSheet: View {
     private func saveBook() {
         let newBook = Book(title: title, author: author)
         let defaultVolume = Volume(title: "第一卷", book: newBook)
-        let firstSection = Section(title: "第一節", sortOrder: 0, volume: defaultVolume)
+        let firstSection = Section(title: sectionUnit.firstTitle, sortOrder: 0, volume: defaultVolume)
         defaultVolume.sections.append(firstSection)
         newBook.volumes.append(defaultVolume)
         modelContext.insert(newBook)

@@ -790,6 +790,7 @@ private struct CharacterReferenceSectionsView: View {
     let character: Character
     let book: Book
     let onSelectSection: ((Section) -> Void)?
+    @Environment(\.sectionUnit) private var sectionUnit
     @Query private var allAliases: [CharacterAlias]
     @AppStorage private var isCollapsed: Bool
     @State private var linkedSections: [Section] = []
@@ -873,7 +874,7 @@ private struct CharacterReferenceSectionsView: View {
     }
 
     private func sectionButton(_ section: Section) -> some View {
-        Button("第 \(sectionNumber(section, in: book)) 節｜\(section.title)") {
+        Button("\(sectionUnit.numberedTitle(sectionNumber(section, in: book)))｜\(sectionUnit.displayTitle(section.title))") {
             onSelectSection?(section)
         }
         .buttonStyle(.link)

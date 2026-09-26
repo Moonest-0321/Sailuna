@@ -7,6 +7,52 @@ enum BookStatus: String, CaseIterable, Codable, Identifiable {
     case draft = "草稿"
 
     var id: String { rawValue }
+
+    var publicationTitle: String { self == .ongoing ? "發布中" : rawValue }
+}
+
+/// Publication state lives beside the released V5 store so its schema stays immutable.
+@MainActor @Observable
+final class BookPublicationStore {
+    private let url: URL
+    private(set) var statuses: [UUID: BookStatus]
+
+    init(url: URL) throws {
+        self.url = url
+        if FileManager.default.fileExists(atPath: url.path) {
+            statuses = try JSONDecoder().decode([UUID: BookStatus].self, from: Data(contentsOf: url))
+        } else {
+            statuses = [:]
+        }
+    }
+
+    func status(for bookID: UUID) -> BookStatus { statuses[bookID] ?? .draft }
+
+    func advance(_ bookID: UUID) throws {
+        let next: BookStatus
+        switch status(for: bookID) {
+        case .draft: next = .ongoing
+        case .ongoing: next = .completed
+        case .completed: return
+        }
+        var updated = statuses
+        updated[bookID] = next
+        try save(updated)
+        statuses = updated
+    }
+
+    func remove(_ bookID: UUID) throws {
+        guard statuses[bookID] != nil else { return }
+        var updated = statuses
+        updated.removeValue(forKey: bookID)
+        try save(updated)
+        statuses = updated
+    }
+
+    private func save(_ value: [UUID: BookStatus]) throws {
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try JSONEncoder().encode(value).write(to: url, options: .atomic)
+    }
 }
 
 @Model

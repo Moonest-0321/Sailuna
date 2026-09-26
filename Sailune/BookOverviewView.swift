@@ -334,6 +334,7 @@ struct VolumeSectionTreeView: View {
     private let dragCoordinateSpace = "book-overview-outline-drag"
 
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.sectionUnit) private var sectionUnit
     @State private var renamingID: UUID? = nil
     @State private var renameBuffer: String = ""
     @FocusState private var renameFocused: Bool
@@ -353,7 +354,7 @@ struct VolumeSectionTreeView: View {
                 Spacer()
                 Menu {
                     Button {
-                        let content = ExportManager.exportBookToTXT(book: book, marker: .section)
+                        let content = ExportManager.exportBookToTXT(book: book, marker: sectionUnit)
                         exportRequest = ExportManager.textExportRequest(defaultName: book.title, content: content)
                     } label: {
                         Label(SailuneActionCopy.exportText, systemImage: SailuneSymbol.exportText.systemName)
@@ -382,8 +383,8 @@ struct VolumeSectionTreeView: View {
             Button(SailuneActionCopy.delete, role: .destructive) { performDelete(target) }
         } message: { target in
             switch target {
-            case .volume(let v): Text("確定要刪除卷「\(v.title)」嗎？其下所有節將一併刪除，且無法復原。")
-            case .section(let s): Text("確定要刪除節「\(s.title)」嗎？此操作無法復原。")
+            case .volume(let v): Text("確定要刪除卷「\(v.title)」嗎？其下所有\(sectionUnit.unitLabel)將一併刪除，且無法復原。")
+            case .section(let s): Text("確定要刪除\(sectionUnit.unitLabel)「\(sectionUnit.displayTitle(s.title))」嗎？此操作無法復原。")
             }
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
@@ -426,8 +427,8 @@ struct VolumeSectionTreeView: View {
                     if !collapsedVolumeIDs.contains(volume.id) {
                         if volume.sections.isEmpty {
                             VStack(alignment: .leading, spacing: 6) {
-                                Text("這一卷還沒有節").font(.subheadline).foregroundStyle(.secondary)
-                                Button(SailuneActionCopy.addFirstSection, systemImage: SailuneSymbol.add.systemName) { addSection(to: volume) }
+                                Text("這一卷還沒有\(sectionUnit.unitLabel)").font(.subheadline).foregroundStyle(.secondary)
+                                Button(SailuneActionCopy.addFirstSection(unit: sectionUnit), systemImage: SailuneSymbol.add.systemName) { addSection(to: volume) }
                                     .buttonStyle(.borderedProminent)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -484,7 +485,7 @@ struct VolumeSectionTreeView: View {
                 commitCurrentRename()
                 addSection(to: volume)
             } label: { Image(systemName: SailuneSymbol.add.systemName).foregroundStyle(.secondary) }
-                .buttonStyle(.borderless).help(SailuneAccessibilityCopy.addSectionInVolume)
+                .buttonStyle(.borderless).help(SailuneAccessibilityCopy.addSectionInVolume(unit: sectionUnit))
             Rectangle()
                 .fill(Color.clear)
                 .frame(maxWidth: .infinity, minHeight: 30)
@@ -505,7 +506,7 @@ struct VolumeSectionTreeView: View {
             rowFrames: $outlineRowFrames
         )
         .contextMenu {
-            Button { addSection(to: volume) } label: { Label(SailuneActionCopy.addSection, systemImage: SailuneSymbol.addSection.systemName) }
+            Button { addSection(to: volume) } label: { Label(SailuneActionCopy.addSection(unit: sectionUnit), systemImage: SailuneSymbol.addSection.systemName) }
             Button { addVolume() } label: { Label(SailuneActionCopy.addVolume, systemImage: SailuneSymbol.addVolume.systemName) }
             Divider()
             Button(role: .destructive) { deleteTarget = .volume(volume) } label: { Label(SailuneActionCopy.deleteVolume, systemImage: SailuneSymbol.delete.systemName) }
@@ -531,7 +532,7 @@ struct VolumeSectionTreeView: View {
                 })
             } else {
                 HStack(spacing: 0) {
-                    Text("\(index)｜")
+                    Text("\(sectionUnit.numberedTitle(index))｜")
                         .foregroundStyle(.secondary)
                         .padding(.vertical, 6)
                         .contentShape(Rectangle())
@@ -539,10 +540,10 @@ struct VolumeSectionTreeView: View {
                             commitCurrentRename()
                             onSelectSection?(section)
                         }
-                    Text(section.title).lineLimit(1)
+                    Text(sectionUnit.displayTitle(section.title)).lineLimit(1)
                         .padding(.vertical, 6)
                         .contentShape(Rectangle())
-                        .onTapGesture { startRenaming(id: section.id, currentName: section.title) }
+                        .onTapGesture { startRenaming(id: section.id, currentName: sectionUnit.displayTitle(section.title)) }
                 }
             }
             Rectangle()
@@ -563,13 +564,13 @@ struct VolumeSectionTreeView: View {
             rowFrames: $outlineRowFrames
         )
         .contextMenu {
-            Button { startRenaming(id: section.id, currentName: section.title) } label: { Label(SailuneActionCopy.rename, systemImage: SailuneSymbol.edit.systemName) }
+            Button { startRenaming(id: section.id, currentName: sectionUnit.displayTitle(section.title)) } label: { Label(SailuneActionCopy.rename, systemImage: SailuneSymbol.edit.systemName) }
             Button {
                 commitCurrentRename()
                 addSection(to: volume)
-            } label: { Label(SailuneActionCopy.addSection, systemImage: SailuneSymbol.addSection.systemName) }
+            } label: { Label(SailuneActionCopy.addSection(unit: sectionUnit), systemImage: SailuneSymbol.addSection.systemName) }
             Divider()
-            Button(role: .destructive) { deleteTarget = .section(section) } label: { Label(SailuneActionCopy.deleteSection, systemImage: SailuneSymbol.delete.systemName) }
+            Button(role: .destructive) { deleteTarget = .section(section) } label: { Label(SailuneActionCopy.deleteSection(unit: sectionUnit), systemImage: SailuneSymbol.delete.systemName) }
         }
     }
 
@@ -636,7 +637,7 @@ struct VolumeSectionTreeView: View {
     }
     private func addSection(to volume: Volume) {
         let next = (volume.sections.map(\.sortOrder).max() ?? -1) + 1
-        let newSection = Section(title: "新節", sortOrder: next, volume: volume)
+        let newSection = Section(title: sectionUnit.draftTitle, sortOrder: next, volume: volume)
         volume.sections.append(newSection)
         book.updatedAt = Date()
         onSelectSection?(newSection)
@@ -742,7 +743,7 @@ struct VolumeSectionTreeView: View {
     private func deleteSummary(_ target: DeleteTarget) -> String {
         switch target {
         case .volume(let volume): return "已刪除卷「\(volume.title)」"
-        case .section(let section): return "已刪除節「\(section.title)」"
+        case .section(let section): return "已刪除\(sectionUnit.unitLabel)「\(sectionUnit.displayTitle(section.title))」"
         }
     }
 

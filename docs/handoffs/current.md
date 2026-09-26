@@ -1,4 +1,24 @@
+> 2026-09-26 V10.1 發布流程修訂：發布頁改列出全部書籍，新書草稿，提供草稿→發布中→完結。`BookPublicationStore` 用 `Sailune/Publication Status.json` 獨立保存，首頁書櫃同讀狀態；備份／還原包含此檔，刪書後清理。V5 主 schema 不變。無簽章 Debug build、Swift parse、diff check 通過；未執行 XCTest 或 GUI。使用者原有未提交修改保留，當輪修改限發布功能與文件。唯一下一步：用隔離資料在 GUI 驗收發布狀態即時變化、重開保留、備份還原與刪書清理。最小文件：本檔、`docs/work-items/v10.1-home-and-publishing.md`、`docs/project-status.md`。
+
 # 當前聊天交接
+
+## 2026-09-26 V10.1 空白頁與即時單位修正 checkpoint
+
+- **已決定**：模板／論壇空白頁不顯示頂部新建／匯入操作；書籍操作只留首頁與尋找。章節單位切換立即套用既有書籍，但只轉換程式預設產生且可精確辨識的第一節／張／章與新節／張／章；作者自訂標題及正文不改。
+- **實作**：`ContentView` 收斂頂部操作列；`BookTextSectionMarker.displayTitle` 投影舊預設名；`SectionUnitCoordinator.apply` 集中更新既有書籍的可辨識預設名並保存，成功後才變更 `UserDefaults` 偏好。總覽、編輯器及相關章節選擇介面讀取同一單位。
+- **驗證**：隔離 `/private/tmp` 無簽章 Debug `xcodebuild build` 通過；尚未做 GUI 驗收或 XCTest。工作樹原有的 V10.1 與 `Localizable.xcstrings` 修改保留，V10.0 工作單未改。
+- **唯一下一步**：用隔離 Debug app 確認模板／論壇沒有新建與匯入操作，並以既有預設章節名切換節／張／章檢查即時顯示、重開保存及作者自訂標題保持原文；保留 V10.0 獨立 GUI 待驗收狀態。
+
+## 2026-09-25 V10.1 實作／驗證 checkpoint
+
+- **已決定**：設定頁本輪只顯示目前 AI 模型與 API 設定，不顯示額度或使用帳號。章節預設單位是全 App 顯示／命名偏好，可選「節／張／章」，初始為「節」。社群新增「模板」「論壇」子項目，點擊後顯示待建置佔位頁。成就與發布資料由系統管理，作者不手動輸入；資料無法取得時只留白，不以節數或其他推算替代。未提供的平台選項與欄位名稱不自行杜撰。
+- **現況**：設定頁已顯示目前 Apple 裝置端模型與外部 API 使用狀態，章節單位偏好存於 `UserDefaults`。發布／成就頁隱藏新建與匯入；成就空位、空白平台選擇器、現有書籍多選及每本書空白欄位已接入。社群模板／論壇入口導向空白頁。
+- **進度**：使用者已再次回覆「R」「U」「I」，修訂版 R／U／I 均 approved，程式實作完成。全域單位已接新書初始標題、啟動補建、目錄／編輯器標題與動作、TXT 匯入預選及匯出格式；未改寫既有作者節名或正文。沒有新增資料來源或 schema。
+- **待確認**：無產品決策待確認。發布平台及欄位名稱尚無資料，本工作只保留空白，不新增資料來源或自動擷取機制。
+- **工作單**：V10.1 工作單為 `docs/work-items/v10.1-home-and-publishing.md`。V10.0 仍是 `docs/work-items/current.md` 所追蹤的現行工作；保留其隔離 GUI 驗收紀錄。
+- **驗證**：8 個受影響 Swift 檔 frontend parse 通過，`git diff --check` 通過。使用者回報編譯錯誤後，於隔離的 `/private/tmp` 建置目錄取得實際錯誤：`EditorSidebarView` 缺少 `sectionUnit` 環境值；補齊後無簽章 Debug `xcodebuild build` 通過。未新增或執行 XCTest；尚未完成 GUI 驗收。
+- **工作樹邊界**：開始實作前除 V10.1 工作單／交接文件外沒有其他使用者未提交修改；本 checkpoint 所列 Swift 與 V10.1 文件修改均屬本工作。V10.0 工作單及其 GUI 驗收狀態原樣保留。
+- **唯一下一步**：在正常 GUI 使用者 session 由 Xcode Run 啟動隔離 Debug app，確認設定、單位切換及重開保留、發布／成就空白呈現、社群入口，以及匯入／匯出單位一致；不可操作正式作者資料。不要覆寫 V10.0 未完成的 GUI 驗收紀錄。
 
 ## 2026-09-25 V10.0 實作／驗證 checkpoint
 

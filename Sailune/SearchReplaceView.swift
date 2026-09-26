@@ -66,6 +66,7 @@ struct SearchReplaceView: View {
     let book: Book
     @Binding var selectedSection: Section?
     let bridge: EditorBridge
+    @Environment(\.sectionUnit) private var sectionUnit
 
     @State private var query = ""
     @State private var replacement = ""
@@ -103,7 +104,7 @@ struct SearchReplaceView: View {
 
             Picker("查找範圍", selection: $scope) {
                 ForEach(SearchScope.allCases) { scope in
-                    Text(scope.rawValue).tag(scope)
+                    Text(scope == .section ? "本\(sectionUnit.unitLabel)" : scope.rawValue).tag(scope)
                 }
             }
             .pickerStyle(.segmented)
@@ -121,7 +122,7 @@ struct SearchReplaceView: View {
             }
 
             if let currentMatch, scope == .book {
-                Text("目前：\(currentMatch.section.title)")
+                Text("目前：\(sectionUnit.displayTitle(currentMatch.section.title))")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
