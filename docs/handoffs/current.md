@@ -1,10 +1,10 @@
 # V10.5 社群介面骨架 checkpoint（2026-09-26）
 
 - **批准**：R 與 U 已分別由使用者回覆核准；I 由使用者先前「搜尋模板照我說的做、論壇先做框架」的直接指示授權。帳號後續處理。
-- **範圍**：搜尋框位於搜尋模板分頁上方、不接搜尋目錄；論壇頂欄橫向呈現官方公告、寫作交流、作品交流、帆夢交流、功能建議五個可切換分類，內容區保持空狀態。不加入登入、網路或貼文資料。
+- **範圍**：搜尋框位於搜尋模板分頁上方、不接搜尋目錄；論壇頂欄橫向呈現官方公告、寫作交流、作品交流、帆夢交流、功能建議五個可切換分類，內容區保持空狀態；我的模板卡片新增確認後刪除按鈕。不加入登入、網路或貼文資料。
 - **工作單**：docs/work-items/v10.5-community-framework.md。
-- **實作狀態**：依使用者最新指示，已將搜尋框移到上方、論壇分類改為頂欄橫排；目前只待 GUI 驗收。
-- **驗證**：最新版面修正後，受影響 Swift 檔案 frontend parse、git diff --check 與主機環境無簽章 Debug build 通過。沙盒 build 遇 SwiftData macro server malformed response；未執行 XCTest 或 GUI 驗收，也未操作作者資料。
+- **實作狀態**：搜尋框位於上方、論壇分類位於頂欄橫排；我的模板卡片可確認刪除。無簽章 Debug build 通過。隔離 Debug app 啟動成功，只建立 /private/tmp 測試 stores；macOS 拒絕 System Events Apple Event（-1743），螢幕擷取亦無法取得畫面，故 GUI 點選驗收仍待可用 GUI 權限的環境。正式作者資料未操作。
+- **驗證**：最新版面與刪除流程修正後，受影響 Swift 檔案 frontend parse、git diff --check 與主機環境無簽章 Debug build 通過；未執行 XCTest。GUI 權限阻礙詳見工作單。
 - **前一工作**：V10.4 模板／發布標籤隔離 GUI 驗收仍待有可啟動 Sailune GUI 的環境，詳見下方歷史 checkpoint。
 
 # V10.4 implementation checkpoint（2026-09-26）

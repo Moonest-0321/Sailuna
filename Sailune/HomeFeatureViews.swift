@@ -209,6 +209,7 @@ struct BookTemplatesView: View {
     @State private var showingSourcePicker = false
     @State private var selectedSourceBookID: UUID?
     @State private var templateName = ""
+    @State private var templatePendingDeletion: BookTemplateDocument?
     @State private var operationError: String?
 
     var body: some View {
@@ -233,7 +234,16 @@ struct BookTemplatesView: View {
                                         .foregroundStyle(.secondary)
                                     Spacer(minLength: 0)
                                     HStack {
+                                        Button(role: .destructive) {
+                                            templatePendingDeletion = template
+                                        } label: {
+                                            Label(SailuneActionCopy.delete, systemImage: SailuneSymbol.delete.systemName)
+                                        }
+                                        .buttonStyle(.bordered)
+                                        .accessibilityLabel("刪除模板「\(template.name)」")
+
                                         Spacer()
+
                                         Button {
                                             apply(template)
                                         } label: {
@@ -287,6 +297,23 @@ struct BookTemplatesView: View {
         .sheet(isPresented: $showingSourcePicker) {
             sourcePicker
                 .frame(minWidth: 360, minHeight: 280)
+        }
+        .confirmationDialog(
+            "刪除模板？",
+            isPresented: Binding(
+                get: { templatePendingDeletion != nil },
+                set: { if !$0 { templatePendingDeletion = nil } }
+            ),
+            presenting: templatePendingDeletion
+        ) { template in
+            Button(SailuneActionCopy.delete, role: .destructive) {
+                deleteTemplate(template)
+            }
+            Button(SailuneActionCopy.cancel, role: .cancel) {
+                templatePendingDeletion = nil
+            }
+        } message: { template in
+            Text("確定刪除「\(template.name.isEmpty ? "未命名模板" : template.name)」？刪除後無法復原。")
         }
         .alert("模板操作失敗", isPresented: Binding(
             get: { operationError != nil },
@@ -362,6 +389,21 @@ struct BookTemplatesView: View {
             selectedSourceBookID = nil
             templateName = ""
         } catch {
+            operationError = error.localizedDescription
+        }
+    }
+
+    private func deleteTemplate(_ template: BookTemplateDocument) {
+        guard let templateStore else {
+            templatePendingDeletion = nil
+            operationError = "模板尚未載入，請稍後再試。"
+            return
+        }
+        do {
+            try templateStore.remove(template)
+            templatePendingDeletion = nil
+        } catch {
+            templatePendingDeletion = nil
             operationError = error.localizedDescription
         }
     }
