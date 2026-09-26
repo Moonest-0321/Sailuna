@@ -241,8 +241,11 @@ struct InsetTextEditor: View {
     @Binding var text: String
     var minHeight: CGFloat = 90
 
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
+
     var body: some View {
         TextEditor(text: $text)
+            .disabled(bookIsReadOnly)
             .scrollContentBackground(.hidden)
             .font(.body)
             .padding(.horizontal, 9)
@@ -259,10 +262,28 @@ struct SailuneBorderedTextEditor: View {
     @Binding var text: String
     var minHeight: CGFloat = 90
 
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
+
     var body: some View {
         TextEditor(text: $text)
+            .disabled(bookIsReadOnly)
             .frame(minHeight: minHeight)
             .overlay(RoundedRectangle(cornerRadius: 8).stroke(SailuneTheme.textEditorBorder))
+    }
+}
+
+
+private struct CompletedBookEditingRegion: ViewModifier {
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
+
+    func body(content: Content) -> some View {
+        content.disabled(bookIsReadOnly)
+    }
+}
+
+extension View {
+    func disabledWhenBookIsCompleted() -> some View {
+        modifier(CompletedBookEditingRegion())
     }
 }
 
@@ -297,8 +318,11 @@ struct SailuneFormTextField: View {
     let title: LocalizedStringKey
     @Binding var text: String
 
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
+
     var body: some View {
         TextField(title, text: $text)
+            .disabled(bookIsReadOnly)
             .textFieldStyle(.roundedBorder)
     }
 }

@@ -5,6 +5,7 @@ struct CharacterAppearanceSectionView: View {
     let character: Character
     let book: Book
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Query(sort: \CharacterAppearance.createdAt) private var allAppearances: [CharacterAppearance]
     private var appearances: [CharacterAppearance] { allAppearances.filter { $0.character?.id == character.id } }
 
@@ -15,20 +16,23 @@ struct CharacterAppearanceSectionView: View {
             } else {
                 ForEach(appearances) { appearance in AppearanceRow(appearance: appearance, book: book, onDelete: { modelContext.delete(appearance) }) }
             }
-            Menu("新增外觀") {
-                Button("服裝") { add(.outfit) }
-                Button("身體特徵") { add(.bodyFeature) }
+            if !bookIsReadOnly {
+                Menu("新增外觀") {
+                    Button("服裝") { add(.outfit) }
+                    Button("身體特徵") { add(.bodyFeature) }
+                }.menuStyle(.borderlessButton)
             }
-            .menuStyle(.borderlessButton)
         }
     }
 
     private func add(_ kind: CharacterAppearanceKind) {
+        guard !bookIsReadOnly else { return }
         modelContext.insert(CharacterAppearance(kind: kind, descriptionText: "新外觀", character: character))
     }
 }
 
 private struct AppearanceRow: View {
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Bindable var appearance: CharacterAppearance
     let book: Book
     let onDelete: () -> Void
@@ -38,13 +42,13 @@ private struct AppearanceRow: View {
                 Picker("類型", selection: $appearance.kindRawValue) {
                     Text("服裝").tag(CharacterAppearanceKind.outfit.rawValue)
                     Text("身體特徵").tag(CharacterAppearanceKind.bodyFeature.rawValue)
-                }.frame(width: 150)
-                SailuneIconButton(
+                }.frame(width: 150).disabled(bookIsReadOnly)
+                if !bookIsReadOnly { SailuneIconButton(
                     symbol: .delete,
                     label: SailuneActionCopy.deleteAppearance,
                     role: .destructive,
                     action: onDelete
-                )
+                ) }
             }
             Text("外觀描述").font(.caption).foregroundStyle(.secondary)
             InsetTextEditor(text: $appearance.descriptionText, minHeight: 110)

@@ -13,6 +13,12 @@ final class SailuneAIChatViewModel {
     private var requestTask: Task<Void, Never>?
     private var preparationID: UUID?
     private var canSave = true
+    private(set) var isReadOnly = false
+
+    func setReadOnly(_ value: Bool) {
+        isReadOnly = value
+        if value { stopRequest() }
+    }
 
     var messages: [SailuneAIMessage] {
         conversations.first(where: { $0.id == selectedConversationID })?.messages ?? []
@@ -40,7 +46,7 @@ final class SailuneAIChatViewModel {
     }
 
     func newConversation() {
-        guard canSave else { return }
+        guard !isReadOnly, canSave else { return }
         if messages.isEmpty { return }
         stopRequest()
         let conversation = SailuneAIConversation()
@@ -51,11 +57,15 @@ final class SailuneAIChatViewModel {
         guard canSave, conversations.contains(where: { $0.id == conversationID }),
               conversationID != selectedConversationID else { return }
         stopRequest()
-        _ = commit(conversations, selectedID: conversationID)
+        if isReadOnly {
+            selectedConversationID = conversationID
+        } else {
+            _ = commit(conversations, selectedID: conversationID)
+        }
     }
 
     func deleteConversation(_ conversationID: UUID) {
-        guard canSave, conversations.contains(where: { $0.id == conversationID }) else { return }
+        guard !isReadOnly, canSave, conversations.contains(where: { $0.id == conversationID }) else { return }
         if conversationID == selectedConversationID { stopRequest() }
         var remaining = conversations.filter { $0.id != conversationID }
         if remaining.isEmpty { remaining = [SailuneAIConversation()] }
@@ -73,7 +83,7 @@ final class SailuneAIChatViewModel {
 
     func sendValidated(prompt: String, attachment: SailuneAISectionAttachment? = nil) async -> Bool {
         let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedPrompt.isEmpty, !isLoading, canSave,
+        guard !isReadOnly, !trimmedPrompt.isEmpty, !isLoading, canSave,
               let index = conversations.firstIndex(where: { $0.id == selectedConversationID }) else { return false }
         if let attachment,
            attachment.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -148,7 +158,7 @@ final class SailuneAIChatViewModel {
 
     private func send(prompt: String, sectionContent: String?, attachment: SailuneAISectionAttachment?) -> Bool {
         let trimmedPrompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedPrompt.isEmpty, !isLoading, canSave,
+        guard !isReadOnly, !trimmedPrompt.isEmpty, !isLoading, canSave,
               let index = conversations.firstIndex(where: { $0.id == selectedConversationID }) else { return false }
 
         if let attachment, attachment.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {

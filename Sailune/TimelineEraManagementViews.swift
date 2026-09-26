@@ -10,6 +10,7 @@ struct EraManagerPopover: View {
     @Query private var eras: [Era]
     @Environment(\.modelContext) private var modelContext
     @Environment(StoryPlanningStore.self) private var planningStore
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Environment(ItemCopyStore.self) private var copyStore
     @Environment(V5SettingsStore.self) private var settingsStore
     @Environment(AbilityProgressStore.self) private var abilityStore
@@ -44,13 +45,16 @@ struct EraManagerPopover: View {
                 }
             }
             .frame(maxHeight: 260)
-            Button { addEra() } label: {
-                Label("新增紀元", systemImage: SailuneSymbol.addCircle.systemName)
+            .disabledWhenBookIsCompleted()
+            if !bookIsReadOnly {
+                Button { addEra() } label: {
+                    Label("新增紀元", systemImage: SailuneSymbol.addCircle.systemName)
+                }.buttonStyle(PlanningActionStyle())
             }
-            .buttonStyle(PlanningActionStyle())
             HStack {
                 Spacer()
                 Button(SailuneActionCopy.done) {
+                    guard !bookIsReadOnly else { dismiss(); return }
                     do { try modelContext.save() }
                     catch { saveError = error.localizedDescription; return }
                     dismiss()
@@ -73,6 +77,7 @@ struct EraManagerPopover: View {
     }
 
     private func addEra() {
+        guard !bookIsReadOnly else { return }
         let next = (eras.map(\.startOrdinal).max() ?? 0) + 1
         let e = Era(name: "", color: "#888888", startOrdinal: next)
         modelContext.insert(e)
@@ -94,6 +99,7 @@ struct EraManagerPopover: View {
     }
 
     private func performDeleteEra(_ era: Era) {
+        guard !bookIsReadOnly else { return }
         saveError = nil
         do {
             let outcome = try CrossStoreDeletionCoordinator.deleteEra(
@@ -169,6 +175,7 @@ private let eraPalette: [String] = [
 
 @MainActor
 struct EraChangePopover: View {
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     private static let logger = Logger(subsystem: "com.MooNest.Sailune", category: "EraChangePopover")
 
     let book: Book
@@ -206,6 +213,7 @@ struct EraChangePopover: View {
             }
             if let saveError { Text(saveError).font(.caption).foregroundStyle(.red) }
             TextField("新年號名", text: $name)
+                .disabled(bookIsReadOnly)
             Text("年號色").font(.caption).foregroundStyle(.secondary)
             HStack(spacing: 8) {
                 ForEach(eraPalette, id: \.self) { hex in
@@ -216,12 +224,14 @@ struct EraChangePopover: View {
                             .overlay(Circle().stroke(selectedHex == hex ? Color.primary : .clear, lineWidth: 2))
                     }
                     .buttonStyle(.plain)
+                    .disabled(bookIsReadOnly)
                 }
             }
             HStack {
                 Button(SailuneActionCopy.cancel) { dismiss() }
                 Spacer()
                 Button("確認改元") {
+                    guard !bookIsReadOnly else { return }
                     do {
                     _ = try TimelineEngine.EraChange.perform(
                         for: book,
@@ -245,6 +255,7 @@ struct EraChangePopover: View {
 @MainActor
 struct EraEditPopover: View {
     @Bindable var era: Era
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @State private var saveError: String?
@@ -253,7 +264,7 @@ struct EraEditPopover: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("編輯年號").font(.system(.headline, design: .serif))
             if let saveError { Text(saveError).font(.caption).foregroundStyle(.red) }
-            TextField("年號名", text: $era.name)
+            TextField("年號名", text: $era.name).disabled(bookIsReadOnly)
             Text("年號色").font(.caption).foregroundStyle(.secondary)
             HStack(spacing: 8) {
                 ForEach(eraPalette, id: \.self) { hex in
@@ -273,6 +284,7 @@ struct EraEditPopover: View {
                     catch { saveError = error.localizedDescription; return }
                     dismiss()
                 }
+                .disabled(bookIsReadOnly)
             }
         }
         .padding(16)

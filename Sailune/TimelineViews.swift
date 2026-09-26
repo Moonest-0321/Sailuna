@@ -269,6 +269,7 @@ struct TimelinePanelView: View {
     let allowsWideLayout: Bool
     var onOpenSection: ((Section) -> Void)?
     var onOpenPlanningRecord: ((PlanningRecordSourceReference) -> Void)? = nil
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Environment(\.modelContext) private var modelContext
     @Environment(StoryPlanningStore.self) private var planningStore
     @Environment(AbilityProgressStore.self) private var abilityStore
@@ -431,7 +432,7 @@ struct TimelinePanelView: View {
             TextField("副軸名稱", text: $newSecondaryName)
             Button(SailuneActionCopy.cancel, role: .cancel) { newSecondaryName = "" }
             Button(SailuneActionCopy.add) { commitAddSecondary() }
-                .disabled(newSecondaryName.trimmingCharacters(in: .whitespaces).isEmpty)
+                .disabled(bookIsReadOnly || newSecondaryName.trimmingCharacters(in: .whitespaces).isEmpty)
         } message: {
             Text("副軸用來裝前史、伏筆或規劃中劇情，與主軸並存。")
         }
@@ -442,6 +443,7 @@ struct TimelinePanelView: View {
             TextField("副軸名稱", text: $renameBuffer)
             Button(SailuneActionCopy.cancel, role: .cancel) { pendingRenameTimeline = nil }
             Button(SailuneActionCopy.save) {
+                guard !bookIsReadOnly else { return }
                 t.name = renameBuffer
                 do { try modelContext.save() }
                 catch { operationError = error.localizedDescription; return }
@@ -581,7 +583,7 @@ struct TimelinePanelView: View {
             Button("只新增日期節點", systemImage: "mappin.circle", action: openAddNode)
         }
             .buttonStyle(PlanningActionStyle(prominent: true))
-            .disabled(selectedTimeline == nil)
+            .disabled(bookIsReadOnly || selectedTimeline == nil)
             .help(selectedTimeline == nil ? "請先選擇時間軸" : "新增事件或日期節點")
     }
 
@@ -591,14 +593,16 @@ struct TimelinePanelView: View {
             showingEraManager = true
         }
             .help("新增或編輯紀元")
+            .disabled(bookIsReadOnly)
         Button("新增副軸", systemImage: SailuneSymbol.add.systemName) {
             newSecondaryName = ""
             showingAddSecondary = true
         }
+        .disabled(bookIsReadOnly)
         Button("改元", systemImage: "calendar.badge.plus") {
             showingEraChange = true
         }
-            .disabled(!isPrimarySelected)
+            .disabled(bookIsReadOnly || !isPrimarySelected)
             .help(isPrimarySelected ? "建立新紀元並推進主軸" : "請切換至主軸後改元")
     }
 
@@ -731,6 +735,7 @@ struct TimelinePanelView: View {
     }
 
     private func performDeleteEvent(_ event: Event) {
+        guard !bookIsReadOnly else { return }
         do {
             try CrossStoreDeletionCoordinator.deleteEvent(
                 event,
@@ -1030,6 +1035,7 @@ struct TimelinePanelView: View {
                     Label(SailuneActionCopy.addEvent, systemImage: SailuneSymbol.addCircle.systemName)
                 }
                 .buttonStyle(PlanningActionStyle(prominent: true))
+                .disabled(bookIsReadOnly)
                 .padding(.leading, 4).padding(.top, 2)
             }
         }
@@ -1080,6 +1086,7 @@ struct TimelinePanelView: View {
             SailuneFormTextField(title: "事件標題", text: $newEventTitle)
                 .font(.caption)
             TextField("詳情（選填）", text: $newEventDetail, axis: .vertical)
+                .disabled(bookIsReadOnly)
                 .textFieldStyle(.roundedBorder).font(.caption).lineLimit(2...3)
 
             VStack(alignment: .leading, spacing: 4) {
@@ -1133,6 +1140,7 @@ struct TimelinePanelView: View {
     }
 
     private func commitAddEvent(to cell: TimelineCell) {
+        guard !bookIsReadOnly else { return }
         guard let node = cell.nodes.first else { return }
         let ev = Event(title: newEventTitle, detail: newEventDetail)
         modelContext.insert(ev)
@@ -1167,6 +1175,7 @@ struct TimelinePanelView: View {
     }
 
     private func performDeleteNodes() {
+        guard !bookIsReadOnly else { return }
         do {
             try CrossStoreDeletionCoordinator.deleteNodes(
                 pendingDeleteNodes,
@@ -1183,6 +1192,7 @@ struct TimelinePanelView: View {
     }
 
     private func commitAddSecondary() {
+        guard !bookIsReadOnly else { return }
         let name = newSecondaryName.trimmingCharacters(in: .whitespaces)
         guard !name.isEmpty else { return }
         do {
@@ -1198,6 +1208,7 @@ struct TimelinePanelView: View {
     }
 
     private func performDeleteTimeline(_ t: Timeline) {
+        guard !bookIsReadOnly else { return }
         if selectedTimelineID == t.id {
             selectedTimelineID = bookTimelines.first(where: \.isPrimary)?.id
         }
@@ -1217,6 +1228,7 @@ struct TimelinePanelView: View {
     }
 
     private func openAddNode() {
+        guard !bookIsReadOnly else { return }
         newNodeYearText = ""
         newNodeMonthText = ""
         newNodeDayText = ""
@@ -1286,6 +1298,7 @@ struct PlanningRecordCardView: View {
 }
 
 private struct TimelineEventCardView: View {
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     let event: Event
     let presentation: TimelineCardPresentation
     let onOpen: () -> Void
@@ -1314,6 +1327,7 @@ private struct TimelineEventCardView: View {
                 Image(systemName: SailuneSymbol.delete.systemName).foregroundStyle(.secondary)
             }
             .buttonStyle(.plain)
+            .disabled(bookIsReadOnly)
             .padding(8)
             .help("刪除事件卡片")
         }
@@ -1343,6 +1357,7 @@ struct TimelineEventCreationView: View {
     let startsFromOutline: Bool
     var outlineItemID: UUID? = nil
     var onCreated: (() -> Void)? = nil
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Environment(\.modelContext) private var modelContext
     @Environment(StoryPlanningStore.self) private var planningStore
     @Environment(\.dismiss) private var dismiss
@@ -1452,6 +1467,7 @@ struct TimelineEventCreationView: View {
     }
 
     private func commit() {
+        guard !bookIsReadOnly else { return }
         guard let timeline, let year = parsedYear else { return }
         let selectedEra = eras.first { $0.id == selectedEraID } ?? book.currentEra
         let node = Node(year: year, month: parsedMonth, day: parsedDay)
@@ -1501,6 +1517,7 @@ struct TimelineEventCreationView: View {
 private struct TimelineEventBindingControls: View {
     @Bindable var event: Event
     let book: Book
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Environment(StoryPlanningStore.self) private var planningStore
     @Environment(\.modelContext) private var modelContext
     @State private var selectedOutlineItemID: UUID?
@@ -1536,6 +1553,7 @@ private struct TimelineEventBindingControls: View {
                 Spacer()
                 Button("儲存卡片來源") { saveBinding() }
                     .buttonStyle(PlanningActionStyle(prominent: true))
+                    .disabled(bookIsReadOnly)
             }
         }
         .padding(10)
@@ -1549,6 +1567,7 @@ private struct TimelineEventBindingControls: View {
     }
 
     private func saveBinding() {
+        guard !bookIsReadOnly else { return }
         let section = selectedOutlineItemID
             .flatMap { planningStore.anchor(outlineItemID: $0) }
             .flatMap { anchor in BookStructure.orderedSections(in: book).first { $0.id == anchor.sectionID } }
@@ -1574,6 +1593,7 @@ private struct EventRow: View {
     @Bindable var event: Event
     let allCharacters: [Character]
     let onDelete: () -> Void
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Environment(\.modelContext) private var modelContext
     @State private var hovering = false
     @State private var editing = false
@@ -1585,11 +1605,13 @@ private struct EventRow: View {
             if let saveError { Text(saveError).font(.caption).foregroundStyle(.red) }
             if editing {
                 SailuneFormTextField(title: "事件標題", text: $event.title)
+                    .disabled(bookIsReadOnly)
                     .font(.caption)
                     .onChange(of: event.title) { _, value in
                         if value.count > 10 { event.title = String(value.prefix(10)) }
                     }
                 TextField("詳情（選填）", text: $event.detail, axis: .vertical)
+                    .disabled(bookIsReadOnly)
                     .textFieldStyle(.roundedBorder).font(.caption2).lineLimit(2...4)
 
                 VStack(alignment: .leading, spacing: 4) {
@@ -1626,6 +1648,7 @@ private struct EventRow: View {
                 HStack {
                     Spacer()
                     Button(SailuneActionCopy.done) {
+                        guard !bookIsReadOnly else { return }
                         event.characters = allCharacters.filter { selectedIDs.contains($0.id.uuidString) }
                         do { try modelContext.save(); saveError = nil }
                         catch { saveError = error.localizedDescription; return }
@@ -1633,6 +1656,7 @@ private struct EventRow: View {
                         hovering = false
                     }
                     .buttonStyle(PlanningActionStyle(prominent: true))
+                    .disabled(bookIsReadOnly)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } else {
@@ -1651,7 +1675,7 @@ private struct EventRow: View {
                     }
                     Spacer(minLength: 4)
                     VStack(alignment: .leading, spacing: 6) {
-                        Button {
+                        if !bookIsReadOnly { Button {
                             event.isVisible.toggle()
                             do { try modelContext.save(); saveError = nil }
                             catch { event.isVisible.toggle(); saveError = error.localizedDescription }
@@ -1659,20 +1683,20 @@ private struct EventRow: View {
                             Label(event.isVisible ? "主軸：顯示中" : "主軸：已隱藏", systemImage: event.isVisible ? "eye.fill" : "eye.slash")
                         }
                         .buttonStyle(PlanningActionStyle())
-                        .help(SailuneAccessibilityCopy.showOnMainTimeline)
-                        Button {
+                        .help(SailuneAccessibilityCopy.showOnMainTimeline) }
+                        if !bookIsReadOnly { Button {
                             selectedIDs = Set(event.characters.map { $0.id.uuidString })
                             editing = true
                         } label: {
                             Label("編輯事件", systemImage: SailuneSymbol.edit.systemName)
                         }
                         .buttonStyle(PlanningActionStyle())
-                        .help("編輯事件")
-                        Button(action: onDelete) {
+                        .help("編輯事件") }
+                        if !bookIsReadOnly { Button(action: onDelete) {
                             Label("刪除事件", systemImage: SailuneSymbol.delete.systemName).foregroundStyle(.red)
                         }
                         .buttonStyle(PlanningActionStyle())
-                        .help("刪除事件")
+                        .help("刪除事件") }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1697,6 +1721,7 @@ private struct AddNodePopover: View {
     @Binding var monthText: String
     @Binding var dayText: String
     @Binding var eraID: UUID?
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @State private var saveError: String?
@@ -1801,7 +1826,7 @@ private struct AddNodePopover: View {
                 Spacer()
                 Button(SailuneActionCopy.add) { commit() }
                     .buttonStyle(PlanningActionStyle(prominent: true))
-                    .disabled(!canSave || target == nil)
+                    .disabled(bookIsReadOnly || !canSave || target == nil)
             }
         }
         .padding(16)
@@ -1810,6 +1835,7 @@ private struct AddNodePopover: View {
     }
 
     private func commit() {
+        guard !bookIsReadOnly else { return }
         guard let y = parsedYear, let target else { return }
         let era = eras.first { $0.id == eraID } ?? book.currentEra
         let node = Node(year: y, month: parsedMonth, day: parsedDay)

@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 
 struct CompositionAwareTextField: NSViewRepresentable {
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Binding var text: String
     let placeholder: String
     let font: NSFont
@@ -25,7 +26,7 @@ struct CompositionAwareTextField: NSViewRepresentable {
         textView.backgroundColor = .clear
         textView.drawsBackground = false
         textView.isRichText = false
-        textView.isEditable = true
+        textView.isEditable = !bookIsReadOnly
         textView.isSelectable = true
         textView.isHorizontallyResizable = false
         textView.isVerticallyResizable = false
@@ -39,6 +40,7 @@ struct CompositionAwareTextField: NSViewRepresentable {
 
     func updateNSView(_ textView: CompositionAwareTextView, context: Context) {
         context.coordinator.parent = self
+        textView.isEditable = !bookIsReadOnly
         textView.font = font
         if textView.string != text, textView.window?.firstResponder !== textView {
             textView.string = text

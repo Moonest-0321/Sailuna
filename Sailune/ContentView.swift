@@ -289,6 +289,7 @@ struct ContentView: View {
                 books: books,
                 statusForBook: { publicationStore.status(for: $0) },
                 onAdvance: advancePublication,
+                onResume: resumePublication,
                 writingStats: writingStatsStore
             )
         case .achievements:
@@ -419,6 +420,14 @@ struct ContentView: View {
             try publicationStore.advance(bookID)
         } catch {
             bookDeletionError = "無法更新書籍發布狀態：\(error.localizedDescription)"
+        }
+    }
+
+    private func resumePublication(_ bookID: UUID) {
+        do {
+            try publicationStore.resume(bookID)
+        } catch {
+            bookDeletionError = "無法恢復《\(books.first(where: { $0.id == bookID })?.title ?? "作品")》連載：\(error.localizedDescription)"
         }
     }
 

@@ -5,6 +5,7 @@ import AppKit
 struct CharacterSummarySectionView: View {
     let character: Character
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Environment(AbilityProgressStore.self) private var abilityStore
     @Query private var allSummaries: [CharacterSummary]
     @Query(sort: \CharacterAlias.createdAt) private var allAliases: [CharacterAlias]
@@ -52,6 +53,7 @@ struct CharacterSummarySectionView: View {
                 }
             }
         }
+        .disabledWhenBookIsCompleted()
     }
 
     private func summaryPicker<Content: View>(_ title: String, automaticTitle: String, selection: Binding<UUID?>, @ViewBuilder content: () -> Content) -> some View {
@@ -143,6 +145,7 @@ struct CharacterSectionEmptyState: View {
 
 struct CharacterAliasSectionView: View {
     let character: Character
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     var onRename: (CharacterAlias, String, String) -> Void = { _, _, _ in }
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \CharacterAlias.createdAt) private var allAliases: [CharacterAlias]
@@ -159,10 +162,10 @@ struct CharacterAliasSectionView: View {
                     AliasRow(alias: alias, onRename: onRename, onDelete: { deleteAlias(alias) })
                 }
             }
-            Button { modelContext.insert(CharacterAlias(name: "新別名", character: character)) } label: {
+            if !bookIsReadOnly { Button { modelContext.insert(CharacterAlias(name: "新別名", character: character)) } label: {
                 Label("新增別名", systemImage: SailuneSymbol.add.systemName)
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.borderless) }
         }
         .alert(
             "無法刪除別名",
@@ -178,6 +181,7 @@ struct CharacterAliasSectionView: View {
     }
 
     private func deleteAlias(_ alias: CharacterAlias) {
+        guard !bookIsReadOnly else { return }
         NotificationCenter.default.post(name: .sailuneWillChangeCharacterReferences, object: nil)
         var changedSectionIDs = Set<UUID>()
         if let book = character.book {
@@ -219,6 +223,7 @@ struct CharacterAliasSectionView: View {
 }
 
 private struct AliasRow: View {
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Bindable var alias: CharacterAlias
     let onRename: (CharacterAlias, String, String) -> Void
     let onDelete: () -> Void
@@ -227,10 +232,11 @@ private struct AliasRow: View {
     var body: some View {
         HStack {
             TextField("別名", text: $alias.name)
+                .disabled(bookIsReadOnly)
                 .textFieldStyle(.roundedBorder)
                 .focused($nameFieldFocused)
             SailuneFormTextField(title: "備註", text: $alias.note)
-            Button(role: .destructive, action: onDelete) { Image(systemName: SailuneSymbol.delete.systemName) }.buttonStyle(.plain)
+            if !bookIsReadOnly { Button(role: .destructive, action: onDelete) { Image(systemName: SailuneSymbol.delete.systemName) }.buttonStyle(.plain) }
         }
         .onAppear { nameBeforeEditing = alias.name }
         .onChange(of: nameFieldFocused) { _, isFocused in
@@ -250,6 +256,7 @@ struct CharacterAbilitySectionView: View {
     let book: Book
     let onOpenAbility: (CharacterAbility) -> Void
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Query(sort: \CharacterAbility.createdAt) private var allAbilities: [CharacterAbility]
     @Environment(AbilityProgressStore.self) private var abilityStore
 
@@ -268,7 +275,7 @@ struct CharacterAbilitySectionView: View {
                     CharacterAbilityConnectionRow(connection: connection, book: book, onOpenAbility: onOpenAbility, onDelete: { abilityStore.deleteConnection(connection) })
                 }
             }
-            Menu {
+            if !bookIsReadOnly { Menu {
                 let connectedIDs = Set(connections.map(\.abilityID))
                 ForEach(abilities.filter { !connectedIDs.contains($0.id) }) { ability in
                     Button(ability.name.isEmpty ? "未命名能力" : ability.name) {
@@ -280,11 +287,13 @@ struct CharacterAbilitySectionView: View {
             }
             .buttonStyle(.borderless)
             .disabled(abilities.isEmpty)
+            }
         }
     }
 }
 
 private struct CharacterAbilityConnectionRow: View {
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Bindable var connection: CharacterAbilityConnection
     let book: Book
     let onOpenAbility: (CharacterAbility) -> Void
@@ -301,13 +310,14 @@ private struct CharacterAbilityConnectionRow: View {
                         .buttonStyle(.link)
                 } else { Text("未命名能力").fontWeight(.medium) }
                 Spacer()
-                Button(role: .destructive, action: onDelete) { Image(systemName: SailuneSymbol.delete.systemName) }.buttonStyle(.plain)
+                if !bookIsReadOnly { Button(role: .destructive, action: onDelete) { Image(systemName: SailuneSymbol.delete.systemName) }.buttonStyle(.plain) }
             }
-            Picker("目前等級", selection: Binding(get: { connection.currentLevelID }, set: { connection.currentLevelID = $0; abilityStore.save() })) {
+            Picker("目前等級", selection: Binding(get: { connection.currentLevelID }, set: { guard !bookIsReadOnly else { return }; connection.currentLevelID = $0; abilityStore.save() })) {
                 Text("未設定").tag(Optional<UUID>.none)
                 ForEach(levels) { Text($0.name.isEmpty ? "未命名等級" : $0.name).tag(Optional($0.id)) }
             }
-            CharacterAbilityTimelineEditor(connection: connection, book: book, levels: levels, history: history)
+            .disabled(bookIsReadOnly)
+            CharacterAbilityTimelineEditor(connection: connection, book: book, levels: levels, history: history).disabledWhenBookIsCompleted()
         }
         .padding(10)
         .background(SailuneTheme.subtleSurface, in: RoundedRectangle(cornerRadius: 8))
@@ -381,6 +391,7 @@ private struct CharacterAbilityTimelineEditor: View {
 struct CharacterPsychologySectionView: View {
     let character: Character
     let book: Book
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \CharacterPsychology.createdAt) private var allPsychologies: [CharacterPsychology]
     private var psychologies: [CharacterPsychology] { allPsychologies.filter { $0.character?.id == character.id } }
@@ -392,15 +403,17 @@ struct CharacterPsychologySectionView: View {
             } else {
                 ForEach(psychologies) { psychology in PsychologyRow(psychology: psychology, book: book, onDelete: { modelContext.delete(psychology) }) }
             }
-            Menu("新增心理資料") {
+            if !bookIsReadOnly { Menu("新增心理資料") {
                 Button("性格") { add(.personality) }
                 Button("價值觀") { add(.value) }
                 Button("動機") { add(.motivation) }
-            }.menuStyle(.borderlessButton)
+            }.menuStyle(.borderlessButton) }
         }
+        .disabledWhenBookIsCompleted()
     }
 
     private func add(_ kind: CharacterPsychologyKind) {
+        guard !bookIsReadOnly else { return }
         modelContext.insert(CharacterPsychology(kind: kind, content: "", character: character))
     }
 }
@@ -454,6 +467,7 @@ struct CharacterItemSectionView: View {
     let book: Book
     var onOpenItem: ((Item) -> Void)? = nil
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Environment(ItemCopyStore.self) private var copyStore
     @Query(sort: \Item.name) private var allItems: [Item]
     @State private var selectedItemID: UUID?
@@ -496,6 +510,7 @@ struct CharacterItemSectionView: View {
                         Text("選擇物品").tag(Optional<UUID>.none)
                         ForEach(bookItems) { item in Text(item.name.isEmpty ? "未命名物品" : item.name).tag(Optional(item.id)) }
                     }
+                    .disabled(bookIsReadOnly)
                     if selectedItem != nil {
                         Picker("副本", selection: Binding(get: { Optional<UUID>.none }, set: { id in
                             guard let id, let copy = availableCopies.first(where: { $0.id == id }) else { return }
@@ -505,6 +520,7 @@ struct CharacterItemSectionView: View {
                             Text(availableCopies.isEmpty ? "沒有可連接的副本" : "選擇副本").tag(Optional<UUID>.none)
                             ForEach(availableCopies) { copy in Text(copy.displayName(for: selectedItem!)).tag(Optional(copy.id)) }
                         }
+                        .disabled(bookIsReadOnly)
                     }
                     Text("只能連接既有物品與既有副本；建立、命名與改名請到物品設定。")
                         .font(.caption).foregroundStyle(.secondary)
@@ -514,11 +530,13 @@ struct CharacterItemSectionView: View {
     }
 
     private func removeHolder(from copy: ItemCopy) {
+        guard !bookIsReadOnly else { return }
         copyStore.setHolder(copyID: copy.id, characterID: nil)
     }
 }
 
 private struct ItemCopyCharacterRow: View {
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     let copy: ItemCopy
     let item: Item
     let onOpenItem: ((Item) -> Void)?
@@ -539,11 +557,13 @@ private struct ItemCopyCharacterRow: View {
                     .buttonStyle(.plain)
                     .help("前往物品設定")
                 }
-                Button(role: .destructive, action: onRemoveHolder) {
-                    Image(systemName: SailuneSymbol.removeHolder.systemName)
+                if !bookIsReadOnly {
+                    Button(role: .destructive, action: onRemoveHolder) {
+                        Image(systemName: SailuneSymbol.removeHolder.systemName)
+                    }
+                    .buttonStyle(.plain)
+                    .help(SailuneActionCopy.removeHolder)
                 }
-                .buttonStyle(.plain)
-                .help(SailuneActionCopy.removeHolder)
             }
             Text("物品設定：\(item.name.isEmpty ? "未命名物品" : item.name) · 數量 1")
                 .font(.caption)
@@ -558,6 +578,7 @@ private struct ItemCopyCharacterRow: View {
 struct CharacterRelationshipSectionView: View {
     let character: Character
     let book: Book
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Environment(\.modelContext) private var modelContext
     @Query private var allRelationships: [CharacterRelationship]
     @Query(sort: \Character.sortOrder) private var allCharacters: [Character]
@@ -578,13 +599,14 @@ struct CharacterRelationshipSectionView: View {
                     Text("選擇角色").tag(Optional<UUID>.none)
                     ForEach(targets) { Text($0.realName.isEmpty ? "未命名" : $0.realName).tag(Optional($0.id)) }
                 }
-                Button(SailuneActionCopy.addRelationship, action: addRelationship).disabled(selectedTargetID == nil)
+                if !bookIsReadOnly { Button(SailuneActionCopy.addRelationship, action: addRelationship).disabled(selectedTargetID == nil) }
             }
         }
+        .disabledWhenBookIsCompleted()
     }
 
     private func addRelationship() {
-        guard let selectedTargetID, let target = targets.first(where: { $0.id == selectedTargetID }) else { return }
+        guard !bookIsReadOnly, let selectedTargetID, let target = targets.first(where: { $0.id == selectedTargetID }) else { return }
         guard !allRelationships.contains(where: {
             $0.sourceCharacter?.id == character.id && $0.targetCharacter?.id == target.id
         }) else { return }
@@ -731,6 +753,7 @@ struct CharacterEventSectionView: View {
     let character: Character
     let book: Book
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Environment(StoryPlanningStore.self) private var planningStore
     @Environment(AbilityProgressStore.self) private var abilityStore
     @Environment(ItemCopyStore.self) private var copyStore
@@ -798,10 +821,9 @@ struct CharacterEventSectionView: View {
                     CharacterEventRow(event: event, character: character, book: book, allCharacters: bookCharacters) { deleteEvent(event) }
                 }
             }
-            Button(action: addEvent) {
+            if !bookIsReadOnly { Button(action: addEvent) {
                 Label(SailuneActionCopy.addEvent, systemImage: SailuneSymbol.add.systemName)
-            }
-            .buttonStyle(.borderless)
+            }.buttonStyle(.borderless) }
         }
         .alert("無法刪除事件", isPresented: Binding(
             get: { deletionErrorMessage != nil },
@@ -812,6 +834,7 @@ struct CharacterEventSectionView: View {
     }
 
     private func addEvent() {
+        guard !bookIsReadOnly else { return }
         let event = Event(title: "新事件")
         let node = Node(year: 0)
         node.timeline = book.timelines.first(where: \.isPrimary) ?? book.timelines.first
@@ -825,6 +848,7 @@ struct CharacterEventSectionView: View {
     }
 
     private func deleteEvent(_ event: Event) {
+        guard !bookIsReadOnly else { return }
         do {
             let outcome = try CrossStoreDeletionCoordinator.deleteEvent(
                 event, in: modelContext, planningStore: planningStore
@@ -840,6 +864,7 @@ struct CharacterEventSectionView: View {
 }
 
 private struct CharacterEventRow: View {
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Bindable var event: Event
     let character: Character
     let book: Book
@@ -901,5 +926,6 @@ private struct CharacterEventRow: View {
         }
         .padding(10)
         .background(SailuneTheme.subtleSurface, in: RoundedRectangle(cornerRadius: 8))
+        .disabledWhenBookIsCompleted()
     }
 }

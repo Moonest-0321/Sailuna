@@ -21,6 +21,7 @@ enum BookOutlinePresentation {
 struct BookBackgroundView: View {
     let book: Book
     @Environment(StoryPlanningStore.self) private var planningStore
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @State private var profile: BookPlanningProfile?
     @State private var errorMessage: String?
 
@@ -28,6 +29,8 @@ struct BookBackgroundView: View {
         Group {
             if let profile {
                 BookBackgroundEditor(profile: profile, errorMessage: $errorMessage)
+            } else if bookIsReadOnly {
+                ContentUnavailableView("尚未設定故事背景", systemImage: "text.book.closed")
             } else {
                 ProgressView("載入故事背景…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -39,7 +42,9 @@ struct BookBackgroundView: View {
 
     private func loadProfile() {
         do {
-            profile = try planningStore.ensureProfile(bookID: book.id)
+            profile = bookIsReadOnly
+                ? planningStore.profile(bookID: book.id)
+                : try planningStore.ensureProfile(bookID: book.id)
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -49,6 +54,7 @@ struct BookBackgroundView: View {
 private struct BookBackgroundEditor: View {
     @Bindable var profile: BookPlanningProfile
     @Environment(StoryPlanningStore.self) private var planningStore
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Binding var errorMessage: String?
     @State private var content = StoryBackgroundContent()
 
@@ -67,6 +73,7 @@ private struct BookBackgroundEditor: View {
             Text("其他背景")
                 .font(.subheadline.weight(.semibold))
             TextEditor(text: binding(for: \StoryBackgroundContent.otherBackground))
+                .disabled(bookIsReadOnly)
                 .font(.body)
                 .scrollContentBackground(.hidden)
                 .padding(8)
@@ -74,8 +81,10 @@ private struct BookBackgroundEditor: View {
                 .frame(minHeight: 180)
             HStack {
                 Spacer()
-                Button(SailuneActionCopy.save, systemImage: SailuneSymbol.save.systemName, action: save)
-                    .buttonStyle(.borderedProminent)
+                if !bookIsReadOnly {
+                    Button(SailuneActionCopy.save, systemImage: SailuneSymbol.save.systemName, action: save)
+                        .buttonStyle(.borderedProminent)
+                }
             }
             Spacer(minLength: 0)
         }
@@ -87,6 +96,7 @@ private struct BookBackgroundEditor: View {
         VStack(alignment: .leading, spacing: 4) {
             Text(title).font(.subheadline.weight(.semibold))
             TextEditor(text: text)
+                .disabled(bookIsReadOnly)
                 .scrollContentBackground(.hidden)
                 .padding(6)
                 .background(SailuneTheme.storyBackgroundEditorSurface, in: RoundedRectangle(cornerRadius: 8))
@@ -104,6 +114,7 @@ private struct BookBackgroundEditor: View {
     }
 
     private func save() {
+        guard !bookIsReadOnly else { return }
         do {
             profile.backgroundText = content.encodedValue()
             profile.updatedAt = Date()
@@ -1113,6 +1124,7 @@ private struct TimelineOutlineItemCard: View {
 
 @MainActor
 struct BookOutlineWorkspaceView: View {
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     let book: Book
     let presentation: BookOutlinePresentation
     var onOpenOutlineItem: ((OutlineItem, OutlineItemAnchor) -> Void)? = nil
@@ -1198,6 +1210,7 @@ struct BookOutlineWorkspaceView: View {
                 }
                 .controlSize(.large)
                 .help("新增故事線")
+                .disabled(bookIsReadOnly)
 
                 if presentation == .narrative, let selectedStoryLine {
                     Button(role: .destructive) { deleteStoryLineTarget = selectedStoryLine } label: {
@@ -1205,6 +1218,7 @@ struct BookOutlineWorkspaceView: View {
                     }
                     .buttonStyle(PlanningActionStyle())
                     .help(SailuneActionCopy.deleteStoryLine)
+                    .disabled(bookIsReadOnly)
                 }
             }
         }
@@ -1224,6 +1238,7 @@ struct BookOutlineWorkspaceView: View {
                     Button(kind.rawValue) { createStoryLine(kind) }
                 }
             }
+            .disabled(bookIsReadOnly)
         }
     }
 
@@ -1253,6 +1268,7 @@ struct BookOutlineWorkspaceView: View {
     }
 
     private func createStoryLine(_ kind: OutlineStoryLineKind) {
+        guard !bookIsReadOnly else { return }
         do {
             selectedStoryLineID = try planningStore.createStoryLine(bookID: book.id, kind: kind).id
         } catch {
@@ -1261,6 +1277,7 @@ struct BookOutlineWorkspaceView: View {
     }
 
     private func deleteStoryLine(_ storyLine: OutlineStoryLine) {
+        guard !bookIsReadOnly else { return }
         do {
             try planningStore.deleteStoryLine(storyLine)
             deleteStoryLineTarget = nil
@@ -1273,6 +1290,7 @@ struct BookOutlineWorkspaceView: View {
 }
 
 private struct StoryLineContentView: View {
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     let book: Book
     @Bindable var storyLine: OutlineStoryLine
     let presentation: BookOutlinePresentation
@@ -1326,6 +1344,7 @@ private struct StoryLineContentView: View {
                     createStage()
                 }
                 .buttonStyle(PlanningActionStyle())
+                .disabled(bookIsReadOnly)
             }
         }
     }
@@ -1344,6 +1363,7 @@ private struct StoryLineContentView: View {
             )
             Button("建立第一個階段", action: createStage)
                 .buttonStyle(PlanningActionStyle(prominent: true))
+                .disabled(bookIsReadOnly)
         } else {
             ForEach(stages) { stage in
                 StageSectionView(
@@ -1385,6 +1405,7 @@ private struct StoryLineContentView: View {
             createItem(stage: stage)
         }
         .buttonStyle(PlanningActionStyle(prominent: true))
+        .disabled(bookIsReadOnly)
     }
 
     private var storyLineTitleBinding: Binding<String> {
@@ -1398,10 +1419,12 @@ private struct StoryLineContentView: View {
     }
 
     private func createStage() {
+        guard !bookIsReadOnly else { return }
         showingStageStartSheet = true
     }
 
     private func createItem(stage: OutlineStage? = nil) {
+        guard !bookIsReadOnly else { return }
         do {
             let defaultStage = stage ?? (storyLine.kind == .main ? stages.last : nil)
             _ = try planningStore.createOutlineItem(storyLine: storyLine, stage: defaultStage)
@@ -1411,6 +1434,7 @@ private struct StoryLineContentView: View {
     }
 
     private func save() {
+        guard !bookIsReadOnly else { return }
         do {
             try planningStore.saveChanges()
         } catch {
@@ -1456,6 +1480,7 @@ private struct TimelineStoryLinesView: View {
 }
 
 private struct StageStartEditorSheet: View {
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     let book: Book
     let storyLine: OutlineStoryLine
     var stage: OutlineStage? = nil
@@ -1527,6 +1552,7 @@ private struct StageStartEditorSheet: View {
     }
 
     private func create() {
+        guard !bookIsReadOnly else { return }
         guard let volumeID = selectedVolumeID,
               let volume = volumes.first(where: { $0.id == volumeID }) else { return }
         let section = selectedSection
@@ -1574,6 +1600,7 @@ private struct StageStartEditorSheet: View {
 }
 
 private struct StageSectionView: View {
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     let book: Book
     @Bindable var stage: OutlineStage
     let storyLine: OutlineStoryLine
@@ -1600,6 +1627,7 @@ private struct StageSectionView: View {
                 Image(systemName: "rectangle.stack")
                     .foregroundStyle(.secondary)
                 TextField("階段名稱", text: stageTitleBinding)
+                    .disabled(bookIsReadOnly)
                     .font(.subheadline.weight(.semibold))
                     .textFieldStyle(.plain)
                     .onSubmit(save)
@@ -1617,6 +1645,7 @@ private struct StageSectionView: View {
                 showingStartEditor = true
             }
             .buttonStyle(PlanningActionStyle())
+            .disabled(bookIsReadOnly)
             if isExpanded {
                 ForEach(items) { item in
                     OutlineItemEditor(
@@ -1630,6 +1659,7 @@ private struct StageSectionView: View {
                 }
                 Button(SailuneActionCopy.addOutlineItem, systemImage: SailuneSymbol.add.systemName, action: createItem)
                     .buttonStyle(PlanningActionStyle(prominent: true))
+                    .disabled(bookIsReadOnly)
             }
         }
         .padding(10)
@@ -1680,6 +1710,7 @@ private struct StageSectionView: View {
     }
 
     private func save() {
+        guard !bookIsReadOnly else { return }
         do {
             try planningStore.saveChanges()
         } catch {
@@ -1688,6 +1719,7 @@ private struct StageSectionView: View {
     }
 
     private func createItem() {
+        guard !bookIsReadOnly else { return }
         do {
             _ = try planningStore.createOutlineItem(storyLine: storyLine, stage: stage)
         } catch {
@@ -1696,6 +1728,7 @@ private struct StageSectionView: View {
     }
 
     private func deleteStage() {
+        guard !bookIsReadOnly else { return }
         do {
             try planningStore.deleteStage(stage)
         } catch {
@@ -1705,6 +1738,7 @@ private struct StageSectionView: View {
 }
 
 private struct UnassignedStageSectionView: View {
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     let book: Book
     let storyLine: OutlineStoryLine
     let presentation: BookOutlinePresentation
@@ -1728,6 +1762,7 @@ private struct UnassignedStageSectionView: View {
                 }
                 Button(SailuneActionCopy.addOutlineItem, systemImage: SailuneSymbol.add.systemName, action: createItem)
                     .buttonStyle(PlanningActionStyle(prominent: true))
+                    .disabled(bookIsReadOnly)
             }
         }
         .padding(10)
@@ -1735,6 +1770,7 @@ private struct UnassignedStageSectionView: View {
     }
 
     private func createItem() {
+        guard !bookIsReadOnly else { return }
         do {
             _ = try planningStore.createOutlineItem(storyLine: storyLine)
         } catch {
@@ -1744,6 +1780,7 @@ private struct UnassignedStageSectionView: View {
 }
 
 private struct OutlineItemEditor: View {
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     let book: Book
     @Bindable var item: OutlineItem
     let presentation: BookOutlinePresentation
@@ -1790,10 +1827,12 @@ private struct OutlineItemEditor: View {
             VStack(alignment: .leading, spacing: 8) {
                 DisclosureGroup(isExpanded: $isExpanded) {
                 TextField("大綱標題", text: titleBinding)
+                    .disabled(bookIsReadOnly)
                     .font(.subheadline.weight(.semibold))
                     .textFieldStyle(.plain)
                     .onSubmit(save)
                 TextField("內容（選填）", text: detailBinding, axis: .vertical)
+                    .disabled(bookIsReadOnly)
                     .lineLimit(2...5)
                     .textFieldStyle(.plain)
 
@@ -1878,11 +1917,13 @@ private struct OutlineItemEditor: View {
                     Spacer()
                     Button(SailuneActionCopy.save, systemImage: SailuneSymbol.save.systemName, action: save)
                     .buttonStyle(PlanningActionStyle(prominent: true))
+                    .disabled(bookIsReadOnly)
                     Button(role: .destructive) { showingDeleteConfirmation = true } label: {
                         Label("刪除項目", systemImage: SailuneSymbol.delete.systemName)
                     }
                     .buttonStyle(PlanningActionStyle())
                     .help("刪除大綱項目")
+                    .disabled(bookIsReadOnly)
                 }
                 } label: {
                     HStack(alignment: .firstTextBaseline, spacing: 8) {
@@ -1919,6 +1960,7 @@ private struct OutlineItemEditor: View {
 
     private var manualStatusBinding: Binding<OutlineItemStatus> {
         Binding(get: { item.status }, set: { newValue in
+            guard !bookIsReadOnly else { return }
             do { try planningStore.setManualStatus(item, to: newValue) }
             catch { errorMessage = error.localizedDescription }
         })
@@ -1990,11 +2032,13 @@ private struct OutlineItemEditor: View {
     }
 
     private func update(_ change: () -> Void) {
+        guard !bookIsReadOnly else { return }
         change()
         item.updatedAt = Date()
     }
 
     private func save() {
+        guard !bookIsReadOnly else { return }
         do {
             try planningStore.saveChanges()
         } catch {
@@ -2003,6 +2047,7 @@ private struct OutlineItemEditor: View {
     }
 
     private func deleteItem() {
+        guard !bookIsReadOnly else { return }
         do {
             try planningStore.deleteOutlineItem(item)
         } catch {
@@ -2011,6 +2056,7 @@ private struct OutlineItemEditor: View {
     }
 
     private func move(to stage: OutlineStage?) {
+        guard !bookIsReadOnly else { return }
         do {
             try planningStore.moveOutlineItem(item, to: stage)
         } catch {
@@ -2019,16 +2065,19 @@ private struct OutlineItemEditor: View {
     }
 
     private func place(_ kind: OutlineItemPlacementKind, after target: OutlineItem? = nil) {
+        guard !bookIsReadOnly else { return }
         do { try planningStore.setPlacement(item, kind: kind, after: target) }
         catch { errorMessage = error.localizedDescription }
     }
 
     private func setLegacyManualStatus(_ status: OutlineItemStatus) {
+        guard !bookIsReadOnly else { return }
         do { try planningStore.setManualStatus(item, to: status) }
         catch { errorMessage = error.localizedDescription }
     }
 
     private func reorder(earlier: Bool) {
+        guard !bookIsReadOnly else { return }
         do { try planningStore.moveManualItem(item, earlier: earlier) }
         catch { errorMessage = error.localizedDescription }
     }

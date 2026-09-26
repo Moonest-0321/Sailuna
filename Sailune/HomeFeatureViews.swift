@@ -47,6 +47,7 @@ struct StartPublishingView: View {
     let books: [Book]
     let statusForBook: (UUID) -> BookStatus
     let onAdvance: (UUID) -> Void
+    let onResume: (UUID) -> Void
     let writingStats: BookWritingStatsStore
     @State private var selectedBookID: UUID?
 
@@ -77,7 +78,10 @@ struct StartPublishingView: View {
 
                                 Text(status.publicationTitle)
                                     .foregroundStyle(.secondary)
-                                if status != .completed {
+                                if status == .completed {
+                                    Button("恢復連載") { onResume(book.id) }
+                                        .accessibilityLabel("恢復《\(book.title)》連載")
+                                } else {
                                     Button(status == .draft ? "發布" : "完結") {
                                         onAdvance(book.id)
                                     }

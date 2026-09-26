@@ -10,6 +10,7 @@ private enum MapNameOperation: Identifiable {
 
 struct MapManagementView: View {
     let bookID: UUID
+    var isReadOnly: Bool = false
     @Binding var selectedLevel: MapLevel
     @Binding var selectedMapID: UUID?
     let onSelectionChanged: () -> Void
@@ -36,7 +37,9 @@ struct MapManagementView: View {
                     Text(map.name)
                     Spacer()
                     Button(SailuneActionCopy.rename) { nameText = map.name; nameOperation = .rename(map.id) }
+                        .disabled(isReadOnly)
                     Button(SailuneActionCopy.delete, role: .destructive) { mapToDelete = map }
+                        .disabled(isReadOnly)
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { selectedMapID = map.id }
@@ -46,6 +49,7 @@ struct MapManagementView: View {
 
             HStack {
                 Button { nameText = ""; nameOperation = .add } label: { Label("新增地圖", systemImage: SailuneSymbol.add.systemName) }
+                    .disabled(isReadOnly)
                 Spacer()
                 Button(SailuneActionCopy.done) { onSelectionChanged(); dismiss() }
             }
@@ -73,6 +77,7 @@ struct MapManagementView: View {
     }
 
     private func performNameOperation() {
+        guard !isReadOnly else { return }
         do {
             switch nameOperation {
             case .add:
@@ -87,7 +92,7 @@ struct MapManagementView: View {
     }
 
     private func deleteSelectedMap() {
-        guard let mapToDelete else { return }
+        guard !isReadOnly, let mapToDelete else { return }
         let deletedMapID = mapToDelete.id
         do {
             try settingsStore.deleteMap(mapToDelete)
@@ -99,6 +104,7 @@ struct MapManagementView: View {
 
 struct MapVersionManagementView: View {
     let map: BookMap
+    var isReadOnly: Bool = false
     @Binding var selectedVersionID: UUID?
     let onSelectionChanged: () -> Void
 
@@ -120,8 +126,9 @@ struct MapVersionManagementView: View {
                     Text(version.name)
                     Spacer()
                     Button(SailuneActionCopy.rename) { nameText = version.name; nameOperation = .rename(version.id) }
+                        .disabled(isReadOnly)
                     Button(SailuneActionCopy.delete, role: .destructive) { versionToDelete = version }
-                        .disabled(versions.count <= 1)
+                        .disabled(isReadOnly || versions.count <= 1)
                 }
                 .contentShape(Rectangle())
                 .onTapGesture { selectedVersionID = version.id }
@@ -130,6 +137,7 @@ struct MapVersionManagementView: View {
             .frame(minHeight: 210)
             HStack {
                 Button { nameText = ""; nameOperation = .add } label: { Label("新增版本", systemImage: SailuneSymbol.add.systemName) }
+                    .disabled(isReadOnly)
                 Spacer()
                 Button(SailuneActionCopy.done) { onSelectionChanged(); dismiss() }
             }
@@ -154,6 +162,7 @@ struct MapVersionManagementView: View {
     }
 
     private func performNameOperation() {
+        guard !isReadOnly else { return }
         do {
             switch nameOperation {
             case .add:
@@ -167,7 +176,7 @@ struct MapVersionManagementView: View {
     }
 
     private func deleteSelectedVersion() {
-        guard let versionToDelete else { return }
+        guard !isReadOnly, let versionToDelete else { return }
         let deletedVersionID = versionToDelete.id
         do {
             try settingsStore.deleteVersion(versionToDelete, from: map)

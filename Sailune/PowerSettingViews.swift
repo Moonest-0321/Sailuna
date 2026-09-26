@@ -6,6 +6,7 @@ struct PowerListView: View {
     let currentSection: Section?
     let onOpen: (PowerUnit) -> Void
     @Environment(V5SettingsStore.self) private var settingsStore
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @State private var searchText = ""
     @State private var showCurrentSectionOnly = false
     @State private var showingLevels = false
@@ -43,6 +44,7 @@ struct PowerListView: View {
             HStack {
                 Button { showingLevels = true } label: { Label(SailuneActionCopy.manageLevels, systemImage: SailuneSymbol.powerLevel.systemName) }
                     .buttonStyle(.borderless)
+                    .disabled(bookIsReadOnly)
             }
             .padding(10)
             List {
@@ -62,17 +64,14 @@ struct PowerListView: View {
                             }
                         }
                         .buttonStyle(.plain)
-                        Button(SailuneActionCopy.delete, role: .destructive) { deleteTarget = power }
-                            .buttonStyle(.plain)
+                        if !bookIsReadOnly { Button(SailuneActionCopy.delete, role: .destructive) { deleteTarget = power }.buttonStyle(.plain) }
                     }
                 }
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(Color.workspacePanelBackground)
-            Button { addPower() } label: { Label(SailuneActionCopy.add, systemImage: SailuneSymbol.add.systemName) }
-                .buttonStyle(.borderless)
-                .padding(10)
+            if !bookIsReadOnly { Button { addPower() } label: { Label(SailuneActionCopy.add, systemImage: SailuneSymbol.add.systemName) }.buttonStyle(.borderless).padding(10) }
         }
         .confirmationDialog("刪除勢力？", isPresented: Binding(
             get: { deleteTarget != nil },
@@ -90,6 +89,7 @@ struct PowerListView: View {
     }
 
     private func addPower() {
+        guard !bookIsReadOnly else { return }
         let power = PowerUnit(bookID: book.id, name: "新勢力")
         settingsStore.context.insert(power)
         settingsStore.save()
@@ -101,6 +101,7 @@ struct PowerLevelManagementView: View {
     let book: Book
     @Environment(\.dismiss) private var dismiss
     @Environment(V5SettingsStore.self) private var settingsStore
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @State private var draftNames: [UUID: String] = [:]
     @State private var errorMessage: String?
 
@@ -116,7 +117,7 @@ struct PowerLevelManagementView: View {
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Button("新增層級", systemImage: SailuneSymbol.add.systemName, action: addLevel)
+                if !bookIsReadOnly { Button("新增層級", systemImage: SailuneSymbol.add.systemName, action: addLevel) }
                 Button(SailuneActionCopy.done) { dismiss() }
             }
 
@@ -150,6 +151,7 @@ struct PowerLevelManagementView: View {
                     }
                     .onMove(perform: reorder)
                 }
+                .disabledWhenBookIsCompleted()
             }
         }
         .padding(16)
@@ -185,6 +187,7 @@ struct PowerLevelManagementView: View {
     }
 
     private func addLevel() {
+        guard !bookIsReadOnly else { return }
         do {
             let level = try settingsStore.createLevel(bookID: book.id)
             draftNames[level.id] = level.name
@@ -194,6 +197,7 @@ struct PowerLevelManagementView: View {
     }
 
     private func rename(_ level: PowerLevel) {
+        guard !bookIsReadOnly else { return }
         do {
             try settingsStore.renameLevel(level, to: draftNames[level.id] ?? level.name, bookID: book.id)
             draftNames[level.id] = level.name
@@ -204,6 +208,7 @@ struct PowerLevelManagementView: View {
     }
 
     private func move(_ level: PowerLevel, offset: Int) {
+        guard !bookIsReadOnly else { return }
         guard let index = levels.firstIndex(where: { $0.id == level.id }) else { return }
         let destination = index + offset
         guard levels.indices.contains(destination) else { return }
@@ -213,12 +218,14 @@ struct PowerLevelManagementView: View {
     }
 
     private func reorder(from source: IndexSet, to destination: Int) {
+        guard !bookIsReadOnly else { return }
         var reordered = levels
         reordered.move(fromOffsets: source, toOffset: destination)
         applyOrder(reordered.map(\.id))
     }
 
     private func applyOrder(_ orderedIDs: [UUID]) {
+        guard !bookIsReadOnly else { return }
         do {
             try settingsStore.reorderLevels(bookID: book.id, orderedIDs: orderedIDs)
         } catch {
@@ -227,6 +234,7 @@ struct PowerLevelManagementView: View {
     }
 
     private func delete(_ level: PowerLevel) {
+        guard !bookIsReadOnly else { return }
         do {
             try settingsStore.deleteLevel(level, bookID: book.id)
             draftNames[level.id] = nil
@@ -241,6 +249,7 @@ struct PowerDetailView: View {
     let book: Book
     let onBack: () -> Void
     @Environment(V5SettingsStore.self) private var settingsStore
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Query(sort: \Character.sortOrder) private var allCharacters: [Character]
     @Query(sort: \Item.name) private var allItems: [Item]
     @Query(sort: \CharacterAbility.name) private var allAbilities: [CharacterAbility]
@@ -286,14 +295,15 @@ struct PowerDetailView: View {
                     Spacer()
                     Button(SailuneActionCopy.manageLevels, systemImage: SailuneSymbol.powerLevel.systemName) { showingLevels = true }
                         .buttonStyle(.borderless)
-                    Button(role: .destructive, action: deletePower) { Label(SailuneActionCopy.delete, systemImage: SailuneSymbol.delete.systemName) }.buttonStyle(.borderless)
+                        .disabled(bookIsReadOnly)
+                    if !bookIsReadOnly { Button(role: .destructive, action: deletePower) { Label(SailuneActionCopy.delete, systemImage: SailuneSymbol.delete.systemName) }.buttonStyle(.borderless) }
                 }
                 SailuneFormTextField(title: "勢力名稱", text: $power.name)
                 Text("簡介").font(.caption).foregroundStyle(.secondary)
                 SailuneBorderedTextEditor(text: $power.powerDescription, minHeight: 90)
 
-                identificationSection
-                lifecycleSection
+                identificationSection.disabled(bookIsReadOnly)
+                lifecycleSection.disabled(bookIsReadOnly)
 
                 VStack(alignment: .leading, spacing: 8) {
                     Text("勢力設定").font(.subheadline.weight(.semibold))
@@ -307,10 +317,11 @@ struct PowerDetailView: View {
                 }
                 .padding(10)
                 .background(SailuneTheme.subtleSurface, in: RoundedRectangle(cornerRadius: 8))
+                .disabled(bookIsReadOnly)
 
-                memberSection
-                assetSection
-                advantageSection
+                memberSection.disabled(bookIsReadOnly)
+                assetSection.disabled(bookIsReadOnly)
+                advantageSection.disabled(bookIsReadOnly)
 
                 powerNotebookField(
                     title: "高層管理員",
@@ -322,7 +333,7 @@ struct PowerDetailView: View {
                     detail: "可自由記錄其他職稱、人名或群組。",
                     text: $power.otherRoster
                 )
-                powerRelationSection
+                powerRelationSection.disabled(bookIsReadOnly)
                 powerNotebookField(title: "政治", detail: "記錄政治立場、制度或運作方式。", text: $power.politics)
                 powerNotebookField(title: "宗教", detail: "記錄信仰、宗教制度或相關影響。", text: $power.religion)
 
@@ -353,7 +364,7 @@ struct PowerDetailView: View {
                         description: Text("指定具體層級後，才能選擇此勢力的直屬上級。")
                     )
                 } else {
-                    upperRelationSection
+                    upperRelationSection.disabled(bookIsReadOnly)
                     relationQuerySection(title: "直屬下級", detail: "僅顯示直接隸屬於此勢力的勢力。", values: lower)
                 }
             }
@@ -696,11 +707,13 @@ struct PowerDetailView: View {
     }
 
     private func addAsset(kind: PowerAssetKind, sourceID: UUID) {
+        guard !bookIsReadOnly else { return }
         do { try settingsStore.addAsset(kind: kind, sourceID: sourceID, sourceBookID: book.id, to: power, bookID: book.id) }
         catch { errorMessage = error.localizedDescription }
     }
 
     private func addAdvantage(kind: PowerAdvantageKind) {
+        guard !bookIsReadOnly else { return }
         do { try settingsStore.addAdvantage(kind: kind, name: "新\(kind.title)", detail: "", to: power, bookID: book.id) }
         catch { errorMessage = error.localizedDescription }
     }
@@ -771,6 +784,7 @@ struct PowerDetailView: View {
     }
 
     private func addMember() {
+        guard !bookIsReadOnly else { return }
         guard let character = characters.first(where: { $0.id == selectedCharacterID }) else { return }
         do {
             try settingsStore.addMember(characterID: character.id, characterBookID: book.id, title: memberTitle, to: power, bookID: book.id)
@@ -780,14 +794,17 @@ struct PowerDetailView: View {
     }
 
     private func addRole(_ member: PowerMember) {
+        guard !bookIsReadOnly else { return }
         do { try settingsStore.addRole(to: member, bookID: book.id) } catch { errorMessage = error.localizedDescription }
     }
 
     private func addLifecycleEvent(_ kind: PowerLifecycleKind) {
+        guard !bookIsReadOnly else { return }
         do { try settingsStore.addLifecycleEvent(to: power, kind: kind, bookID: book.id) } catch { errorMessage = error.localizedDescription }
     }
 
     private func addSuccession(predecessor: PowerUnit, successor: PowerUnit) {
+        guard !bookIsReadOnly else { return }
         do { try settingsStore.addSuccession(predecessor: predecessor, successor: successor, kind: transitionKind, bookID: book.id) } catch { errorMessage = error.localizedDescription }
     }
 
@@ -814,6 +831,7 @@ struct PowerDetailView: View {
     }
 
     private func changeLevel(to level: PowerLevel) {
+        guard !bookIsReadOnly else { return }
         do {
             try settingsStore.changeLevel(of: power, to: level, bookID: book.id)
         } catch {
@@ -822,6 +840,7 @@ struct PowerDetailView: View {
     }
 
     private func add(lower: PowerUnit, upper: PowerUnit) {
+        guard !bookIsReadOnly else { return }
         do {
             try settingsStore.addSubordination(lower: lower, upper: upper, bookID: book.id)
         } catch {
@@ -830,6 +849,7 @@ struct PowerDetailView: View {
     }
 
     private func deletePower() {
+        guard !bookIsReadOnly else { return }
         settingsStore.deletePower(power, bookID: book.id)
         onBack()
     }

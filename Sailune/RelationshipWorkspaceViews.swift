@@ -70,6 +70,7 @@ enum RelationshipGroupBuilder {
 }
 
 struct RelationshipListView: View {
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     let center: Character
     let book: Book
     let searchText: String
@@ -154,6 +155,7 @@ struct RelationshipListView: View {
 }
 
 struct RelationshipDetailSheet: View {
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     let group: RelationshipGroup
     let book: Book
     @Environment(\.dismiss) private var dismiss
@@ -195,6 +197,7 @@ struct RelationshipDetailSheet: View {
 }
 
 private struct RelationshipDetailRelationRow: View {
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Bindable var relationship: CharacterRelationship
     let book: Book
     @Environment(\.modelContext) private var modelContext
@@ -210,10 +213,11 @@ private struct RelationshipDetailRelationRow: View {
             HStack {
                 Text(currentType).fontWeight(.medium)
                 Spacer()
-                Button(role: .destructive) { confirmDelete = true } label: {
-                    Image(systemName: SailuneSymbol.delete.systemName)
+                if !bookIsReadOnly {
+                    Button(role: .destructive) { confirmDelete = true } label: {
+                        Image(systemName: SailuneSymbol.delete.systemName)
+                    }.buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
             }
             if !relationship.note.isEmpty {
                 Text(relationship.note).font(.caption).foregroundStyle(.secondary)
@@ -221,10 +225,13 @@ private struct RelationshipDetailRelationRow: View {
             RelationshipHistoryEditor(relationship: relationship, book: book)
         }
         .confirmationDialog("刪除關係？", isPresented: $confirmDelete) {
-            Button(SailuneActionCopy.delete, role: .destructive) {
-                modelContext.delete(relationship)
-                onDeleted()
+            if !bookIsReadOnly {
+                Button(SailuneActionCopy.delete, role: .destructive) {
+                    modelContext.delete(relationship)
+                    onDeleted()
+                }
             }
+            Button(SailuneActionCopy.cancel, role: .cancel) { }
         } message: {
             Text("此關係的歷史會一併刪除。")
         }
@@ -232,6 +239,7 @@ private struct RelationshipDetailRelationRow: View {
 }
 
 private struct KinshipDetailRelationRow: View {
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     let kinship: KinshipRelation
     let onDeleted: () -> Void
     @Environment(\.modelContext) private var modelContext
@@ -241,17 +249,22 @@ private struct KinshipDetailRelationRow: View {
         HStack {
             Text(kinship.role.displayName).fontWeight(.medium)
             Spacer()
-            Button(role: .destructive) { confirmDelete = true } label: {
-                Image(systemName: SailuneSymbol.delete.systemName)
+            if !bookIsReadOnly {
+                Button(role: .destructive) { confirmDelete = true } label: {
+                    Image(systemName: SailuneSymbol.delete.systemName)
+                }.buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
         .confirmationDialog("刪除血緣關係？", isPresented: $confirmDelete) {
-            Button(SailuneActionCopy.delete, role: .destructive) { deleteKinship() }
+            if !bookIsReadOnly {
+                Button(SailuneActionCopy.delete, role: .destructive) { deleteKinship() }
+            }
+            Button(SailuneActionCopy.cancel, role: .cancel) { }
         }
     }
 
     private func deleteKinship() {
+        guard !bookIsReadOnly else { return }
         let source = kinship.sourceCharacter
         let target = kinship.targetCharacter
         if let source, let target,
@@ -266,6 +279,7 @@ private struct KinshipDetailRelationRow: View {
 }
 
 struct AddGeneralRelationshipSheet: View {
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     let center: Character
     let book: Book
     let characters: [Character]
@@ -301,12 +315,13 @@ struct AddGeneralRelationshipSheet: View {
                         Text(item.realName.isEmpty ? "未命名角色" : item.realName).tag(Optional(item.id))
                     }
                 }
-                TextField("關係", text: $relationshipName)
-                Toggle("反向", isOn: $reverseDirection)
+                .disabled(bookIsReadOnly)
+                TextField("關係", text: $relationshipName).disabled(bookIsReadOnly)
+                Toggle("反向", isOn: $reverseDirection).disabled(bookIsReadOnly)
                 Text(directionLabel)
                     .font(.caption)
                     .foregroundStyle(.secondary)
-                TextField("簡述", text: $note, axis: .vertical)
+                TextField("簡述", text: $note, axis: .vertical).disabled(bookIsReadOnly)
                 HStack {
                     Text("時間")
                     CharacterNodePicker(
@@ -321,7 +336,7 @@ struct AddGeneralRelationshipSheet: View {
                 Spacer()
                 Button(SailuneActionCopy.create, action: create)
                     .keyboardShortcut(.defaultAction)
-                    .disabled(targetID == nil || relationshipName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .disabled(bookIsReadOnly || targetID == nil || relationshipName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }
         }
         .padding(20)
@@ -330,7 +345,7 @@ struct AddGeneralRelationshipSheet: View {
     }
 
     private func create() {
-        guard let targetID,
+        guard !bookIsReadOnly, let targetID,
               let selected = availableCharacters.first(where: { $0.id == targetID }) else { return }
         let source = reverseDirection ? selected : center
         let target = reverseDirection ? center : selected

@@ -96,6 +96,7 @@ struct SearchReplaceView: View {
     @Binding var selectedSection: Section?
     let bridge: EditorBridge
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Environment(\.sectionUnit) private var sectionUnit
     @Environment(BookWritingStatsStore.self) private var writingStatsStore
 
@@ -126,10 +127,11 @@ struct SearchReplaceView: View {
                 .focused($queryFocused)
                 .onSubmit { advanceSearch() }
 
-            Toggle("啟用替換", isOn: $replacementEnabled)
+            Toggle("啟用替換", isOn: $replacementEnabled).disabled(bookIsReadOnly)
 
             if replacementEnabled {
                 TextField("替換為", text: $replacement)
+                    .disabled(bookIsReadOnly)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit { advanceSearch() }
             }
@@ -147,9 +149,9 @@ struct SearchReplaceView: View {
                 Spacer()
                 if replacementEnabled {
                     Button("替換") { replaceCurrent() }
-                        .disabled(currentMatch == nil)
+                        .disabled(bookIsReadOnly || currentMatch == nil)
                     Button("全部替換") { replaceAll() }
-                        .disabled(results.isEmpty)
+                        .disabled(bookIsReadOnly || results.isEmpty)
                 }
             }
 
@@ -234,7 +236,7 @@ struct SearchReplaceView: View {
     }
 
     private func replaceCurrent() {
-        guard let match = currentMatch else { return }
+        guard !bookIsReadOnly, let match = currentMatch else { return }
         let snapshot = SearchReplaceSnapshot(section: match.section)
         let delta = replace(match, with: replacement)
         guard persistReplacement(delta: delta, snapshots: [snapshot]) else { return }
@@ -245,6 +247,7 @@ struct SearchReplaceView: View {
     }
 
     private func replaceAll() {
+        guard !bookIsReadOnly else { return }
         let matchesToReplace = results
         var snapshotsBySectionID: [UUID: SearchReplaceSnapshot] = [:]
         for match in matchesToReplace where snapshotsBySectionID[match.section.id] == nil {
@@ -262,6 +265,7 @@ struct SearchReplaceView: View {
     }
 
     private func persistReplacement(delta: Int, snapshots: [SearchReplaceSnapshot]) -> Bool {
+        guard !bookIsReadOnly else { return false }
         do {
             try modelContext.save()
         } catch {

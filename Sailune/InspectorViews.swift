@@ -117,6 +117,7 @@ struct InspectorRootView: View {
     @State private var showingSidebarSettings = false
     @State private var route: InspectorRoute = .list
     @Environment(V5SettingsStore.self) private var settingsStore
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Environment(AbilityProgressStore.self) private var abilityStore
     @Environment(ItemCopyStore.self) private var copyStore
     @Environment(\.modelContext) private var modelContext
@@ -160,6 +161,7 @@ struct InspectorRootView: View {
                     }
                     .buttonStyle(.borderless)
                     .help("管理設定集顯示")
+                    .disabled(bookIsReadOnly)
                 }
                 .padding(.horizontal)
                 .padding(.vertical, 8)
@@ -253,7 +255,7 @@ struct InspectorRootView: View {
             SidebarSettingsManagerView(book: book)
         }
         .task {
-            settingsStore.ensureDefaults(for: book.id)
+            if !bookIsReadOnly { settingsStore.ensureDefaults(for: book.id) }
             selectedTab = .setting(activeSidebarKey)
         }
         .onChange(of: visibleSidebarKeys) { _, keys in

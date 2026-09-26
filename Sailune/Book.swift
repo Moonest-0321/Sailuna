@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import SwiftUI
 
 enum BookStatus: String, CaseIterable, Codable, Identifiable {
     case ongoing = "連載"
@@ -8,7 +9,7 @@ enum BookStatus: String, CaseIterable, Codable, Identifiable {
 
     var id: String { rawValue }
 
-    var publicationTitle: String { self == .ongoing ? "發布中" : rawValue }
+    var publicationTitle: String { rawValue }
 }
 
 /// Publication state lives beside the released V5 store so its schema stays immutable.
@@ -37,6 +38,14 @@ final class BookPublicationStore {
         }
         var updated = statuses
         updated[bookID] = next
+        try save(updated)
+        statuses = updated
+    }
+
+    func resume(_ bookID: UUID) throws {
+        guard status(for: bookID) == .completed else { return }
+        var updated = statuses
+        updated[bookID] = .ongoing
         try save(updated)
         statuses = updated
     }
@@ -99,5 +108,17 @@ final class Book {
         self.createdAt = createdAt
         self.updatedAt = updatedAt
         self.volumes = volumes
+    }
+}
+
+
+private struct BookReadOnlyEnvironmentKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
+extension EnvironmentValues {
+    var bookIsReadOnly: Bool {
+        get { self[BookReadOnlyEnvironmentKey.self] }
+        set { self[BookReadOnlyEnvironmentKey.self] = newValue }
     }
 }

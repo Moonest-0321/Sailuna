@@ -9,6 +9,7 @@ struct CharacterListContainerView: View {
     let onSelect: (Character) -> Void
     let onCreated: (Character) -> Void
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Environment(ItemCopyStore.self) private var copyStore
     @Environment(V5SettingsStore.self) private var settingsStore
     @Environment(AbilityProgressStore.self) private var abilityStore
@@ -61,6 +62,7 @@ struct CharacterListContainerView: View {
     }
 
     private func addCharacter() {
+        guard !bookIsReadOnly else { return }
         let maxOrder = characters.map(\.sortOrder).max() ?? -1
         let newChar = Character(realName: "新角色", book: book)
         newChar.sortOrder = maxOrder + 1
@@ -76,6 +78,7 @@ struct CharacterListView: View {
     let onSelect: (Character) -> Void
     let onAdd: () -> Void
     let onDelete: (Character) -> Void
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @State private var searchText = ""
     @State private var showCurrentSectionOnly = false
     @State private var deleteTarget: Character?
@@ -151,9 +154,9 @@ struct CharacterListView: View {
                         .contentShape(Rectangle())
                         .onTapGesture { onSelect(character) }
                         .swipeActions(edge: .trailing, allowsFullSwipe: false) {
-                            Button(role: .destructive) { deleteTarget = character } label: {
+                            if !bookIsReadOnly { Button(role: .destructive) { deleteTarget = character } label: {
                                 Label(SailuneActionCopy.delete, systemImage: SailuneSymbol.delete.systemName)
-                            }
+                            } }
                         }
                     }
                 }
@@ -170,6 +173,7 @@ struct CharacterListView: View {
             }
             .buttonStyle(.plain)
             .background(Color.accentColor.opacity(0.1))
+            .disabled(bookIsReadOnly)
         }
         .alert(
             "刪除角色？",
@@ -191,6 +195,7 @@ struct CharacterListView: View {
 }
 
 struct CharacterRow: View {
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     let character: Character
     let role: String
     let onDelete: () -> Void
@@ -201,6 +206,7 @@ struct CharacterRow: View {
                     .foregroundStyle(character.isPinned ? .orange : .secondary)
             }
             .buttonStyle(.plain)
+            .disabled(bookIsReadOnly)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(character.realName.isEmpty ? "未命名角色" : character.realName)
@@ -213,8 +219,10 @@ struct CharacterRow: View {
                     .foregroundStyle(.secondary)
                     .lineLimit(1)
             }
-            Button(SailuneActionCopy.delete, role: .destructive, action: onDelete)
-                .buttonStyle(.plain)
+            if !bookIsReadOnly {
+                Button(SailuneActionCopy.delete, role: .destructive, action: onDelete)
+                    .buttonStyle(.plain)
+            }
         }
         .padding(.vertical, 4)
     }
@@ -230,6 +238,7 @@ struct CharacterDetailView: View {
     let onOpenAbility: (CharacterAbility) -> Void
     let onSelectSection: ((Section) -> Void)?
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Environment(AbilityProgressStore.self) private var abilityStore
     @Environment(ItemCopyStore.self) private var copyStore
     @Environment(V5SettingsStore.self) private var settingsStore
@@ -316,7 +325,7 @@ struct CharacterDetailView: View {
                         .background(Color.orange.opacity(0.1), in: RoundedRectangle(cornerRadius: 8))
                     }
 
-                    if !unlinkedCandidates.isEmpty {
+                    if !unlinkedCandidates.isEmpty && !bookIsReadOnly {
                         UnlinkedReferenceReviewView(
                             candidates: $unlinkedCandidates,
                             onApply: applySelectedUnlinkedChanges,
@@ -345,6 +354,7 @@ struct CharacterDetailView: View {
                                 Text("女").tag("女")
                             }
                             .pickerStyle(.segmented)
+                            .disabled(bookIsReadOnly)
                         }
                         Divider()
                         BirthDatePickerSection(
@@ -358,6 +368,7 @@ struct CharacterDetailView: View {
                             setSeason: { character.birthSeason = $0 }
                         )
                         .equatable()
+                        .disabledWhenBookIsCompleted()
 
                         SailuneFormTextField(title: "出身 (家族/地位)", text: Binding(
                             get: { character.originBackground ?? "" },
@@ -373,7 +384,7 @@ struct CharacterDetailView: View {
                     }
 
                     detailSection("所屬勢力", systemImage: "building.2", preview: latestPowerMembershipPreview) {
-                        CharacterPowerMembershipSection(character: character, book: book)
+                        CharacterPowerMembershipSection(character: character, book: book).disabledWhenBookIsCompleted()
                     }
 
                     detailSection("別名", systemImage: "person.badge.key", preview: latestAliasPreview) {
@@ -445,6 +456,7 @@ struct CharacterDetailView: View {
                     realNameBeforeEditing = character.realName
                 }
             TextField("角色定位，例如：男主角", text: roleBinding)
+                .disabled(bookIsReadOnly)
                 .textFieldStyle(.plain)
                 .font(.subheadline)
                 .foregroundStyle(.secondary)

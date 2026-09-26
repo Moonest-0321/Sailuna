@@ -49,6 +49,7 @@ struct CharacterTimelinePlacementEditor: View {
                 onChange()
             }
         }
+        .disabledWhenBookIsCompleted()
     }
 
     private func editableNode() -> Node {
@@ -204,6 +205,7 @@ private struct CharacterTimelineDateSheet: View {
 @MainActor
 struct CharacterNodePicker: View {
     let book: Book
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Binding var node: Node?
     var sourceReference: PlanningRecordSourceReference? = nil
     @Query(sort: \Node.sortOrder) private var allNodes: [Node]
@@ -228,12 +230,14 @@ struct CharacterNodePicker: View {
             }
             .labelsHidden()
             .help(nodes.isEmpty ? "尚無時間點，可按右側加號建立" : "選擇此筆資料的時間定位")
+            .disabled(bookIsReadOnly)
 
             Button { showingTimestampEditor = true } label: {
                 Image(systemName: node == nil ? "plus.circle" : "pencil.circle")
             }
             .buttonStyle(.plain)
             .help(node == nil ? "建立時間戳記" : "修改此筆資料的時間戳記")
+            .disabled(bookIsReadOnly)
         }
         .sheet(isPresented: $showingTimestampEditor) {
             CharacterTimestampEditorSheet(book: book, existingNode: node, sourceReference: sourceReference) { savedNode in
@@ -697,4 +701,5 @@ private func historyContainer<Content: View>(title: String, addTitle: String, ad
     } label: {
         Text(title).font(.caption).foregroundStyle(.secondary)
     }
+    .disabledWhenBookIsCompleted()
 }

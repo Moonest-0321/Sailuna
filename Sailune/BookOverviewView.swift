@@ -84,6 +84,7 @@ enum DeleteTarget: Identifiable {
 // MARK: - 書本總覽畫面 (PRD 3.2)
 struct BookOverviewView: View {
     @Bindable var book: Book
+    @Environment(BookPublicationStore.self) private var publicationStore
     @State private var sectionToOpen: Section?
     @State private var isEditingBackground = false
 
@@ -105,6 +106,7 @@ struct BookOverviewView: View {
         }
         .navigationTitle(book.title)
         .navigationSubtitle("書籍總覽")
+        .environment(\.bookIsReadOnly, publicationStore.status(for: book.id) == .completed)
         .navigationDestination(item: $sectionToOpen) { section in
             EditorWorkspaceView(book: book, initialSection: section)
         }
@@ -165,6 +167,7 @@ struct BookInfoPanel: View {
     @Bindable var book: Book
     let onOpenBackground: () -> Void
     @Environment(StoryPlanningStore.self) private var planningStore
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @State private var showingCoverImporter = false
     @State private var hasCustomCover = false
     @State private var coverOperationError: String?
@@ -181,6 +184,7 @@ struct BookInfoPanel: View {
                             Button("更換封面…", systemImage: SailuneSymbol.imageAsset.systemName) {
                                 showingCoverImporter = true
                             }
+                            .disabled(bookIsReadOnly)
                             if hasCustomCover {
                                 Divider()
                                 Button(role: .destructive) {
@@ -188,6 +192,7 @@ struct BookInfoPanel: View {
                                 } label: {
                                     Label("移除封面", systemImage: SailuneSymbol.removeCover.systemName)
                                 }
+                                .disabled(bookIsReadOnly)
                             }
                         }
                         .accessibilityLabel("書籍封面")
@@ -207,6 +212,7 @@ struct BookInfoPanel: View {
                         ))
                         .frame(maxWidth: .infinity, alignment: .leading)
                     }
+                    .disabled(bookIsReadOnly)
                     .frame(minWidth: 120, maxWidth: .infinity, alignment: .leading)
                 }
                 Divider()
@@ -216,6 +222,7 @@ struct BookInfoPanel: View {
                         get: { book.synopsis },
                         set: { book.synopsis = $0; book.updatedAt = Date() }
                     ), axis: .vertical).lineLimit(4...8).textFieldStyle(.roundedBorder)
+                        .disabled(bookIsReadOnly)
                 }
                 Divider()
                 Button(action: onOpenBackground) {
@@ -293,6 +300,7 @@ struct BookInfoPanel: View {
     }
 
     private func importCover(from url: URL) {
+        guard !bookIsReadOnly else { return }
         let hasAccess = url.startAccessingSecurityScopedResource()
         defer {
             if hasAccess { url.stopAccessingSecurityScopedResource() }
@@ -311,6 +319,7 @@ struct BookInfoPanel: View {
     }
 
     private func removeCover() {
+        guard !bookIsReadOnly else { return }
         do {
             try BookCoverStore.removeCover(for: book)
             hasCustomCover = false
@@ -335,6 +344,7 @@ struct VolumeSectionTreeView: View {
 
     @Environment(\.modelContext) private var modelContext
     @Environment(\.sectionUnit) private var sectionUnit
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @State private var renamingID: UUID? = nil
     @State private var renameBuffer: String = ""
     @FocusState private var renameFocused: Bool
@@ -370,6 +380,7 @@ struct VolumeSectionTreeView: View {
                     Label(SailuneActionCopy.addVolume, systemImage: SailuneSymbol.addVolume.systemName).labelStyle(.iconOnly)
                 }
                 .buttonStyle(.borderless).help(SailuneActionCopy.addVolume)
+                .disabled(bookIsReadOnly)
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
             Divider()
@@ -412,7 +423,7 @@ struct VolumeSectionTreeView: View {
             Spacer()
             Image(systemName: "folder").font(.system(size: 36)).foregroundStyle(.tertiary)
             Text("還沒有任何卷").foregroundStyle(.secondary)
-            Button("新增第一卷") { addVolume() }.buttonStyle(.borderedProminent)
+            Button("新增第一卷") { addVolume() }.buttonStyle(.borderedProminent).disabled(bookIsReadOnly)
             Spacer()
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity).padding()
@@ -606,11 +617,13 @@ struct VolumeSectionTreeView: View {
         .onChange(of: renameFocused) { _, focused in if !focused { commitAndClose(commit: commit) } }
     }
     private func startRenaming(id: UUID, currentName: String) {
+        guard !bookIsReadOnly else { return }
         commitCurrentRename()
         renameBuffer = currentName
         renamingID = id
     }
     private func commitCurrentRename() {
+        guard !bookIsReadOnly else { cancelRenaming(); return }
         guard let id = renamingID else { return }
         if let volume = book.volumes.first(where: { $0.id == id }) {
             volume.title = renameBuffer.isEmpty ? volume.title : renameBuffer
@@ -631,11 +644,13 @@ struct VolumeSectionTreeView: View {
     }
 
     private func addVolume() {
+        guard !bookIsReadOnly else { return }
         let next = (book.volumes.map(\.sortOrder).max() ?? -1) + 1
         book.volumes.append(Volume(title: "新卷", sortOrder: next, book: book))
         book.updatedAt = Date()
     }
     private func addSection(to volume: Volume) {
+        guard !bookIsReadOnly else { return }
         let next = (volume.sections.map(\.sortOrder).max() ?? -1) + 1
         let newSection = Section(title: sectionUnit.draftTitle, sortOrder: next, volume: volume)
         volume.sections.append(newSection)
@@ -674,6 +689,7 @@ struct VolumeSectionTreeView: View {
     }
 
     private func finishOutlineDrag() {
+        guard !bookIsReadOnly else { draggingKind = nil; outlineDropTarget = nil; return }
         let kind = draggingKind
         let target = outlineDropTarget
         draggingKind = nil
@@ -700,6 +716,7 @@ struct VolumeSectionTreeView: View {
     }
 
     private func moveVolume(draggedID: UUID, relativeTo targetID: UUID, side: DropInsertionSide) {
+        guard !bookIsReadOnly else { return }
         guard draggedID != targetID else { return }
         var arr = book.volumes.sorted { $0.sortOrder < $1.sortOrder }
         let originalIDs = arr.map(\.id)
@@ -712,6 +729,7 @@ struct VolumeSectionTreeView: View {
         book.updatedAt = Date()
     }
     private func moveSection(in volume: Volume, draggedID: UUID, relativeTo targetID: UUID, side: DropInsertionSide) {
+        guard !bookIsReadOnly else { return }
         guard draggedID != targetID else { return }
         var arr = volume.sections.sorted { $0.sortOrder < $1.sortOrder }
         let originalIDs = arr.map(\.id)
@@ -725,6 +743,7 @@ struct VolumeSectionTreeView: View {
     }
 
     private func performDelete(_ target: DeleteTarget) {
+        guard !bookIsReadOnly else { return }
         undoTarget = target
         switch target {
         case .volume(let v): CrossStoreDeletionCoordinator.stageDeleteVolume(v, in: modelContext)
@@ -748,6 +767,7 @@ struct VolumeSectionTreeView: View {
     }
 
     private func restore(_ target: DeleteTarget) {
+        guard !bookIsReadOnly else { return }
         switch target {
         case .volume(let volume):
             if !book.volumes.contains(where: { $0.id == volume.id }) {

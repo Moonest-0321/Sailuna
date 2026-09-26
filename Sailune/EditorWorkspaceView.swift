@@ -71,6 +71,7 @@ struct EditorWorkspaceView: View {
 
     let book: Book
     @Environment(\.modelContext) private var modelContext
+    @Environment(BookPublicationStore.self) private var publicationStore
     @Environment(\.sectionUnit) private var sectionUnit
     @Environment(AbilityProgressStore.self) private var aiAbilityStore
     @Environment(V5SettingsStore.self) private var aiSettingsStore
@@ -96,6 +97,8 @@ struct EditorWorkspaceView: View {
     @State private var hasLoadedPlanningWorkspace = false
     @State private var writingColumnVisibility: NavigationSplitViewVisibility = .automatic
     @State private var exportRequest: SailuneExportRequest?
+
+    private var bookIsReadOnly: Bool { publicationStore.status(for: book.id) == .completed }
 
     private var neighboringSections: (previous: Section?, next: Section?) {
         let sections = BookStructure.orderedSections(in: book)
@@ -231,6 +234,7 @@ struct EditorWorkspaceView: View {
         }
         .navigationTitle("")
         .frame(minWidth: minimumWorkspaceWidth, minHeight: Layout.minimumWorkspaceHeight)
+        .environment(\.bookIsReadOnly, bookIsReadOnly)
         .sheet(isPresented: $showingCommandPalette) {
             CommandPaletteView { command in
                 showingCommandPalette = false
@@ -260,7 +264,11 @@ struct EditorWorkspaceView: View {
                   sectionIDs.contains(selectedSection.id) else { return }
             bridge.reloadVisibleContent()
         }
-        .onAppear { keyboardMonitor.start() }
+        .onAppear {
+            keyboardMonitor.start()
+            aiChatModel.setReadOnly(bookIsReadOnly)
+        }
+        .onChange(of: bookIsReadOnly) { _, isReadOnly in aiChatModel.setReadOnly(isReadOnly) }
         .onDisappear {
             keyboardMonitor.stop()
             aiChatModel.reset()
@@ -373,7 +381,9 @@ struct EditorWorkspaceView: View {
             if workspaceMode == .writing { navigate(to: neighboringSections.previous) }
         case .nextSection:
             if workspaceMode == .writing { navigate(to: neighboringSections.next) }
-        case .toggleSceneHeading: bridge.requestToggleHeading()
+        case .toggleSceneHeading:
+            guard !bookIsReadOnly else { return }
+            bridge.requestToggleHeading()
         case .showShortcuts: showingShortcutHelp = true
         }
     }
@@ -621,6 +631,7 @@ struct EditorSidebarView: View {
     let bridge: EditorBridge
     private let dragCoordinateSpace = "editor-outline-drag"
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Environment(\.sectionUnit) private var sectionUnit
     @Environment(StoryPlanningStore.self) private var planningStore
 
@@ -643,11 +654,13 @@ struct EditorSidebarView: View {
                 }
                 .buttonStyle(.borderless)
                 .help(SailuneActionCopy.addVolume)
+                .disabled(bookIsReadOnly)
                 Button(action: addSection) {
                     Label(SailuneActionCopy.addSection(unit: sectionUnit), systemImage: SailuneSymbol.addSection.systemName)
                 }
                 .buttonStyle(.borderless)
                 .help(SailuneActionCopy.addSection(unit: sectionUnit))
+                .disabled(bookIsReadOnly)
                 Spacer()
             }
             .padding(.horizontal, 12)
@@ -665,6 +678,7 @@ struct EditorSidebarView: View {
                                     Text("這一卷還沒有\(sectionUnit.unitLabel)").font(.caption).foregroundStyle(.secondary)
                                     Button(SailuneActionCopy.addFirstSection(unit: sectionUnit), systemImage: SailuneSymbol.add.systemName) { addSection(to: volume) }
                                         .buttonStyle(.borderedProminent)
+                                    .disabled(bookIsReadOnly)
                                 }
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .padding(.leading, 50).padding(.vertical, 8)
@@ -762,6 +776,7 @@ struct EditorSidebarView: View {
             }
             .buttonStyle(.plain) // 使用 plain 避免破壞 List 的選取背景色
                 .help(SailuneAccessibilityCopy.addSectionInVolume(unit: sectionUnit))
+                .disabled(bookIsReadOnly)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 2)
@@ -769,9 +784,13 @@ struct EditorSidebarView: View {
         .contentShape(Rectangle())
         .contextMenu {
             Button { startRenaming(id: volume.id, currentName: volume.title) } label: { Label(SailuneActionCopy.rename, systemImage: SailuneSymbol.edit.systemName) }
+                .disabled(bookIsReadOnly)
             Divider()
             Button { addSection(to: volume) } label: { Label(SailuneActionCopy.addSection(unit: sectionUnit), systemImage: SailuneSymbol.addSection.systemName) }
+                .disabled(bookIsReadOnly)
             Button(role: .destructive) { deleteTarget = .volume(volume) } label: { Label(SailuneActionCopy.deleteVolume, systemImage: SailuneSymbol.delete.systemName) }
+                .disabled(bookIsReadOnly)
+                .disabled(bookIsReadOnly)
         }
     }
 
@@ -827,12 +846,15 @@ struct EditorSidebarView: View {
         }
         .contextMenu {
             Button { startRenaming(id: section.id, currentName: sectionUnit.displayTitle(section.title)) } label: { Label(SailuneActionCopy.rename, systemImage: SailuneSymbol.edit.systemName) }
+                .disabled(bookIsReadOnly)
             Button {
                 commitCurrentRename()
                 addSection(to: volume)
             } label: { Label(SailuneActionCopy.addSection(unit: sectionUnit), systemImage: SailuneSymbol.addSection.systemName) }
+                .disabled(bookIsReadOnly)
             Divider()
             Button(role: .destructive) { deleteTarget = .section(section) } label: { Label(SailuneActionCopy.deleteSection(unit: sectionUnit), systemImage: SailuneSymbol.delete.systemName) }
+                .disabled(bookIsReadOnly)
         }
     }
 
@@ -855,6 +877,7 @@ struct EditorSidebarView: View {
             }
             .frame(minWidth: 60, maxWidth: .infinity)
             Button { commitAndClose(commit: commit) } label: { Image(systemName: SailuneSymbol.confirm.systemName).foregroundStyle(.green) }
+                .disabled(bookIsReadOnly)
                 .buttonStyle(.borderless).help(SailuneAccessibilityCopy.confirmEnter)
             Button { cancelRenaming() } label: { Image(systemName: SailuneSymbol.cancel.systemName).foregroundStyle(.secondary) }
                 .buttonStyle(.borderless).help(SailuneActionCopy.cancel)
@@ -865,11 +888,13 @@ struct EditorSidebarView: View {
     }
 
     private func startRenaming(id: UUID, currentName: String) {
+        guard !bookIsReadOnly else { return }
         commitCurrentRename()
         renameBuffer = currentName
         renamingID = id
     }
     private func commitCurrentRename() {
+        guard !bookIsReadOnly else { cancelRenaming(); return }
         guard let id = renamingID else { return }
         if let volume = book.volumes.first(where: { $0.id == id }) {
             volume.title = renameBuffer.isEmpty ? volume.title : renameBuffer
@@ -887,12 +912,14 @@ struct EditorSidebarView: View {
 
     // MARK: 新增邏輯
     private func addVolume() {
+        guard !bookIsReadOnly else { return }
         let next = (book.volumes.map(\.sortOrder).max() ?? -1) + 1
         // ⚠️ 若您的 Volume 初始化需要傳入 book，請改為: Volume(title: "新卷", sortOrder: next, book: book)
         let newVolume = Volume(title: "新卷", sortOrder: next)
         book.volumes.append(newVolume)
     }
     private func addSection() {
+        guard !bookIsReadOnly else { return }
         let targetVolume: Volume
         if let currentVolume = selectedSection?.volume {
             targetVolume = currentVolume
@@ -906,6 +933,7 @@ struct EditorSidebarView: View {
         addSection(to: targetVolume)
     }
     private func addSection(to volume: Volume) {
+        guard !bookIsReadOnly else { return }
         let next = (volume.sections.map(\.sortOrder).max() ?? -1) + 1
         let newSection = Section(title: sectionUnit.draftTitle, sortOrder: next, volume: volume)
         volume.sections.append(newSection)
@@ -938,6 +966,7 @@ struct EditorSidebarView: View {
     }
 
     private func finishOutlineDrag() {
+        guard !bookIsReadOnly else { draggingKind = nil; outlineDropTarget = nil; return }
         let kind = draggingKind
         let target = outlineDropTarget
         draggingKind = nil
@@ -959,6 +988,7 @@ struct EditorSidebarView: View {
     }
 
     private func moveSection(in targetVolume: Volume, draggedID: UUID, relativeTo targetID: UUID, side: DropInsertionSide) {
+        guard !bookIsReadOnly else { return }
         guard draggedID != targetID else { return }
         var sections = targetVolume.sections.sorted { $0.sortOrder < $1.sortOrder }
         let originalIDs = sections.map(\.id)
@@ -975,6 +1005,7 @@ struct EditorSidebarView: View {
 
     // MARK: 刪除與 Fallback
     private func performDelete(_ target: DeleteTarget) {
+        guard !bookIsReadOnly else { return }
         undoTarget = target
         switch target {
         case .volume(let v):
@@ -1005,6 +1036,7 @@ struct EditorSidebarView: View {
     }
 
     private func restore(_ target: DeleteTarget) {
+        guard !bookIsReadOnly else { return }
         switch target {
         case .volume(let volume):
             if !book.volumes.contains(where: { $0.id == volume.id }) {
@@ -1074,6 +1106,7 @@ struct EditorCenterView: View {
     let onOpenSettings: (EditorSettingsDestination) -> Void
     let onOpenMatchedSetting: (EditorSettingsTarget) -> Void
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Environment(\.sectionUnit) private var sectionUnit
     @Environment(StoryPlanningStore.self) private var planningStore
     @Environment(V5SettingsStore.self) private var settingsStore
@@ -1098,6 +1131,7 @@ struct EditorCenterView: View {
     @Query(sort: \CharacterAbility.createdAt) private var allAbilities: [CharacterAbility]
 
     private func recordWritingDelta(bookID: UUID, delta: Int) {
+        guard !bookIsReadOnly else { return }
         do {
             try writingStatsStore.recordSuccessfulEdits([(bookID: bookID, netWordDelta: delta)])
         } catch {
@@ -1205,6 +1239,7 @@ struct EditorCenterView: View {
     }
 
     private func createCharacter(from text: String) -> CharacterReference? {
+        guard !bookIsReadOnly else { return nil }
         let name = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard canCreateCharacter(from: name) else { return nil }
         let character = Character(realName: name, book: book)
@@ -1235,8 +1270,9 @@ struct EditorCenterView: View {
                         }
                     TextField(sectionUnit.titleFieldLabel, text: Binding(
                         get: { sectionUnit.displayTitle(section.title) },
-                        set: { section.title = $0 }
+                        set: { guard !bookIsReadOnly else { return }; section.title = $0 }
                     ))
+                    .disabled(bookIsReadOnly)
                     .font(.system(size: 24, weight: .bold))
                     .textFieldStyle(.plain)
                     .focused($titleFieldFocused)
@@ -1264,8 +1300,11 @@ struct EditorCenterView: View {
                                 .buttonStyle(.borderless)
                                 .help("將游標所在段落設為幕標題 / 內文 (⌘2)")
                                 .keyboardShortcut("2", modifiers: .command)
+                                .disabled(bookIsReadOnly)
                                 Button {
-                                    activeAnnotation = planningStore.ensureAnnotation(sectionID: section.id, bookID: book.id)
+                                    activeAnnotation = bookIsReadOnly
+                                        ? planningStore.annotation(sectionID: section.id)
+                                        : planningStore.ensureAnnotation(sectionID: section.id, bookID: book.id)
                                 } label: {
                                     HStack(spacing: 4) {
                                         Image(systemName: "note.text")
@@ -1281,6 +1320,7 @@ struct EditorCenterView: View {
                                 }
                                 .buttonStyle(.borderless)
                                 .help("預定大綱與修改註記")
+                                .disabled(bookIsReadOnly && planningStore.annotation(sectionID: section.id) == nil)
                                 .popover(item: $activeAnnotation) { annotation in
                                     SectionAnnotationsPopover(annotation: annotation)
                                 }
@@ -1310,6 +1350,7 @@ struct EditorCenterView: View {
                     RichEditorView(
                         section: section,
                         bridge: bridge,
+                        isEditable: !bookIsReadOnly,
                         onWordCountChange: { liveWordCount = $0 },
                         onHeadingStateChange: { cursorIsHeading = $0 },
                         onSaveStateChange: { saveState = $0 },
@@ -1360,6 +1401,7 @@ struct EditorCenterView: View {
                         },
                         onOpenSettings: onOpenSettings,
                         onCreateStoryTag: { kind, text, range in
+                            guard !bookIsReadOnly else { return }
                             // The marker refreshes the editor from the model;
                             // commit first so creating a tag never discards a
                             // just-typed paragraph that is still debouncing.

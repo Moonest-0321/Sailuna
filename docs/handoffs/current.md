@@ -1,3 +1,11 @@
+# 2026-09-26 完結作品恢復連載／唯讀閱覽 implementation checkpoint
+
+- **決策**：R／U／I 均 approved。完結作品可恢復連載；完結時同書全部資料唯讀並維持可閱覽／導覽。狀態沿用 publication sidecar，V5 schema 不變。整本刪除與全域備份還原仍屬已確認的範圍邊界。
+- **實作**：發布列提供「恢復連載」，恢復前先保存 sidecar；唯讀權限依書 UUID 即時注入總覽／正文、設定集與角色子區、物品副本、能力／勢力／關係、地圖、時間軸／改元、故事規劃、每書 AI 對話與側邊設定。瀏覽及已決定保留的搜尋／導航互動仍可用；唯讀載入略過部分 ensure-on-read 寫入。
+- **驗證**：指定兩項 `ItemV3Tests` 發布狀態 XCTest 通過；受影響 Swift `swiftc -parse` 與 `git diff --check` 通過。Xcode build/test 過程中修正兩個編譯問題後重跑成功。尚未執行隔離資料 GUI 驗收，也未逐一人工抽查每個唯讀控制。
+- **工作樹邊界**：保留既有 V10.2 等使用者／前序工作變更與原有 `docs/ux-principles.md` 修改；本工作另改完結狀態、唯讀接線、兩項測試與相關規格／工作紀錄。未使用正式作者資料。
+- **唯一下一步**：用隔離資料人工驗收發布頁恢復連載、重開持久化、已開工作區即時解除唯讀，及完結作品總覽／正文／設定集／地圖／時間軸／大綱的瀏覽與寫入限制。
+- **新聊天最小文件集合**：本檔、`docs/work-items/current.md`、`docs/work-items/v10.1-completed-book-read-only.md`、`docs/project-status.md`、`docs/spec-editor.md`、`docs/spec-publishing-analytics.md`。
 # 2026-09-26 編輯器目錄序號前綴修正
 
 - **已決定**：依使用者明確要求，左側編輯器目錄節標題前綴只顯示卷內阿拉伯數字序號與「｜」（例如「1｜」），節名仍接在後方，不顯示「第一節」；其他介面的節標題格式不改。
@@ -966,3 +974,13 @@
 ## 唯一下一步
 
 V4.4.81 無待辦；下一個工作單可處理專案狀態列出的 V4.4.9 右鍵選單冒煙或後續產品項目。
+
+
+## 2026-09-26 V10.1 完結作品恢復連載／唯讀實作 checkpoint
+
+- **已決定**：R／U／I 均核准。完結作品全部同書資料唯讀但可瀏覽；發布列表可恢復連載。狀態依 publication sidecar；schema 不變。
+- **實作進度**：恢復連載 action 先原子寫 sidecar 再更新 observable 狀態；發布列按鈕、總覽／正文、共用欄位、設定集主要列表、物品副本、地圖、故事背景／大綱／時間軸與 AI 對話已有初步唯讀接線。讀取時跳過缺少設定／背景／地圖的補建。
+- **驗證**：`swiftc -parse` 對已修改範圍曾通過；Xcode Debug build 曾通過（在後續增補關係／勢力／tag 防護之前），最新修改仍須重新建置。新增兩項 Publication Store XCTest，尚未跑。
+- **工作樹邊界**：保留既有 `docs/ux-principles.md` 修改；本工作另改 `Sailune/` 相關畫面與共用 controls、`SailuneTests/ItemV3Tests.swift` 及 V10.1 規格／工作文件。不要回復任何其他使用者修改。
+- **未完成**：檢查 CharacterSection／History 子編輯器、Power 層級和時間軸剩餘直接 Picker／shortcut；完成 final build／專項 tests、`git diff --check`，更新 work item、project status 與 handoff；GUI 用隔離資料驗收。
+- **唯一下一步**：完成子編輯器盤點後執行 `xcodebuild -project Sailune.xcodeproj -scheme Sailune -configuration Debug -destination 'platform=macOS' test -only-testing:SailuneTests/ItemV3Tests/testCompletedBookCanResumeAndPublicationStatusPersists -only-testing:SailuneTests/ItemV3Tests/testResumeLeavesNonCompletedPublicationStatusesUnchanged`。

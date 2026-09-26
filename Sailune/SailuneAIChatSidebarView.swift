@@ -11,6 +11,7 @@ struct SailuneAIChatSidebarView: View {
     @Query(sort: \Item.name) private var allItems: [Item]
     @Query(sort: \CharacterAbility.name) private var allAbilities: [CharacterAbility]
     @Environment(AbilityProgressStore.self) private var abilityStore
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Environment(V5SettingsStore.self) private var settingsStore
     @Environment(\.sectionUnit) private var sectionUnit
     @State private var draft = ""
@@ -195,6 +196,7 @@ struct SailuneAIChatSidebarView: View {
                 }
 
                 TextField("輸入訊息…", text: $draft, axis: .vertical)
+                    .disabled(bookIsReadOnly)
                     .lineLimit(1...4)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit(send)
@@ -206,7 +208,7 @@ struct SailuneAIChatSidebarView: View {
                     }
                     .help("取消請求")
                     .accessibilityLabel("取消 AI 請求")
-                } else {
+                } else if !bookIsReadOnly {
                     Button(action: send) {
                         Image(systemName: "arrow.up")
                     }
@@ -231,12 +233,12 @@ struct SailuneAIChatSidebarView: View {
             get: { conversationToDeleteID != nil },
             set: { if !$0 { conversationToDeleteID = nil } }
         )) {
-            Button("刪除對話", role: .destructive) {
+            if !bookIsReadOnly { Button("刪除對話", role: .destructive) {
                 if let conversationToDeleteID {
                     model.deleteConversation(conversationToDeleteID)
                 }
                 conversationToDeleteID = nil
-            }
+            } }
             Button(SailuneActionCopy.cancel, role: .cancel) {
                 conversationToDeleteID = nil
             }
@@ -251,7 +253,7 @@ struct SailuneAIChatSidebarView: View {
                 Text("對話")
                     .font(.headline)
                 Spacer()
-                Button {
+                if !bookIsReadOnly { Button {
                     model.newConversation()
                     showingConversations = false
                 } label: {
@@ -259,7 +261,7 @@ struct SailuneAIChatSidebarView: View {
                 }
                 .buttonStyle(.plain)
                 .help(SailuneAccessibilityCopy.addConversation)
-                .accessibilityLabel(SailuneAccessibilityCopy.addConversation)
+                .accessibilityLabel(SailuneAccessibilityCopy.addConversation) }
             }
             ScrollView {
                 LazyVStack(spacing: 4) {

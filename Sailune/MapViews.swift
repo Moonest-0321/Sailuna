@@ -49,6 +49,7 @@ struct MapWorkspaceView: View {
     let onOpenPlaceSettings: (UUID) -> Void
 
     @Environment(V5SettingsStore.self) private var settingsStore
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @State private var pdfData: Data?
     @State private var isImporting = false
     @State private var exportRequest: SailuneExportRequest?
@@ -145,7 +146,7 @@ struct MapWorkspaceView: View {
                     AdaptiveToolbarLabel("匯入地圖", systemImage: "square.and.arrow.down")
                 }
                 .help("匯入地圖")
-                .disabled(currentMap == nil || currentVersion == nil)
+                .disabled(bookIsReadOnly || currentMap == nil || currentVersion == nil)
 
                 Spacer(minLength: 12)
 
@@ -181,7 +182,7 @@ struct MapWorkspaceView: View {
                 }
                 .help(SailuneAccessibilityCopy.enterCoordinates)
                 .accessibilityLabel(SailuneAccessibilityCopy.enterCoordinates)
-                .disabled(currentMap == nil)
+                .disabled(bookIsReadOnly || currentMap == nil)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)
@@ -203,11 +204,13 @@ struct MapWorkspaceView: View {
                         Color(nsColor: .windowBackgroundColor)
 
                         MapSurfaceView(
+                            isReadOnly: bookIsReadOnly,
                             pdfData: pdfData,
                             markers: markerRecords,
                             zoom: viewport.zoom,
                             selectedPlaceID: markerDraft?.placeID,
                             onCreateMarker: { coordinate in
+                                guard !bookIsReadOnly else { return }
                                 markerDraft = MapMarkerDraft(coordinate: coordinate)
                             },
                             onEditMarker: { marker in
@@ -271,6 +274,7 @@ struct MapWorkspaceView: View {
         .sheet(item: $markerDraft) { draft in
             MapMarkerEditorView(
                 draft: draft,
+                isReadOnly: bookIsReadOnly,
                 onSave: { name, placeType, coordinate in
                     saveMarker(draft, name: name, placeType: placeType, coordinate: coordinate)
                 },
@@ -294,6 +298,7 @@ struct MapWorkspaceView: View {
         .sheet(isPresented: $isManagingMaps) {
             MapManagementView(
                 bookID: book.id,
+                isReadOnly: bookIsReadOnly,
                 selectedLevel: $selectedLevel,
                 selectedMapID: $selectedMapID,
                 onSelectionChanged: synchronizeSelection
@@ -303,6 +308,7 @@ struct MapWorkspaceView: View {
             if let currentMap {
                 MapVersionManagementView(
                     map: currentMap,
+                    isReadOnly: bookIsReadOnly,
                     selectedVersionID: $selectedVersionID,
                     onSelectionChanged: synchronizeVersionSelection
                 )
@@ -416,6 +422,7 @@ struct MapWorkspaceView: View {
     }
 
     private func handleImport(_ result: Result<[URL], Error>) {
+        guard !bookIsReadOnly else { return }
         do {
             let sourceURL = try result.get().first
             guard let sourceURL else { return }
@@ -456,7 +463,7 @@ struct MapWorkspaceView: View {
         placeType: String?,
         coordinate: MapCoordinate
     ) {
-        guard let currentMap else { return }
+        guard !bookIsReadOnly, let currentMap else { return }
         do {
             if draft.placeID != nil || draft.placementID != nil {
                 guard let placeID = draft.placeID, let placementID = draft.placementID else {
@@ -473,7 +480,7 @@ struct MapWorkspaceView: View {
     }
 
     private func deleteMarker(_ draft: MapMarkerDraft) {
-        guard let placeID = draft.placeID else { return }
+        guard !bookIsReadOnly, let placeID = draft.placeID else { return }
         do {
             guard let place = try settingsStore.markerPlaceForDeletion(placeID: placeID, bookID: book.id) else {
                 throw MapCatalogError.invalidMarkerSource
@@ -485,7 +492,7 @@ struct MapWorkspaceView: View {
     }
 
     private func moveMarker(_ marker: MapMarkerRecord, to coordinate: MapCoordinate) {
-        guard let currentMap else { return }
+        guard !bookIsReadOnly, let currentMap else { return }
         do { try settingsStore.updatePlacement(marker.placement, for: marker.place, on: currentMap, coordinate: coordinate) }
         catch { errorMessage = error.localizedDescription }
     }
@@ -504,6 +511,20 @@ struct MapWorkspaceView: View {
     }
 
     private func bootstrapMapCatalog() {
+        if bookIsReadOnly {
+            guard let map = settingsStore.maps(for: book.id).first,
+                  let version = settingsStore.versions(for: map).first else {
+                selectedMapID = nil
+                selectedVersionID = nil
+                pdfData = nil
+                return
+            }
+            selectedLevel = MapLevel(rawValue: map.levelRawValue) ?? .overview
+            selectedMapID = map.id
+            selectedVersionID = version.id
+            reloadMap()
+            return
+        }
         do {
             guard let (map, version) = try settingsStore.ensureDefaultMap(for: book.id) else {
                 selectedMapID = nil; selectedVersionID = nil; pdfData = nil; return
@@ -556,6 +577,7 @@ struct MapWorkspaceView: View {
 }
 
 private struct MapSurfaceView: View {
+    let isReadOnly: Bool
     let pdfData: Data?
     let markers: [MapMarkerRecord]
     let zoom: CGFloat
@@ -601,6 +623,7 @@ private struct MapSurfaceView: View {
                         mapRect: mapRect,
                         zoom: zoom,
                         isSelected: selectedPlaceID == marker.place.id,
+                        isReadOnly: isReadOnly,
                         onOpen: { onEditMarker(marker) },
                         onMove: { onMoveMarker(marker, $0) },
                         onDragChanged: onMarkerDragChanged
@@ -625,6 +648,7 @@ private struct MapMarkerView: View {
     let mapRect: CGRect
     let zoom: CGFloat
     let isSelected: Bool
+    let isReadOnly: Bool
     let onOpen: () -> Void
     let onMove: (MapCoordinate) -> Void
     let onDragChanged: (Bool) -> Void
@@ -706,6 +730,7 @@ private struct MapMarkerView: View {
     private var markerDragGesture: some Gesture {
         DragGesture(minimumDistance: 8)
             .onChanged { value in
+                guard !isReadOnly else { return }
                 onDragChanged(true)
                 dragTranslation = value.translation
                 previewCoordinate = MapCoordinateTransform.clampedCoordinate(
@@ -717,6 +742,7 @@ private struct MapMarkerView: View {
                 )
             }
             .onEnded { value in
+                guard !isReadOnly else { return }
                 let destination = CGPoint(
                     x: point.x + value.translation.width,
                     y: point.y + value.translation.height
@@ -821,6 +847,7 @@ private struct MapMarkerDraft: Identifiable {
 
 private struct MapMarkerEditorView: View {
     let draft: MapMarkerDraft
+    let isReadOnly: Bool
     let onSave: (String, String?, MapCoordinate) -> Void
     let onDelete: (() -> Void)?
     let onOpenSettings: (() -> Void)?
@@ -838,6 +865,7 @@ private struct MapMarkerEditorView: View {
 
     init(
         draft: MapMarkerDraft,
+        isReadOnly: Bool = false,
         onSave: @escaping (String, String?, MapCoordinate) -> Void,
         onDelete: (() -> Void)? = nil,
         onOpenSettings: (() -> Void)? = nil,
@@ -845,6 +873,7 @@ private struct MapMarkerEditorView: View {
         onNavigate: (() throws -> Void)? = nil
     ) {
         self.draft = draft
+        self.isReadOnly = isReadOnly
         self.onSave = onSave
         self.onDelete = onDelete
         self.onOpenSettings = onOpenSettings
@@ -876,6 +905,7 @@ private struct MapMarkerEditorView: View {
                 }
                 .textFieldStyle(.roundedBorder)
                 .font(.body.monospacedDigit())
+                .disabled(isReadOnly)
 
                 if parsedCoordinate == nil {
                     Text("X 需為 0–4000、Y 需為 0–3000 的整數")
@@ -887,7 +917,9 @@ private struct MapMarkerEditorView: View {
             TextField("地點名稱", text: $name)
                 .focused($nameFocused)
                 .onSubmit(save)
+                .disabled(isReadOnly)
             TextField("地點類型（例如城市）", text: $placeType)
+                .disabled(isReadOnly)
 
             if let destinationTitle, let onNavigate {
                 Button(destinationTitle) {
@@ -907,7 +939,7 @@ private struct MapMarkerEditorView: View {
             }
 
             HStack {
-                if onDelete != nil {
+                if onDelete != nil && !isReadOnly {
                     Button(SailuneActionCopy.deletePlace, role: .destructive) {
                         showingDeleteConfirmation = true
                     }
@@ -922,8 +954,10 @@ private struct MapMarkerEditorView: View {
                 }
                 Spacer()
                 Button(SailuneActionCopy.cancel, role: .cancel) { dismiss() }
-                Button(SailuneActionCopy.save, action: save)
-                    .disabled(trimmedName.isEmpty || parsedCoordinate == nil)
+                if !isReadOnly {
+                    Button(SailuneActionCopy.save, action: save)
+                        .disabled(trimmedName.isEmpty || parsedCoordinate == nil)
+                }
             }
         }
         .padding(20)
@@ -941,7 +975,7 @@ private struct MapMarkerEditorView: View {
     }
 
     private func save() {
-        guard !trimmedName.isEmpty, let parsedCoordinate else { return }
+        guard !isReadOnly, !trimmedName.isEmpty, let parsedCoordinate else { return }
         let trimmedType = placeType.trimmingCharacters(in: .whitespacesAndNewlines)
         onSave(trimmedName, trimmedType.isEmpty ? nil : trimmedType, parsedCoordinate)
         dismiss()

@@ -514,6 +514,7 @@ extension Notification.Name {
 struct RichEditorView: NSViewRepresentable {
     let section: Section
     let bridge: EditorBridge
+    var isEditable: Bool = true
     var onWordCountChange: ((Int) -> Void)? = nil
     var onHeadingStateChange: ((Bool) -> Void)? = nil
     var onSaveStateChange: ((EditorSaveState) -> Void)? = nil
@@ -595,6 +596,7 @@ struct RichEditorView: NSViewRepresentable {
     func updateNSView(_ scrollView: NSScrollView, context: Context) {
         let coord = context.coordinator
         guard let textView = coord.textView else { return }
+        if textView.isEditable != isEditable { textView.isEditable = isEditable }
         let sectionChanged = (coord.lastSectionID != section.id)
         if sectionChanged {
             coord.lastSectionID = section.id
@@ -662,7 +664,7 @@ struct RichEditorView: NSViewRepresentable {
             frame: NSRect(x: 0, y: 0, width: 800, height: 600),
             textContainer: textContainer
         )
-        textView.isEditable = true
+        textView.isEditable = isEditable
         textView.isSelectable = true
         textView.allowsUndo = true
         textView.isRichText = true

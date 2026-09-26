@@ -5,6 +5,7 @@ struct SidebarSettingsManagerView: View {
     let book: Book
     @Environment(\.dismiss) private var dismiss
     @Environment(V5SettingsStore.self) private var settingsStore
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
 
     private var rows: [BookSidebarSetting] {
         settingsStore.sidebarRows(for: book.id)
@@ -28,19 +29,20 @@ struct SidebarSettingsManagerView: View {
                             Toggle(isOn: binding(for: row)) {
                                 Label(row.key?.title ?? "未知設定", systemImage: row.key?.systemImage ?? "questionmark")
                             }
+                            .disabled(bookIsReadOnly)
                             Spacer()
                             Button { move(row, offset: -1) } label: { Image(systemName: "chevron.up") }
                                 .buttonStyle(.borderless)
-                                .disabled(row.sortOrder == rows.first?.sortOrder)
+                                .disabled(bookIsReadOnly || row.sortOrder == rows.first?.sortOrder)
                             Button { move(row, offset: 1) } label: { Image(systemName: "chevron.down") }
                                 .buttonStyle(.borderless)
-                                .disabled(row.sortOrder == rows.last?.sortOrder)
+                                .disabled(bookIsReadOnly || row.sortOrder == rows.last?.sortOrder)
                         }
                     }
                 }
             }
             HStack {
-                Button("重設預設顯示", action: reset)
+                Button("重設預設顯示", action: reset).disabled(bookIsReadOnly)
                 Spacer()
                 Text("可選項目：地點")
                     .font(.caption)
@@ -49,14 +51,15 @@ struct SidebarSettingsManagerView: View {
         }
         .padding(16)
         .frame(minWidth: 420, minHeight: 360)
-        .task { settingsStore.ensureDefaults(for: book.id) }
+        .task { if !bookIsReadOnly { settingsStore.ensureDefaults(for: book.id) } }
     }
 
     private func binding(for row: BookSidebarSetting) -> Binding<Bool> {
-        Binding(get: { row.isVisible }, set: { row.isVisible = $0; settingsStore.save() })
+        Binding(get: { row.isVisible }, set: { guard !bookIsReadOnly else { return }; row.isVisible = $0; settingsStore.save() })
     }
 
     private func move(_ row: BookSidebarSetting, offset: Int) {
+        guard !bookIsReadOnly else { return }
         guard let index = rows.firstIndex(where: { $0.id == row.id }) else { return }
         let target = index + offset
         guard rows.indices.contains(target) else { return }

@@ -5,6 +5,7 @@ struct PlaceListView: View {
     let book: Book
     let currentSection: Section?
     @Environment(V5SettingsStore.self) private var settingsStore
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @State private var searchText = ""
     @State private var showCurrentSectionOnly = false
     @State private var editingPlace: Place?
@@ -49,18 +50,18 @@ struct PlaceListView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-                        Button(SailuneActionCopy.delete, role: .destructive) { deleteTarget = place }
-                            .buttonStyle(.plain)
+                        if !bookIsReadOnly { Button(SailuneActionCopy.delete, role: .destructive) { deleteTarget = place }.buttonStyle(.plain) }
                     }
                 }
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(Color.workspacePanelBackground)
-            Button("新增地點", systemImage: SailuneSymbol.add.systemName) {
-                editingPlace = settingsStore.createPlace(bookID: book.id)
+            if !bookIsReadOnly {
+                Button("新增地點", systemImage: SailuneSymbol.add.systemName) {
+                    editingPlace = settingsStore.createPlace(bookID: book.id)
+                }.padding(10)
             }
-            .padding(10)
         }
         .sheet(item: $editingPlace) { place in
             PlaceDetailView(place: place, book: book)
@@ -82,6 +83,7 @@ struct WorldTermListView: View {
     let book: Book
     let currentSection: Section?
     @Environment(V5SettingsStore.self) private var settingsStore
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @State private var searchText = ""
     @State private var showCurrentSectionOnly = false
     @State private var categoryFilter: String?
@@ -147,20 +149,18 @@ struct WorldTermListView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                         }
-                        Button(SailuneActionCopy.delete, role: .destructive) { deleteTarget = term }
-                            .buttonStyle(.plain)
+                        if !bookIsReadOnly { Button(SailuneActionCopy.delete, role: .destructive) { deleteTarget = term }.buttonStyle(.plain) }
                     }
                 }
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(Color.workspacePanelBackground)
-            Button {
+            if !bookIsReadOnly { Button {
                 let term = settingsStore.createWorldTerm(bookID: book.id)
                 newlyCreatedTermID = term.id
                 editingTerm = term
-            } label: { Label("新增條目", systemImage: SailuneSymbol.add.systemName) }
-            .padding(10)
+            } label: { Label("新增條目", systemImage: SailuneSymbol.add.systemName) }.padding(10) }
         }
         .sheet(item: $editingTerm, onDismiss: { newlyCreatedTermID = nil }) { term in
             WorldTermDetailView(
@@ -188,6 +188,7 @@ struct PlaceDetailView: View {
     var onBack: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @Environment(V5SettingsStore.self) private var settingsStore
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @State private var showingDeleteConfirmation = false
 
     var body: some View {
@@ -200,7 +201,7 @@ struct PlaceDetailView: View {
                     Text("編輯地點").font(.headline)
                 }
                 Spacer()
-                Button(SailuneActionCopy.delete, role: .destructive) { showingDeleteConfirmation = true }
+                if !bookIsReadOnly { Button(SailuneActionCopy.delete, role: .destructive) { showingDeleteConfirmation = true } }
                 Button(SailuneActionCopy.done, action: finish)
             }
 
@@ -217,7 +218,7 @@ struct PlaceDetailView: View {
         }
         .padding(16)
         .frame(minWidth: onBack == nil ? 480 : 0, minHeight: onBack == nil ? 560 : 320)
-        .onDisappear { settingsStore.save() }
+        .onDisappear { if !bookIsReadOnly { settingsStore.save() } }
         .confirmationDialog("確定要刪除這個地點嗎？", isPresented: $showingDeleteConfirmation, titleVisibility: .visible) {
             Button(SailuneActionCopy.deletePlace, role: .destructive) {
                 settingsStore.deletePlace(place, bookID: book.id)
@@ -244,7 +245,7 @@ struct PlaceDetailView: View {
     }
 
     private func finish() {
-        settingsStore.save()
+        if !bookIsReadOnly { settingsStore.save() }
         if let onBack { onBack() } else { dismiss() }
     }
 }
@@ -256,6 +257,7 @@ struct WorldTermDetailView: View {
     var onBack: (() -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
     @Environment(V5SettingsStore.self) private var settingsStore
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @State private var showingDeleteConfirmation = false
     @State private var saveErrorMessage: String?
     @State private var showingGovernmentPresets = false
@@ -375,7 +377,7 @@ struct WorldTermDetailView: View {
                 isNameFocused = true
             }
         }
-        .onDisappear { settingsStore.save() }
+        .onDisappear { if !bookIsReadOnly { settingsStore.save() } }
         .alert(
             "無法保存世界條目",
             isPresented: Binding(

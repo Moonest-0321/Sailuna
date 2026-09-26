@@ -11,6 +11,7 @@ struct AbilityDetailView: View {
     let onBack: () -> Void
     let onOpenCharacter: (Character) -> Void
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Environment(AbilityProgressStore.self) private var abilityStore
     @Environment(V5SettingsStore.self) private var settingsStore
     @Query(sort: \Character.sortOrder) private var allCharacters: [Character]
@@ -50,9 +51,10 @@ struct AbilityDetailView: View {
                                 }
                             }
                             .buttonStyle(.borderless)
+                            .disabled(bookIsReadOnly)
                         }
                     }
-                    Button("刪除能力", systemImage: SailuneSymbol.delete.systemName, role: .destructive) { deleteAbility() }
+                    if !bookIsReadOnly { Button("刪除能力", systemImage: SailuneSymbol.delete.systemName, role: .destructive) { deleteAbility() } }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading).padding(12)
             }
@@ -71,7 +73,7 @@ struct AbilityDetailView: View {
                         HStack {
                             Text("\(String(format: "%02d", index + 1))").monospacedDigit().foregroundStyle(.secondary)
                             SailuneFormTextField(title: "等級名稱", text: $level.name)
-                            Button(role: .destructive) { abilityStore.deleteAbilityLevel(level) } label: { Image(systemName: SailuneSymbol.delete.systemName) }.buttonStyle(.plain)
+                            if !bookIsReadOnly { Button(role: .destructive) { abilityStore.deleteAbilityLevel(level) } label: { Image(systemName: SailuneSymbol.delete.systemName) }.buttonStyle(.plain) }
                         }
                         SailuneFormTextField(title: "能力描述", text: $level.descriptionText)
                         SailuneFormTextField(title: "代價", text: $level.cost)
@@ -83,9 +85,11 @@ struct AbilityDetailView: View {
                     .onChange(of: level.cost) { level.updatedAt = Date() }
                     .onChange(of: level.note) { level.updatedAt = Date() }
                 }
-                Button(SailuneActionCopy.addLevel, systemImage: SailuneSymbol.add.systemName) {
-                    abilityStore.addLevel(abilityID: ability.id)
-                }.buttonStyle(.borderless)
+                if !bookIsReadOnly {
+                    Button(SailuneActionCopy.addLevel, systemImage: SailuneSymbol.add.systemName) {
+                        abilityStore.addLevel(abilityID: ability.id)
+                    }.buttonStyle(.borderless)
+                }
             }
         }
     }
@@ -129,6 +133,7 @@ struct AbilityListContainerView: View {
     @Environment(V5SettingsStore.self) private var settingsStore
     @Query(sort: \CharacterAbility.createdAt) private var allAbilities: [CharacterAbility]
     @Query(sort: \Character.createdAt) private var allCharacters: [Character]
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @State private var searchText = ""
     @State private var showCurrentSectionOnly = false
     @State private var deleteTarget: CharacterAbility?
@@ -173,16 +178,17 @@ struct AbilityListContainerView: View {
                     Button(ability.name.isEmpty ? "未命名能力" : ability.name) { onOpen(ability) }
                         .buttonStyle(.plain)
                         .frame(maxWidth: .infinity, alignment: .leading)
-                    Button(SailuneActionCopy.delete, role: .destructive) { deleteTarget = ability }
-                        .buttonStyle(.plain)
+                    if !bookIsReadOnly {
+                        Button(SailuneActionCopy.delete, role: .destructive) { deleteTarget = ability }
+                            .buttonStyle(.plain)
+                    }
                 }
                 .padding(.vertical, 4)
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(Color.workspacePanelBackground)
-            Button("新增能力", systemImage: SailuneSymbol.add.systemName, action: addAbility)
-            .padding(10)
+            if !bookIsReadOnly { Button("新增能力", systemImage: SailuneSymbol.add.systemName, action: addAbility).padding(10) }
         }
         .confirmationDialog("刪除能力？", isPresented: Binding(
             get: { deleteTarget != nil },

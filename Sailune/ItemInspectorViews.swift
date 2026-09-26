@@ -8,6 +8,7 @@ struct ItemListContainerView: View {
     let onSelectSection: ((Section) -> Void)?
     let onOpen: (Item) -> Void
     @Environment(\.modelContext) private var modelContext
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Environment(ItemCopyStore.self) private var copyStore
     @Environment(V5SettingsStore.self) private var settingsStore
     @Query(sort: \Item.updatedAt, order: .reverse) private var allItems: [Item]
@@ -71,6 +72,7 @@ struct ItemListContainerView: View {
 
             Button("新增物品", systemImage: SailuneSymbol.add.systemName) { showNewItemSheet = true }
             .buttonStyle(.borderedProminent)
+            .disabled(bookIsReadOnly)
             .padding(12)
         }
         .sheet(isPresented: $showNewItemSheet) {
@@ -128,6 +130,7 @@ struct ItemListContainerView: View {
 }
 
 private struct ItemReferenceRow: View {
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Bindable var item: Item
     let onOpen: (Item) -> Void
     let onDelete: () -> Void
@@ -140,8 +143,7 @@ private struct ItemReferenceRow: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            Button(SailuneActionCopy.delete, role: .destructive, action: onDelete)
-                .buttonStyle(.plain)
+            if !bookIsReadOnly { Button(SailuneActionCopy.delete, role: .destructive, action: onDelete).buttonStyle(.plain) }
         }
         .padding(.vertical, 5)
         .onChange(of: item.name) { item.updatedAt = Date() }
@@ -153,6 +155,7 @@ private struct ItemReferenceRow: View {
 struct ItemDetailView: View {
     @Bindable var item: Item
     let book: Book
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     let onBack: () -> Void
     let onOpenCopy: (ItemCopy) -> Void
     let onSelectSection: ((Section) -> Void)?
@@ -217,7 +220,7 @@ struct ItemDetailView: View {
                     HStack {
                         Button(SailuneActionCopy.addCopy, systemImage: SailuneSymbol.addCopy.systemName, action: addCopy)
                         Spacer()
-                        Button(SailuneActionCopy.deleteItem, systemImage: SailuneSymbol.delete.systemName, role: .destructive) { showDeleteConfirmation = true }
+                        if !bookIsReadOnly { Button(SailuneActionCopy.deleteItem, systemImage: SailuneSymbol.delete.systemName, role: .destructive) { showDeleteConfirmation = true } }
                     }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -292,14 +295,14 @@ struct ItemDetailView: View {
                 Image(systemName: "arrow.up")
             }
             .buttonStyle(.plain)
-            .disabled(!canMoveUp)
+            .disabled(bookIsReadOnly || !canMoveUp)
             .help("上移副本")
 
             Button { copyStore.moveCopy(copy, by: 1) } label: {
                 Image(systemName: "arrow.down")
             }
             .buttonStyle(.plain)
-            .disabled(!canMoveDown)
+            .disabled(bookIsReadOnly || !canMoveDown)
             .help("下移副本")
         }
     }
@@ -335,6 +338,7 @@ struct ItemCopyDetailView: View {
     let book: Book
     let onBack: () -> Void
     let onOpenCharacter: (Character) -> Void
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Environment(ItemCopyStore.self) private var copyStore
     @Query(sort: \Character.sortOrder) private var allCharacters: [Character]
     @Query(sort: \ItemLevel.sortOrder) private var allLevels: [ItemLevel]
@@ -392,6 +396,7 @@ struct ItemCopyDetailView: View {
                                     Text(character.realName.isEmpty ? "未命名角色" : character.realName).tag(Optional(character.id))
                                 }
                             }
+                            .disabled(bookIsReadOnly)
                             if let holder = holderBinding.wrappedValue.flatMap({ id in allCharacters.first { $0.id == id } }) {
                                 Button(holder.realName.isEmpty ? "未命名角色" : holder.realName) { onOpenCharacter(holder) }
                                     .buttonStyle(.link)
@@ -404,12 +409,13 @@ struct ItemCopyDetailView: View {
                                 Text("未設定").tag(Optional<UUID>.none)
                                 ForEach(levels) { level in Text(level.name.isEmpty ? "未命名等級" : level.name).tag(Optional(level.id)) }
                             }
+                            .disabled(bookIsReadOnly)
                             Text("僅記錄此副本目前使用的等級，不會自動改變物品名稱、能力、代價或時間序。")
                                 .font(.caption).foregroundStyle(.secondary)
                         }
                     }
                     GroupBox("時間序") { historyEditor }
-                    Button(SailuneActionCopy.deleteCopy, systemImage: SailuneSymbol.delete.systemName, role: .destructive) { showDeleteConfirmation = true }
+                    if !bookIsReadOnly { Button(SailuneActionCopy.deleteCopy, systemImage: SailuneSymbol.delete.systemName, role: .destructive) { showDeleteConfirmation = true } }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading).padding(12)
             }
@@ -420,8 +426,8 @@ struct ItemCopyDetailView: View {
         }
     }
 
-    private var holderBinding: Binding<UUID?> { Binding(get: { copyStore.holdings.first(where: { $0.copyID == copy.id })?.characterID }, set: { copyStore.setHolder(copyID: copy.id, characterID: $0) }) }
-    private var currentLevelBinding: Binding<UUID?> { Binding(get: { copyStore.currentLevelID(for: copy.id) }, set: { copyStore.setCurrentLevel(copyID: copy.id, levelID: $0) }) }
+    private var holderBinding: Binding<UUID?> { Binding(get: { copyStore.holdings.first(where: { $0.copyID == copy.id })?.characterID }, set: { guard !bookIsReadOnly else { return }; copyStore.setHolder(copyID: copy.id, characterID: $0) }) }
+    private var currentLevelBinding: Binding<UUID?> { Binding(get: { copyStore.currentLevelID(for: copy.id) }, set: { guard !bookIsReadOnly else { return }; copyStore.setCurrentLevel(copyID: copy.id, levelID: $0) }) }
     private var historyEditor: some View {
         VStack(alignment: .leading, spacing: 8) {
             if histories.isEmpty { Text("尚無歷史").font(.caption).foregroundStyle(.secondary) }
@@ -449,7 +455,7 @@ struct ItemCopyDetailView: View {
                 .padding(8).background(SailuneTheme.insetRowSurface, in: RoundedRectangle(cornerRadius: 7))
                 .onChange(of: history.content) { history.updatedAt = Date(); copyStore.save() }
             }
-            Button(SailuneActionCopy.addHistory, systemImage: SailuneSymbol.add.systemName) { copyStore.addHistory(copyID: copy.id) }.buttonStyle(.borderless)
+            if !bookIsReadOnly { Button(SailuneActionCopy.addHistory, systemImage: SailuneSymbol.add.systemName) { copyStore.addHistory(copyID: copy.id) }.buttonStyle(.borderless) }
         }
     }
     private func toggle(_ id: UUID, in history: ItemCopyHistory) { var ids = history.relatedCharacterIDs; if let index = ids.firstIndex(of: id) { ids.remove(at: index) } else { ids.append(id) }; history.relatedCharacterIDs = ids; history.updatedAt = Date(); copyStore.save() }
@@ -459,6 +465,7 @@ struct ItemCopyDetailView: View {
 /// This editor only defines possible stages. It intentionally does not expose
 /// a selected/current stage, character-specific stages, or automatic effects.
 private struct ItemLevelEditor: View {
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     let item: Item
     let levels: [ItemLevel]
     @Environment(\.modelContext) private var modelContext

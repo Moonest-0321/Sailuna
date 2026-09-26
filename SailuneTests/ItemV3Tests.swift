@@ -146,6 +146,39 @@ final class ItemV3Tests: XCTestCase {
         XCTAssertEqual(book.status, .completed)
     }
 
+    func testCompletedBookCanResumeAndPublicationStatusPersists() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SailunePublicationResume-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let statusURL = directory.appendingPathComponent("Publication Status.json")
+        let store = try BookPublicationStore(url: statusURL)
+        let bookID = UUID()
+
+        try store.advance(bookID)
+        try store.advance(bookID)
+        XCTAssertEqual(store.status(for: bookID), .completed)
+
+        try store.resume(bookID)
+        XCTAssertEqual(store.status(for: bookID), .ongoing)
+        XCTAssertEqual(try BookPublicationStore(url: statusURL).status(for: bookID), .ongoing)
+    }
+
+    func testResumeLeavesNonCompletedPublicationStatusesUnchanged() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SailunePublicationResume-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try BookPublicationStore(url: directory.appendingPathComponent("Publication Status.json"))
+        let draftID = UUID()
+        let ongoingID = UUID()
+
+        try store.resume(draftID)
+        XCTAssertEqual(store.status(for: draftID), .draft)
+
+        try store.advance(ongoingID)
+        try store.resume(ongoingID)
+        XCTAssertEqual(store.status(for: ongoingID), .ongoing)
+    }
+
     private func testCoverImage(color: NSColor) -> NSImage {
         let bitmap = NSBitmapImageRep(
             bitmapDataPlanes: nil,

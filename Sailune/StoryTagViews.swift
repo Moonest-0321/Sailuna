@@ -5,6 +5,7 @@ struct StoryTagListView: View {
     let currentSection: Section?
     let onOpen: ((StoryTag) -> Void)?
     @Environment(StoryPlanningStore.self) private var planningStore
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @State private var searchText = ""
     @State private var showCurrentSectionOnly = false
     @State private var deleteTarget: StoryTag?
@@ -65,8 +66,7 @@ struct StoryTagListView: View {
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
                                         .lineLimit(1)
-                                    Button(SailuneActionCopy.delete, role: .destructive) { deleteTarget = tag }
-                                        .buttonStyle(.plain)
+                                    if !bookIsReadOnly { Button(SailuneActionCopy.delete, role: .destructive) { deleteTarget = tag }.buttonStyle(.plain) }
                                 }
                             }
                         }
@@ -98,6 +98,7 @@ struct StoryTagListView: View {
     }
 
     private func delete(_ tag: StoryTag) {
+        guard !bookIsReadOnly else { return }
         do {
             try planningStore.deleteStoryTag(tag)
             deleteTarget = nil

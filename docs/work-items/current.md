@@ -1,10 +1,10 @@
 # 目前功能工作單
 
 > 整體狀態：active
->
-> 目前階段：V10.2 發布書籍數據頁實作完成、GUI 驗收待補（R／U／I 已核准）；詳見 [v10.2-publishing-analytics.md](v10.2-publishing-analytics.md)。
->
-> 單一下一步：在 CUA 正常綁定隔離 Debug App 的環境確認 V10.2 點書名進數據頁、返回、空圖表及發布狀態按鈕獨立；V10.0 TXT 匯入／匯出與 V10.1 首頁／發布功能的隔離 GUI 驗收仍保留在各自工作單及交接中。
+> 目前階段：V10.1 完結作品唯讀修訂已完成實作與專項程式驗證；隔離資料 GUI 驗收待完成，詳見 [v10.1-completed-book-read-only.md](v10.1-completed-book-read-only.md)。
+> 目前階段：V10.1 完結作品唯讀修訂 R／U／I approved，功能實作與驗證中；工作單見 [v10.1-completed-book-read-only.md](v10.1-completed-book-read-only.md)。
+> 單一下一步：以隔離書籍人工驗收 V10.1 恢復連載、即時唯讀權限及各工作區瀏覽；V10.2 數據頁、V10.0 匯入／匯出的 GUI／驗收待辦仍依各自工作紀錄處理。
+> 單一下一步：完成 V10.1 完結作品所有子視圖寫入防護，跑最終 build／專項 XCTest 並更新驗收紀錄。既有 V10.2 發布書籍數據頁已完成實作但隔離 GUI 驗收待補，詳見 [v10.2-publishing-analytics.md](v10.2-publishing-analytics.md) 及 handoff；V10.0／V10.1 其他隔離 GUI 待驗收仍保留於各自紀錄。
 
 ## V8.2 AI 閱讀、設定分析與角色一致性比較（R approved）
 
