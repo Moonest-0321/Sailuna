@@ -2,9 +2,9 @@
 
 > 整體狀態：active
 >
-> 目前階段：V10.0 TXT 書籍匯入與 TXT 匯出實作／驗證；匯入缺少卷名／節名／內文以「無」代替，無卷標記時全部歸入第一卷，正文套用本機內文格式而不保留來源樣式；匯出固定使用「節」、移除所有 `#`，卷名加「第X卷」。詳見 [v10-content-transfer.md](v10-content-transfer.md)。
+> 目前階段：V10.2 發布書籍數據頁實作完成、GUI 驗收待補（R／U／I 已核准）；詳見 [v10.2-publishing-analytics.md](v10.2-publishing-analytics.md)。
 >
-> 單一下一步：在正常 GUI 使用者 session 由 Xcode Run 啟動獨立 bundle ID 的 Debug app，完成 GUI 冒煙後關閉 V10 工作單。直接命令列啟動會 abort，Launch Services 開啟 Xcode build bundle 回報 `kLSNoExecutableErr`；不可操作已開啟的正式 Sailune。舊 DOCX、字級映射及超過四級回退提案已由新版需求取代。
+> 單一下一步：在 CUA 正常綁定隔離 Debug App 的環境確認 V10.2 點書名進數據頁、返回、空圖表及發布狀態按鈕獨立；V10.0 TXT 匯入／匯出與 V10.1 首頁／發布功能的隔離 GUI 驗收仍保留在各自工作單及交接中。
 
 ## V8.2 AI 閱讀、設定分析與角色一致性比較（R approved）
 

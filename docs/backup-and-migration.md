@@ -36,6 +36,7 @@ V4.4.8 在主 container 與 StoryPlanning store 都成功開啟後，會以現�
 - 能力進度：`Sailune-v5-ability-progress.store`
 - 故事規劃：`Sailune-v5-story-planning.store`
 - 地圖背景：`Sailune/Maps/<bookID>/<mapID>/<versionID>.pdf`（舊 `<bookID>.pdf` 只作待遷移來源）
+- 每日編輯統計：`Sailune/Writing Stats.json`（V10.2 sidecar，按書籍 UUID 與本地日保存有號淨字數）
 
 實際位置由應用程式的 Application Support 目錄決定；測試時可使用 `SAILUNE_TEST_STORE_URL` 指定主資料庫。
 
@@ -64,6 +65,7 @@ V4.4.8 在主 container 與 StoryPlanning store 都成功開啟後，會以現�
 - 正式置換在下次啟動、container 開啟前執行；先強制建立 `Sailune/Recovery Backups` 安全備份，再整組置換。失敗路徑會嘗試復位原 store、封面、地圖及 AI 對話並停止啟動；原檔搬回與清理錯誤仍會被 `try?` 忽略，因此目前無法確認復位是否完整。啟動訊息已改為「備份還原失敗，原資料回復狀態未確認」。rollback 保留與重啟政策仍待另行核定。
 - 沒有 `maps/` 的舊備份仍可還原，且會清除還原前的目前地圖資產，避免背景與舊座標資料錯配。
 - 沒有 `ai-conversations/` 的舊備份仍可還原，且會清除還原前的 AI 對話；每書對話檔隨書籍刪除並在還原失敗時 rollback。
+- V10.2 每日正文編輯淨字數保存在 `Sailune/Writing Stats.json`，不新增 SwiftData schema；完整備份選擇性包含 `writing-stats.json` 並驗證其格式與 checksum。還原前將現存統計檔納入 rollback；舊備份缺少統計檔時清除目前統計並以空白開始。編輯正文和統計 sidecar 不具共同原子交易，sidecar 寫入錯誤時統計停用並留錯誤提示，正文保存結果仍保留。
 - settings manifest 為 V10、V11 或 V12 的備份可由 V13 應用接受；還原後依 migration plan 升級至 V13。舊平面 map 路徑由地圖 bootstrap 搬移；其他五個 store schema 仍必須完全相符。
 
 ## V4.2 故事規劃遷移

@@ -4,7 +4,7 @@ import SwiftData
 @main
 struct SailuneApp: App {
     private enum StartupState {
-        case ready(ModelContainer, V5SettingsStore, ItemCopyStore, AbilityProgressStore, StoryPlanningStore, BookPublicationStore)
+        case ready(ModelContainer, V5SettingsStore, ItemCopyStore, AbilityProgressStore, StoryPlanningStore, BookPublicationStore, BookWritingStatsStore)
         case failed(String)
     }
 
@@ -74,7 +74,8 @@ struct SailuneApp: App {
         do {
             let (container, settingsStore, copyStore, abilityStore, planningStore) = try Self.makeModelContainer()
             let publicationStore = try BookPublicationStore(url: SailuneDataLocations(mainStore: Self.storeURL).publicationStatusURL)
-            startupState = .ready(container, settingsStore, copyStore, abilityStore, planningStore, publicationStore)
+            let writingStatsStore = BookWritingStatsStore(url: SailuneDataLocations(mainStore: Self.storeURL).writingStatsURL)
+            startupState = .ready(container, settingsStore, copyStore, abilityStore, planningStore, publicationStore, writingStatsStore)
         } catch {
             startupState = .failed(error.localizedDescription)
         }
@@ -299,8 +300,8 @@ struct SailuneApp: App {
     var body: some Scene {
         WindowGroup {
             switch startupState {
-            case .ready(let container, let settingsStore, let copyStore, let abilityStore, let planningStore, let publicationStore):
-                SailuneRootView(container: container, settingsStore: settingsStore, copyStore: copyStore, abilityStore: abilityStore, planningStore: planningStore, publicationStore: publicationStore)
+            case .ready(let container, let settingsStore, let copyStore, let abilityStore, let planningStore, let publicationStore, let writingStatsStore):
+                SailuneRootView(container: container, settingsStore: settingsStore, copyStore: copyStore, abilityStore: abilityStore, planningStore: planningStore, publicationStore: publicationStore, writingStatsStore: writingStatsStore)
             case .failed(let message):
                 DatabaseStartupFailureView(message: message)
             }
@@ -316,6 +317,7 @@ private struct SailuneRootView: View {
     @Bindable var abilityStore: AbilityProgressStore
     @Bindable var planningStore: StoryPlanningStore
     @Bindable var publicationStore: BookPublicationStore
+    @Bindable var writingStatsStore: BookWritingStatsStore
 
     var body: some View {
         ContentView()
@@ -325,6 +327,7 @@ private struct SailuneRootView: View {
             .environment(abilityStore)
             .environment(planningStore)
             .environment(publicationStore)
+            .environment(writingStatsStore)
             .alert("物品副本無法儲存", isPresented: persistenceErrorBinding) {
                 Button(SailuneActionCopy.acknowledge) { copyStore.clearPersistenceError() }
             } message: {
@@ -344,6 +347,11 @@ private struct SailuneRootView: View {
                 Button(SailuneActionCopy.acknowledge) { planningStore.clearPersistenceError() }
             } message: {
                 Text(planningStore.persistenceErrorMessage ?? "未知錯誤")
+            }
+            .alert("每日編輯統計無法保存", isPresented: writingStatsPersistenceErrorBinding) {
+                Button(SailuneActionCopy.acknowledge) { writingStatsStore.clearPersistenceError() }
+            } message: {
+                Text(writingStatsStore.persistenceErrorMessage ?? "未知錯誤")
             }
     }
 
@@ -373,6 +381,13 @@ private struct SailuneRootView: View {
         Binding(
             get: { planningStore.persistenceErrorMessage != nil },
             set: { if !$0 { planningStore.clearPersistenceError() } }
+        )
+    }
+
+    private var writingStatsPersistenceErrorBinding: Binding<Bool> {
+        Binding(
+            get: { writingStatsStore.persistenceErrorMessage != nil },
+            set: { if !$0 { writingStatsStore.clearPersistenceError() } }
         )
     }
 }

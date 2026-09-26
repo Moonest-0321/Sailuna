@@ -47,32 +47,50 @@ struct StartPublishingView: View {
     let books: [Book]
     let statusForBook: (UUID) -> BookStatus
     let onAdvance: (UUID) -> Void
+    let writingStats: BookWritingStatsStore
+    @State private var selectedBookID: UUID?
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                Text("發布")
-                    .font(.title2.weight(.semibold))
+        Group {
+            if let selectedBookID, let book = books.first(where: { $0.id == selectedBookID }) {
+                BookAnalyticsView(book: book, writingStats: writingStats) {
+                    self.selectedBookID = nil
+                }
+            } else {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 16) {
+                        Text("發布")
+                            .font(.title2.weight(.semibold))
 
-                ForEach(books) { book in
-                    let status = statusForBook(book.id)
-                    HStack(spacing: 16) {
-                        Text(book.title.isEmpty ? "未命名作品" : book.title)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        Text(status.publicationTitle)
-                            .foregroundStyle(.secondary)
-                        if status != .completed {
-                            Button(status == .draft ? "發布" : "完結") {
-                                onAdvance(book.id)
+                        ForEach(books) { book in
+                            let status = statusForBook(book.id)
+                            HStack(spacing: 16) {
+                                Button {
+                                    selectedBookID = book.id
+                                } label: {
+                                    Text(book.title.isEmpty ? "未命名作品" : book.title)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                                .accessibilityHint("開啟《\(book.title)》的數據")
+
+                                Text(status.publicationTitle)
+                                    .foregroundStyle(.secondary)
+                                if status != .completed {
+                                    Button(status == .draft ? "發布" : "完結") {
+                                        onAdvance(book.id)
+                                    }
+                                    .accessibilityLabel("\(status == .draft ? "發布" : "完結")《\(book.title)》")
+                                }
                             }
-                            .accessibilityLabel("\(status == .draft ? "發布" : "完結")《\(book.title)》")
+                            .padding(12)
+                            Divider()
                         }
                     }
-                    .padding(12)
-                    Divider()
+                    .padding(20)
                 }
             }
-            .padding(20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

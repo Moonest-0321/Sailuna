@@ -859,6 +859,11 @@ final class ItemV3Tests: XCTestCase {
             SailuneAIConversationArchive(selectedConversationID: conversation.id, conversations: [conversation]),
             bookID: conversationBookID
         )
+        let statsBookID = UUID()
+        let statsDocument = BookWritingStatsDocument(records: [
+            BookWritingStatsRecord(bookID: statsBookID, day: "2026-09-26", netWordDelta: -12)
+        ])
+        try JSONEncoder().encode(statsDocument).write(to: locations.writingStatsURL)
         let backup = root.appendingPathComponent("test.sailunebackup")
 
         try SailuneBackupService.createBackup(at: backup, locations: locations)
@@ -867,6 +872,7 @@ final class ItemV3Tests: XCTestCase {
         try Data([9]).write(to: locations.mapsDirectory.appendingPathComponent("map.pdf"))
         try Data([9]).write(to: nestedMapURL)
         try conversationStore.removeBook(bookID: conversationBookID)
+        try FileManager.default.removeItem(at: locations.writingStatsURL)
         try SailuneBackupService.scheduleRestore(from: backup, locations: locations)
         try SailuneBackupService.applyPendingRestoreIfNeeded(locations: locations)
 
@@ -877,6 +883,7 @@ final class ItemV3Tests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: locations.mapsDirectory.appendingPathComponent("map.pdf")), mapData)
         XCTAssertEqual(try Data(contentsOf: nestedMapURL), nestedMapData)
         XCTAssertEqual(try conversationStore.load(bookID: conversationBookID)?.conversations.first?.messages.first?.text, "備份前的提問")
+        XCTAssertEqual(try JSONDecoder().decode(BookWritingStatsDocument.self, from: Data(contentsOf: locations.writingStatsURL)), statsDocument)
         XCTAssertFalse(FileManager.default.fileExists(atPath: locations.pendingRestoreURL.path))
         XCTAssertFalse((try FileManager.default.contentsOfDirectory(atPath: locations.recoveryDirectory.path)).isEmpty)
     }
@@ -895,6 +902,11 @@ final class ItemV3Tests: XCTestCase {
 
         try FileManager.default.createDirectory(at: locations.mapsDirectory, withIntermediateDirectories: true)
         try Data([1, 2, 3]).write(to: locations.mapsDirectory.appendingPathComponent("current.pdf"))
+        let currentStats = BookWritingStatsDocument(records: [
+            BookWritingStatsRecord(bookID: UUID(), day: "2026-09-26", netWordDelta: 25)
+        ])
+        try FileManager.default.createDirectory(at: locations.writingStatsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try JSONEncoder().encode(currentStats).write(to: locations.writingStatsURL)
         let conversationBookID = UUID()
         let conversationStore = SailuneAIConversationStore(directory: locations.aiConversationsDirectory)
         let conversation = SailuneAIConversation()
@@ -906,6 +918,7 @@ final class ItemV3Tests: XCTestCase {
         try SailuneBackupService.applyPendingRestoreIfNeeded(locations: locations)
 
         XCTAssertFalse(FileManager.default.fileExists(atPath: locations.mapsDirectory.path))
+        XCTAssertFalse(FileManager.default.fileExists(atPath: locations.writingStatsURL.path))
         XCTAssertNil(try conversationStore.load(bookID: conversationBookID))
     }
 

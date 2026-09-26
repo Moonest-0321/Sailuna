@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import SwiftData
 
 extension Notification.Name {
     static let sailuneFindNext = Notification.Name("Sailune.FindNextSearchResult")
@@ -16,6 +17,32 @@ struct SearchMatch: Identifiable {
     let id = UUID()
     let section: Section
     let range: NSRange
+}
+
+private struct SearchReplaceSnapshot {
+    let section: Section
+    let content: AttributedString
+    let wordCount: Int
+    let updatedAt: Date
+    let book: Book?
+    let bookUpdatedAt: Date?
+
+    init(section: Section) {
+        self.section = section
+        content = section.content
+        wordCount = section.wordCount
+        updatedAt = section.updatedAt
+        let owningBook = section.volume?.book
+        book = owningBook
+        bookUpdatedAt = owningBook?.updatedAt
+    }
+
+    func restore() {
+        section.content = content
+        section.wordCount = wordCount
+        section.updatedAt = updatedAt
+        if let book, let bookUpdatedAt { book.updatedAt = bookUpdatedAt }
+    }
 }
 
 private func plainText(of section: Section) -> String {
@@ -46,10 +73,11 @@ private func orderedSections(in book: Book) -> [Section] {
         .flatMap { $0.sections.sorted { $0.sortOrder < $1.sortOrder } }
 }
 
-private func replace(_ match: SearchMatch, with replacement: String) {
+private func replace(_ match: SearchMatch, with replacement: String) -> Int {
     let attributed = NSMutableAttributedString(attributedString: NSAttributedString(match.section.content))
     guard match.range.location != NSNotFound,
-          NSMaxRange(match.range) <= attributed.length else { return }
+          NSMaxRange(match.range) <= attributed.length else { return 0 }
+    let previousCount = countWords(attributed.string)
 
     let attributes = attributed.attributes(at: match.range.location, effectiveRange: nil)
     attributed.replaceCharacters(in: match.range, with: replacement)
@@ -57,16 +85,19 @@ private func replace(_ match: SearchMatch, with replacement: String) {
         attributed.addAttributes(attributes, range: NSRange(location: match.range.location, length: (replacement as NSString).length))
     }
     match.section.content = AttributedString(attributed)
-    match.section.wordCount = attributed.string.filter { !$0.isWhitespace }.count
+    match.section.wordCount = countWords(attributed.string)
     match.section.updatedAt = Date()
     match.section.volume?.book?.updatedAt = Date()
+    return match.section.wordCount - previousCount
 }
 
 struct SearchReplaceView: View {
     let book: Book
     @Binding var selectedSection: Section?
     let bridge: EditorBridge
+    @Environment(\.modelContext) private var modelContext
     @Environment(\.sectionUnit) private var sectionUnit
+    @Environment(BookWritingStatsStore.self) private var writingStatsStore
 
     @State private var query = ""
     @State private var replacement = ""
@@ -74,6 +105,7 @@ struct SearchReplaceView: View {
     @State private var scope: SearchScope = .section
     @State private var results: [SearchMatch] = []
     @State private var currentIndex = 0
+    @State private var saveErrorMessage: String?
     @FocusState private var queryFocused: Bool
 
     private var currentMatch: SearchMatch? {
@@ -137,6 +169,11 @@ struct SearchReplaceView: View {
         .onDisappear {
             bridge.isSearchMode = false
         }
+        .alert("無法儲存替換內容", isPresented: saveErrorBinding) {
+            Button(SailuneActionCopy.acknowledge) { saveErrorMessage = nil }
+        } message: {
+            Text(saveErrorMessage ?? "未知錯誤")
+        }
         .onReceive(NotificationCenter.default.publisher(for: .sailuneFindNext)) { _ in
             advanceSearch()
         }
@@ -198,7 +235,9 @@ struct SearchReplaceView: View {
 
     private func replaceCurrent() {
         guard let match = currentMatch else { return }
-        replace(match, with: replacement)
+        let snapshot = SearchReplaceSnapshot(section: match.section)
+        let delta = replace(match, with: replacement)
+        guard persistReplacement(delta: delta, snapshots: [snapshot]) else { return }
         if selectedSection?.id == match.section.id { bridge.reloadVisibleContent() }
         refresh()
         currentIndex = min(currentIndex, max(0, results.count - 1))
@@ -207,11 +246,41 @@ struct SearchReplaceView: View {
 
     private func replaceAll() {
         let matchesToReplace = results
+        var snapshotsBySectionID: [UUID: SearchReplaceSnapshot] = [:]
+        for match in matchesToReplace where snapshotsBySectionID[match.section.id] == nil {
+            snapshotsBySectionID[match.section.id] = SearchReplaceSnapshot(section: match.section)
+        }
         // 同一節次的範圍來自替換前的文字，必須由後往前替換才不會因長度變化而偏移。
-        for match in matchesToReplace.reversed() { replace(match, with: replacement) }
+        let delta = matchesToReplace.reversed().reduce(into: 0) { total, match in
+            total += replace(match, with: replacement)
+        }
+        guard persistReplacement(delta: delta, snapshots: Array(snapshotsBySectionID.values)) else { return }
         if let selectedSection, matchesToReplace.contains(where: { $0.section.id == selectedSection.id }) {
             bridge.reloadVisibleContent()
         }
         refresh()
+    }
+
+    private func persistReplacement(delta: Int, snapshots: [SearchReplaceSnapshot]) -> Bool {
+        do {
+            try modelContext.save()
+        } catch {
+            snapshots.forEach { $0.restore() }
+            saveErrorMessage = error.localizedDescription
+            return false
+        }
+        do {
+            try writingStatsStore.recordSuccessfulEdits([(bookID: book.id, netWordDelta: delta)])
+        } catch {
+            // Store exposes the save error and leaves this book's statistics blank.
+        }
+        return true
+    }
+
+    private var saveErrorBinding: Binding<Bool> {
+        Binding(
+            get: { saveErrorMessage != nil },
+            set: { if !$0 { saveErrorMessage = nil } }
+        )
     }
 }

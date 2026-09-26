@@ -41,6 +41,7 @@ struct SailuneDataLocations {
     var mapsDirectory: URL { directory.appendingPathComponent("Sailune/Maps", isDirectory: true) }
     var aiConversationsDirectory: URL { directory.appendingPathComponent("Sailune/AI Conversations", isDirectory: true) }
     var publicationStatusURL: URL { directory.appendingPathComponent("Sailune/Publication Status.json") }
+    var writingStatsURL: URL { directory.appendingPathComponent("Sailune/Writing Stats.json") }
 }
 
 enum SailuneBackupService {
@@ -133,6 +134,7 @@ enum SailuneBackupService {
         let mapsURL = locations.mapsDirectory
         let aiConversationsURL = locations.aiConversationsDirectory
         let publicationStatusURL = locations.publicationStatusURL
+        let writingStatsURL = locations.writingStatsURL
         var moved: [(original: URL, backup: URL)] = []
         do {
             for (_, storeURL, _) in locations.stores {
@@ -161,6 +163,11 @@ enum SailuneBackupService {
                 let backup = rollback.appendingPathComponent("Publication Status.json")
                 try fm.moveItem(at: publicationStatusURL, to: backup)
                 moved.append((publicationStatusURL, backup))
+            }
+            if fm.fileExists(atPath: writingStatsURL.path) {
+                let backup = rollback.appendingPathComponent("Writing Stats.json")
+                try fm.moveItem(at: writingStatsURL, to: backup)
+                moved.append((writingStatsURL, backup))
             }
 
             let files = Dictionary(uniqueKeysWithValues: archive.files.map { ($0.path, $0.data) })
@@ -199,6 +206,10 @@ enum SailuneBackupService {
                 try fm.createDirectory(at: publicationStatusURL.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try statusData.write(to: publicationStatusURL, options: .atomic)
             }
+            if let writingStatsData = files["writing-stats.json"] {
+                try fm.createDirectory(at: writingStatsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try writingStatsData.write(to: writingStatsURL, options: .atomic)
+            }
             try fm.removeItem(at: pending)
             try fm.removeItem(at: rollback)
         } catch {
@@ -209,6 +220,7 @@ enum SailuneBackupService {
             if fm.fileExists(atPath: mapsURL.path) { try? fm.removeItem(at: mapsURL) }
             if fm.fileExists(atPath: aiConversationsURL.path) { try? fm.removeItem(at: aiConversationsURL) }
             if fm.fileExists(atPath: publicationStatusURL.path) { try? fm.removeItem(at: publicationStatusURL) }
+            if fm.fileExists(atPath: writingStatsURL.path) { try? fm.removeItem(at: writingStatsURL) }
             for pair in moved.reversed() where fm.fileExists(atPath: pair.backup.path) {
                 try? fm.moveItem(at: pair.backup, to: pair.original)
             }
@@ -261,6 +273,10 @@ enum SailuneBackupService {
         if fm.fileExists(atPath: publicationStatusURL.path) {
             files.append(ArchiveFile(path: "publication-status.json", data: try Data(contentsOf: publicationStatusURL)))
         }
+        let writingStatsURL = locations.writingStatsURL
+        if fm.fileExists(atPath: writingStatsURL.path) {
+            files.append(ArchiveFile(path: "writing-stats.json", data: try Data(contentsOf: writingStatsURL)))
+        }
         let entries = files.map { Manifest.FileEntry(path: $0.path, byteCount: $0.data.count, sha256: checksum($0.data)) }
         let info = Bundle.main.infoDictionary
         let manifest = Manifest(
@@ -312,6 +328,14 @@ enum SailuneBackupService {
                 _ = try JSONDecoder().decode([UUID: BookStatus].self, from: statusData)
             } catch {
                 throw BackupError.invalidArchive("書籍發布狀態格式無效")
+            }
+        }
+        if let writingStatsData = files["writing-stats.json"] {
+            do {
+                let document = try JSONDecoder().decode(BookWritingStatsDocument.self, from: writingStatsData)
+                guard document.version == 1 else { throw BookWritingStatsStore.StoreError.unsupportedVersion(document.version) }
+            } catch {
+                throw BackupError.invalidArchive("每日編輯統計格式無效")
             }
         }
         return archive

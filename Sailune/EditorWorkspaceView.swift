@@ -788,7 +788,7 @@ struct EditorSidebarView: View {
                 renameEditor(commit: { newName in section.title = newName.isEmpty ? section.title : newName })
             } else {
                 HStack(spacing: 0) {
-                    Text("\(sectionUnit.numberedTitle(index))｜")
+                    Text("\(index)｜")
                         .foregroundStyle(.secondary)
                         .fixedSize(horizontal: true, vertical: false)
                         .padding(.vertical, 6)
@@ -1078,6 +1078,7 @@ struct EditorCenterView: View {
     @Environment(StoryPlanningStore.self) private var planningStore
     @Environment(V5SettingsStore.self) private var settingsStore
     @Environment(AbilityProgressStore.self) private var abilityStore
+    @Environment(BookWritingStatsStore.self) private var writingStatsStore
     @State private var liveWordCount: Int = 0
     @State private var cursorIsHeading: Bool = false
     @State private var saveState: EditorSaveState = .saved
@@ -1095,6 +1096,25 @@ struct EditorCenterView: View {
     @Query(sort: \CharacterAlias.createdAt) private var allAliases: [CharacterAlias]
     @Query(sort: \Item.updatedAt, order: .reverse) private var allItems: [Item]
     @Query(sort: \CharacterAbility.createdAt) private var allAbilities: [CharacterAbility]
+
+    private func recordWritingDelta(bookID: UUID, delta: Int) {
+        do {
+            try writingStatsStore.recordSuccessfulEdits([(bookID: bookID, netWordDelta: delta)])
+        } catch {
+            // Store exposes the save error and leaves the affected book's statistics blank.
+        }
+    }
+
+    private func openCharacterReference(_ characterID: UUID) -> Bool {
+        let match = allCharacters.first { character in
+            let belongsToBook = character.book?.id == book.id
+            let hasRequestedID = character.id == characterID
+            return belongsToBook && hasRequestedID
+        }
+        guard let match else { return false }
+        onOpenCharacter(match)
+        return true
+    }
 
     private func characterMatch(for text: String) -> Character? {
         let name = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -1302,13 +1322,7 @@ struct EditorCenterView: View {
                             onOpenCharacter(character)
                             return true
                         },
-                        onOpenCharacterReference: { characterID in
-                            guard let character = allCharacters.first(where: {
-                                $0.book?.id == book.id && $0.id == characterID
-                            }) else { return false }
-                            onOpenCharacter(character)
-                            return true
-                        },
+                        onOpenCharacterReference: openCharacterReference,
                         canCreateCharacter: { canCreateCharacter(from: $0) },
                         onCreateCharacter: { createCharacter(from: $0) },
                         resolveCharacterReference: { characterReference(from: $0) },
@@ -1376,6 +1390,7 @@ struct EditorCenterView: View {
                                 prose: prose
                             )
                         },
+                        onWritingDeltaSaved: recordWritingDelta,
                         planningUndoDelta: { sectionID, prose in
                             planningStore.pendingPlanningUndoDelta(sectionID: sectionID, prose: prose)
                         },

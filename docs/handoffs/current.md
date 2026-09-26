@@ -1,8 +1,24 @@
+# 2026-09-26 編輯器目錄序號前綴修正
+
+- **已決定**：依使用者明確要求，左側編輯器目錄節標題前綴只顯示卷內阿拉伯數字序號與「｜」（例如「1｜」），節名仍接在後方，不顯示「第一節」；其他介面的節標題格式不改。
+- **實作**：`EditorWorkspaceView.sectionRow` 將此前綴從共用中文節次名稱改為當列卷內序號；更新 `docs/spec-editor.md` 與 V10.1 工作紀錄。
+- **驗證**：`git diff --check` 通過；依工作規則，本次沒有執行測試。
+- **工作樹邊界**：保留工作樹中已有的 V10.2 修改及使用者原有 `Sailune/Localizable.xcstrings` 修改；本修正只改編輯器目錄列及其規格／紀錄。
+
 > 2026-09-26 V10.1 設定頁版本欄顯示開發版本「V10.1」，與 app bundle 行銷版本分開。
 
 > 2026-09-26 修正 Xcode 顯示的兩個 TXT 匯入診斷：純值章節標記與解析器明確設為 nonisolated，讓背景解析可直接呼叫；移除未使用的行號綁定。無簽章 Debug build 通過且未出現該兩項警告；未執行 XCTest 或 GUI。下一步沿用隔離資料 GUI 驗收。
 
 > 2026-09-26 V10.1 發布流程修訂：發布頁改列出全部書籍，新書草稿，提供草稿→發布中→完結。`BookPublicationStore` 用 `Sailune/Publication Status.json` 獨立保存，首頁書櫃同讀狀態；備份／還原包含此檔，刪書後清理。V5 主 schema 不變。無簽章 Debug build、Swift parse、diff check 通過；未執行 XCTest 或 GUI。使用者原有未提交修改保留，當輪修改限發布功能與文件。唯一下一步：用隔離資料在 GUI 驗收發布狀態即時變化、重開保留、備份還原與刪書清理。最小文件：本檔、`docs/work-items/v10.1-home-and-publishing.md`、`docs/project-status.md`。
+
+# 2026-09-26 V10.2 發布書籍數據頁 implementation checkpoint
+
+- **已決定**：R／U／I 已核准。每日編輯字數採有號淨變化；點書名進頁，發布狀態操作獨立；日期為本地今日加前六日。reader 資料缺來源時留白。
+- **實作**：新增 `BookWritingStatsStore` JSON sidecar 與 `BookAnalyticsView`；發布頁書名導覽及返回；編輯器正文成功保存／flush 去重及搜尋取代計入；備份、舊備份清除、rollback 與永久刪書清理接線。V5 schema 不變。自動同步、修復、匯入與刪除不計入編輯統計。
+- **驗證**：無簽章 Debug build 通過；受影響 Swift parse、`git diff --check` 通過。統計 Store 4 項、備份 round-trip 及舊備份 2 項 XCTest 通過。保留原使用者修改 `Sailune/Localizable.xcstrings`。
+- **GUI**：隔離 Debug clone `/private/tmp/SailuneV102Smoke/SailuneV102Smoke.app` 以 `/private/tmp/SailuneV102Smoke/Isolated.store` 建書成功、回到發布列表並看見書名與獨立「發布」按鈕；點擊書名後 CUA 回報 native pipe closed，重置後仍不能讀取數據頁。頁面進入／返回、圖表實際視覺呈現仍未確認，正式作者資料未操作。
+- **已知風險**：正文與 sidecar 無共同原子交易。sidecar 寫入失敗時當次只隱藏受影響書籍統計；若程式在錯誤後關閉，失敗旗標不能持久化，重開可能不知少記。詳見規格、備份及一致性文件。
+- **唯一下一步**：在 CUA 可正常綁定隔離 Debug App 的環境確認點書名進數據頁、返回、空圖表與狀態操作獨立；不得改用正式資料。新聊天讀取：本文件、`docs/work-items/current.md`、`docs/work-items/v10.2-publishing-analytics.md`、`docs/spec-publishing-analytics.md`、`docs/project-status.md`。
 
 # 當前聊天交接
 

@@ -12,6 +12,7 @@ struct ContentView: View {
     @Environment(StoryPlanningStore.self) private var planningStore
     @Environment(AbilityProgressStore.self) private var abilityStore
     @Environment(BookPublicationStore.self) private var publicationStore
+    @Environment(BookWritingStatsStore.self) private var writingStatsStore
     @Query(sort: \Book.updatedAt, order: .reverse) private var books: [Book]
     @Query private var profiles: [AuthorProfile]
     @State private var navigationPath = NavigationPath()
@@ -287,7 +288,8 @@ struct ContentView: View {
             StartPublishingView(
                 books: books,
                 statusForBook: { publicationStore.status(for: $0) },
-                onAdvance: advancePublication
+                onAdvance: advancePublication,
+                writingStats: writingStatsStore
             )
         case .achievements:
             StartAchievementsView()
@@ -400,6 +402,12 @@ struct ContentView: View {
                 try publicationStore.remove(request.id)
             } catch {
                 bookDeletionError = "書籍已刪除，但發布狀態清理失敗：\(error.localizedDescription)"
+            }
+            do {
+                try writingStatsStore.removeBook(request.id)
+            } catch {
+                let detail = "書籍已刪除，但每日編輯統計清理失敗：\(error.localizedDescription)"
+                bookDeletionError = [bookDeletionError, detail].compactMap { $0 }.joined(separator: "\n\n")
             }
         } catch {
             bookDeletionError = "無法刪除《\(request.title)》，內容仍完整保留。\n\n\(error.localizedDescription)"

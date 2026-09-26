@@ -4,7 +4,7 @@ import SwiftData
 import OSLog
 
 // MARK: - 字數計算
-fileprivate func countWords(_ string: String) -> Int {
+func countWords(_ string: String) -> Int {
     string.filter { !$0.isWhitespace }.count
 }
 
@@ -530,6 +530,7 @@ struct RichEditorView: NSViewRepresentable {
     var onOpenSettings: ((EditorSettingsDestination) -> Void)? = nil
     var onCreateStoryTag: ((StoryTagKind, String, NSRange) -> Void)? = nil
     var onContentSaved: ((UUID, String) throws -> Bool)? = nil
+    var onWritingDeltaSaved: ((UUID, Int) -> Void)? = nil
     var planningUndoDelta: ((UUID, String) -> PlanningUndoDelta)? = nil
     var applyPlanningUndoDelta: ((PlanningUndoDelta, Bool) throws -> Void)? = nil
     var onPlanningUndoError: ((Bool, Error) -> Void)? = nil
@@ -559,6 +560,7 @@ struct RichEditorView: NSViewRepresentable {
         context.coordinator.onOpenSettings = onOpenSettings
         context.coordinator.onCreateStoryTag = onCreateStoryTag
         context.coordinator.onContentSaved = onContentSaved
+        context.coordinator.onWritingDeltaSaved = onWritingDeltaSaved
         context.coordinator.planningUndoDelta = planningUndoDelta
         context.coordinator.applyPlanningUndoDelta = applyPlanningUndoDelta
         context.coordinator.onPlanningUndoError = onPlanningUndoError
@@ -634,6 +636,7 @@ struct RichEditorView: NSViewRepresentable {
         coord.onOpenSettings = onOpenSettings
         coord.onCreateStoryTag = onCreateStoryTag
         coord.onContentSaved = onContentSaved
+        coord.onWritingDeltaSaved = onWritingDeltaSaved
         coord.planningUndoDelta = planningUndoDelta
         coord.applyPlanningUndoDelta = applyPlanningUndoDelta
         coord.onPlanningUndoError = onPlanningUndoError
@@ -719,6 +722,7 @@ struct RichEditorView: NSViewRepresentable {
         var onOpenSettings: ((EditorSettingsDestination) -> Void)?
         var onCreateStoryTag: ((StoryTagKind, String, NSRange) -> Void)?
         var onContentSaved: ((UUID, String) throws -> Bool)?
+        var onWritingDeltaSaved: ((UUID, Int) -> Void)?
         var planningUndoDelta: ((UUID, String) -> PlanningUndoDelta)?
         var applyPlanningUndoDelta: ((PlanningUndoDelta, Bool) throws -> Void)?
         var onPlanningUndoError: ((Bool, Error) -> Void)?
@@ -841,15 +845,27 @@ struct RichEditorView: NSViewRepresentable {
             let work = DispatchWorkItem { [weak self, weak tv] in
                 guard let self = self, let tv, let sec = targetSection else { return }
                 let snapshot = self.storyTagFreeSnapshot(from: tv.attributedString())
+                guard snapshot != self.lastCommitted else {
+                    self.onSaveStateChange?(.saved)
+                    return
+                }
+                let previousWordCount = countWords(NSAttributedString(self.lastCommitted).string)
                 sec.content = snapshot
                 sec.wordCount = wc
                 sec.updatedAt = Date()
                 sec.volume?.book?.updatedAt = Date()
+                guard let context = sec.modelContext else {
+                    self.onSaveStateChange?(.failed)
+                    return
+                }
                 do {
-                    if let context = sec.modelContext { try context.save() }
+                    try context.save()
                 } catch {
                     self.onSaveStateChange?(.failed)
                     return
+                }
+                if let bookID = sec.volume?.book?.id {
+                    self.onWritingDeltaSaved?(bookID, wc - previousWordCount)
                 }
                 do {
                     if !tv.hasMarkedText(),
@@ -1398,15 +1414,30 @@ struct RichEditorView: NSViewRepresentable {
         }
         private func commitNow() {
             guard let tv = textView, let sec = section else { return }
-            let snapshot = AttributedString(tv.attributedString())
+            let snapshot = storyTagFreeSnapshot(from: tv.attributedString())
             let wc = countWords(tv.string)
+            let previousWordCount = countWords(NSAttributedString(lastCommitted).string)
             sec.content = snapshot
             sec.wordCount = wc
             sec.updatedAt = Date()
             sec.volume?.book?.updatedAt = Date()
+            guard let context = sec.modelContext else {
+                onSaveStateChange?(.failed)
+                return
+            }
+            do {
+                try context.save()
+            } catch {
+                onSaveStateChange?(.failed)
+                return
+            }
+            if let bookID = sec.volume?.book?.id {
+                onWritingDeltaSaved?(bookID, wc - previousWordCount)
+            }
             lastCommitted = snapshot
             debounceWork?.cancel()
             onWordCountChange?(wc)
+            onSaveStateChange?(.saved)
         }
     }
 }
