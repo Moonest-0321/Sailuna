@@ -92,3 +92,8 @@ V4.4.8 在主 container 與 StoryPlanning store 都成功開啟後，會以現�
 ## V10.1 發布狀態備份
 
 備份可選包含 `publication-status.json`；還原時先移走現有檔案並納入 rollback，再寫入備份版本。舊備份沒有此檔時，還原後所有書籍回到預設草稿。備份解碼驗證狀態檔格式。
+
+
+## V10.4 發布標籤與書籍模板
+
+完整備份可包含 `publication-tags.json` 和 `book-templates/` 目錄中的模板 JSON；模板內含來源書地圖版本 PDF 資料。還原前驗證標籤格式、模板路徑與 checksum，還原時將現有 sidecar／模板目錄納入 rollback。舊備份缺少標籤檔時回到空標籤，缺少模板目錄時建立空模板庫；V5 及其他 SwiftData schema 不變。

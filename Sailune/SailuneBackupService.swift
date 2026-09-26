@@ -41,6 +41,8 @@ struct SailuneDataLocations {
     var mapsDirectory: URL { directory.appendingPathComponent("Sailune/Maps", isDirectory: true) }
     var aiConversationsDirectory: URL { directory.appendingPathComponent("Sailune/AI Conversations", isDirectory: true) }
     var publicationStatusURL: URL { directory.appendingPathComponent("Sailune/Publication Status.json") }
+    var publicationTagsURL: URL { directory.appendingPathComponent("Sailune/Publication Tags.json") }
+    var bookTemplatesDirectory: URL { directory.appendingPathComponent("Sailune/Book Templates", isDirectory: true) }
     var writingStatsURL: URL { directory.appendingPathComponent("Sailune/Writing Stats.json") }
 }
 
@@ -134,6 +136,8 @@ enum SailuneBackupService {
         let mapsURL = locations.mapsDirectory
         let aiConversationsURL = locations.aiConversationsDirectory
         let publicationStatusURL = locations.publicationStatusURL
+        let publicationTagsURL = locations.publicationTagsURL
+        let bookTemplatesDirectory = locations.bookTemplatesDirectory
         let writingStatsURL = locations.writingStatsURL
         var moved: [(original: URL, backup: URL)] = []
         do {
@@ -163,6 +167,16 @@ enum SailuneBackupService {
                 let backup = rollback.appendingPathComponent("Publication Status.json")
                 try fm.moveItem(at: publicationStatusURL, to: backup)
                 moved.append((publicationStatusURL, backup))
+            }
+            if fm.fileExists(atPath: publicationTagsURL.path) {
+                let backup = rollback.appendingPathComponent("Publication Tags.json")
+                try fm.moveItem(at: publicationTagsURL, to: backup)
+                moved.append((publicationTagsURL, backup))
+            }
+            if fm.fileExists(atPath: bookTemplatesDirectory.path) {
+                let backup = rollback.appendingPathComponent("Book Templates", isDirectory: true)
+                try fm.moveItem(at: bookTemplatesDirectory, to: backup)
+                moved.append((bookTemplatesDirectory, backup))
             }
             if fm.fileExists(atPath: writingStatsURL.path) {
                 let backup = rollback.appendingPathComponent("Writing Stats.json")
@@ -206,6 +220,20 @@ enum SailuneBackupService {
                 try fm.createDirectory(at: publicationStatusURL.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try statusData.write(to: publicationStatusURL, options: .atomic)
             }
+            if let tagsData = files["publication-tags.json"] {
+                try fm.createDirectory(at: publicationTagsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try tagsData.write(to: publicationTagsURL, options: .atomic)
+            }
+            let templateFiles = archive.files.filter { $0.path.hasPrefix("book-templates/") }
+            if !templateFiles.isEmpty {
+                try fm.createDirectory(at: bookTemplatesDirectory, withIntermediateDirectories: true)
+                for file in templateFiles {
+                    let relativePath = String(file.path.dropFirst("book-templates/".count))
+                    let destination = try safeAssetDestination(relativePath: relativePath, root: bookTemplatesDirectory)
+                    try fm.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+                    try file.data.write(to: destination, options: .atomic)
+                }
+            }
             if let writingStatsData = files["writing-stats.json"] {
                 try fm.createDirectory(at: writingStatsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try writingStatsData.write(to: writingStatsURL, options: .atomic)
@@ -220,6 +248,8 @@ enum SailuneBackupService {
             if fm.fileExists(atPath: mapsURL.path) { try? fm.removeItem(at: mapsURL) }
             if fm.fileExists(atPath: aiConversationsURL.path) { try? fm.removeItem(at: aiConversationsURL) }
             if fm.fileExists(atPath: publicationStatusURL.path) { try? fm.removeItem(at: publicationStatusURL) }
+            if fm.fileExists(atPath: publicationTagsURL.path) { try? fm.removeItem(at: publicationTagsURL) }
+            if fm.fileExists(atPath: bookTemplatesDirectory.path) { try? fm.removeItem(at: bookTemplatesDirectory) }
             if fm.fileExists(atPath: writingStatsURL.path) { try? fm.removeItem(at: writingStatsURL) }
             for pair in moved.reversed() where fm.fileExists(atPath: pair.backup.path) {
                 try? fm.moveItem(at: pair.backup, to: pair.original)
@@ -272,6 +302,18 @@ enum SailuneBackupService {
         let publicationStatusURL = locations.publicationStatusURL
         if fm.fileExists(atPath: publicationStatusURL.path) {
             files.append(ArchiveFile(path: "publication-status.json", data: try Data(contentsOf: publicationStatusURL)))
+        }
+        let publicationTagsURL = locations.publicationTagsURL
+        if fm.fileExists(atPath: publicationTagsURL.path) {
+            files.append(ArchiveFile(path: "publication-tags.json", data: try Data(contentsOf: publicationTagsURL)))
+        }
+        let templates = locations.bookTemplatesDirectory
+        if fm.fileExists(atPath: templates.path) {
+            for relativePath in try fm.subpathsOfDirectory(atPath: templates.path) {
+                let url = templates.appendingPathComponent(relativePath)
+                guard fm.fileExists(atPath: url.path), (try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else { continue }
+                files.append(ArchiveFile(path: "book-templates/\(relativePath)", data: try Data(contentsOf: url)))
+            }
         }
         let writingStatsURL = locations.writingStatsURL
         if fm.fileExists(atPath: writingStatsURL.path) {
@@ -329,6 +371,13 @@ enum SailuneBackupService {
             } catch {
                 throw BackupError.invalidArchive("書籍發布狀態格式無效")
             }
+        }
+        if let tagsData = files["publication-tags.json"] {
+            do { _ = try JSONDecoder().decode([UUID: [String]].self, from: tagsData) }
+            catch { throw BackupError.invalidArchive("書籍發布標籤格式無效") }
+        }
+        for path in files.keys where path.hasPrefix("book-templates/") {
+            _ = try safeAssetDestination(relativePath: String(path.dropFirst("book-templates/".count)), root: FileManager.default.temporaryDirectory)
         }
         if let writingStatsData = files["writing-stats.json"] {
             do {

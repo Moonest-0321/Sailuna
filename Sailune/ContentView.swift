@@ -289,12 +289,21 @@ struct ContentView: View {
                 books: books,
                 statusForBook: { publicationStore.status(for: $0) },
                 onAdvance: advancePublication,
+                onPublish: publishPublication,
+                tagsForBook: { publicationStore.tags(for: $0) },
                 onResume: resumePublication,
                 writingStats: writingStatsStore
             )
         case .achievements:
             StartAchievementsView()
-        case .templates, .forum, .about:
+        case .templates:
+            BookTemplatesView(books: books) { bookID in
+                selectedSidebarItem = .home
+                searchText = ""
+                navigationPath = NavigationPath()
+                navigationPath.append(BookRoute(id: bookID, opensEditor: false))
+            }
+        case .forum, .about:
             Color.clear
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
@@ -412,6 +421,14 @@ struct ContentView: View {
             }
         } catch {
             bookDeletionError = "無法刪除《\(request.title)》，內容仍完整保留。\n\n\(error.localizedDescription)"
+        }
+    }
+
+    private func publishPublication(_ bookID: UUID, tags: [String]) {
+        do {
+            try publicationStore.publish(bookID, tags: tags)
+        } catch {
+            bookDeletionError = "無法發布《\(books.first(where: { $0.id == bookID })?.title ?? "作品")》：\(error.localizedDescription)"
         }
     }
 
@@ -545,8 +562,12 @@ private struct StartSidebarView: View {
         Button {
             onSelect(item)
         } label: {
-            Label(item.rawValue, systemImage: item.icon)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            HStack(spacing: 8) {
+                Image(systemName: item.icon)
+                    .frame(width: 20, alignment: .center)
+                Text(item.rawValue)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 10)
                 .padding(.vertical, 8)
                 .contentShape(Rectangle())

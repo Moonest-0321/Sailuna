@@ -73,7 +73,8 @@ struct SailuneApp: App {
     init() {
         do {
             let (container, settingsStore, copyStore, abilityStore, planningStore) = try Self.makeModelContainer()
-            let publicationStore = try BookPublicationStore(url: SailuneDataLocations(mainStore: Self.storeURL).publicationStatusURL)
+            let dataLocations = SailuneDataLocations(mainStore: Self.storeURL)
+            let publicationStore = try BookPublicationStore(url: dataLocations.publicationStatusURL, tagsURL: dataLocations.publicationTagsURL)
             let writingStatsStore = BookWritingStatsStore(url: SailuneDataLocations(mainStore: Self.storeURL).writingStatsURL)
             startupState = .ready(container, settingsStore, copyStore, abilityStore, planningStore, publicationStore, writingStatsStore)
         } catch {

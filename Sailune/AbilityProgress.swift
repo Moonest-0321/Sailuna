@@ -69,6 +69,23 @@ enum AbilityProgressSchemaV1: VersionedSchema {
         }
     }
     func clearPersistenceError() { persistenceErrorMessage = nil }
+    func removeTemplateData(abilityIDs: Set<UUID>) throws {
+        let removedConnections = try context.fetch(FetchDescriptor<CharacterAbilityConnection>()).filter { abilityIDs.contains($0.abilityID) }
+        let connectionIDs = Set(removedConnections.map(\.id))
+        try context.fetch(FetchDescriptor<AbilityLevel>()).filter { abilityIDs.contains($0.abilityID) }.forEach(context.delete)
+        try context.fetch(FetchDescriptor<CharacterAbilityHistory>()).filter { connectionIDs.contains($0.connectionID) }.forEach(context.delete)
+        removedConnections.forEach(context.delete)
+        try context.fetch(FetchDescriptor<AbilityBookLink>()).filter { abilityIDs.contains($0.abilityID) }.forEach(context.delete)
+        do {
+            if context.hasChanges { try context.save() }
+            try reload()
+            persistenceErrorMessage = nil
+        } catch {
+            context.rollback()
+            try? reload()
+            throw error
+        }
+    }
     func resolvedBookIDs(for abilities: [CharacterAbility]) -> [UUID: UUID] {
         let validAbilityIDs = Set(abilities.map(\.id))
         var result = Dictionary(uniqueKeysWithValues: abilities.compactMap { ability in

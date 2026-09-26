@@ -16,18 +16,46 @@ enum BookStatus: String, CaseIterable, Codable, Identifiable {
 @MainActor @Observable
 final class BookPublicationStore {
     private let url: URL
+    private let tagsURL: URL
     private(set) var statuses: [UUID: BookStatus]
+    private(set) var tagsByBookID: [UUID: [String]]
 
-    init(url: URL) throws {
+    init(url: URL, tagsURL: URL? = nil) throws {
         self.url = url
+        self.tagsURL = tagsURL ?? url.deletingLastPathComponent().appendingPathComponent("Publication Tags.json")
         if FileManager.default.fileExists(atPath: url.path) {
             statuses = try JSONDecoder().decode([UUID: BookStatus].self, from: Data(contentsOf: url))
         } else {
             statuses = [:]
         }
+        if FileManager.default.fileExists(atPath: self.tagsURL.path) {
+            tagsByBookID = try JSONDecoder().decode([UUID: [String]].self, from: Data(contentsOf: self.tagsURL))
+        } else {
+            tagsByBookID = [:]
+        }
     }
 
     func status(for bookID: UUID) -> BookStatus { statuses[bookID] ?? .draft }
+    func tags(for bookID: UUID) -> [String] { tagsByBookID[bookID] ?? [] }
+
+    func publish(_ bookID: UUID, tags: [String]) throws {
+        guard status(for: bookID) == .draft else { return }
+        let cleanedTags = Array(NSOrderedSet(array: tags.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty })) as? [String] ?? []
+        var updatedTags = tagsByBookID
+        if cleanedTags.isEmpty { updatedTags.removeValue(forKey: bookID) }
+        else { updatedTags[bookID] = cleanedTags }
+        var updatedStatuses = statuses
+        updatedStatuses[bookID] = .ongoing
+        try saveTags(updatedTags)
+        do {
+            try save(updatedStatuses)
+        } catch {
+            try? saveTags(tagsByBookID)
+            throw error
+        }
+        tagsByBookID = updatedTags
+        statuses = updatedStatuses
+    }
 
     func advance(_ bookID: UUID) throws {
         let next: BookStatus
@@ -51,11 +79,25 @@ final class BookPublicationStore {
     }
 
     func remove(_ bookID: UUID) throws {
-        guard statuses[bookID] != nil else { return }
-        var updated = statuses
-        updated.removeValue(forKey: bookID)
-        try save(updated)
-        statuses = updated
+        let originalTags = tagsByBookID
+        var updatedTags = tagsByBookID
+        updatedTags.removeValue(forKey: bookID)
+        try saveTags(updatedTags)
+        var updatedStatuses = statuses
+        updatedStatuses.removeValue(forKey: bookID)
+        do {
+            try save(updatedStatuses)
+        } catch {
+            try? saveTags(originalTags)
+            throw error
+        }
+        tagsByBookID = updatedTags
+        statuses = updatedStatuses
+    }
+
+    private func saveTags(_ value: [UUID: [String]]) throws {
+        try FileManager.default.createDirectory(at: tagsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try JSONEncoder().encode(value).write(to: tagsURL, options: .atomic)
     }
 
     private func save(_ value: [UUID: BookStatus]) throws {

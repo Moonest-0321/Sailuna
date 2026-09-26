@@ -1,10 +1,8 @@
 # 目前功能工作單
 
 > 整體狀態：active
-> 目前階段：V10.1 完結作品唯讀修訂已完成實作與專項程式驗證；隔離資料 GUI 驗收待完成，詳見 [v10.1-completed-book-read-only.md](v10.1-completed-book-read-only.md)。
-> 目前階段：V10.1 完結作品唯讀修訂 R／U／I approved，功能實作與驗證中；工作單見 [v10.1-completed-book-read-only.md](v10.1-completed-book-read-only.md)。
-> 單一下一步：以隔離書籍人工驗收 V10.1 恢復連載、即時唯讀權限及各工作區瀏覽；V10.2 數據頁、V10.0 匯入／匯出的 GUI／驗收待辦仍依各自工作紀錄處理。
-> 單一下一步：完成 V10.1 完結作品所有子視圖寫入防護，跑最終 build／專項 XCTest 並更新驗收紀錄。既有 V10.2 發布書籍數據頁已完成實作但隔離 GUI 驗收待補，詳見 [v10.2-publishing-analytics.md](v10.2-publishing-analytics.md) 及 handoff；V10.0／V10.1 其他隔離 GUI 待驗收仍保留於各自紀錄。
+> 目前階段：V10.4 R／U／I 均 approved；發布標籤、側欄對齊、完整本機模板 snapshot/apply、我的模板 UI、搜尋空白頁與備份接線已實作。受影響 Swift parse、diff check 及 macOS Debug build 通過；隔離資料 GUI 尚無法啟動：`open -n` 回報 `kLSNoExecutableErr`，直接執行以 134 中止，隔離資料目錄未生成 store。工作單：[v10.4-community-and-book-templates.md](v10.4-community-and-book-templates.md)。
+> 單一下一步：待可啟動 Sailune GUI 的主機環境，以隔離書籍驗收發布標籤、模板快照／套用／空正文與地圖 PDF。V10.1／V10.2／V10.0 隔離 GUI 驗收待辦仍保留於各自工作紀錄。
 
 ## V8.2 AI 閱讀、設定分析與角色一致性比較（R approved）
 

@@ -215,10 +215,46 @@ final class ItemCopyStore {
     }
 
     func refresh() throws {
+        try refreshCopyRecords()
+        levelSelections = try levelSelectionContext.fetch(FetchDescriptor<ItemCopyLevelSelection>())
+    }
+
+    private func refreshCopyRecords() throws {
         copies = try context.fetch(FetchDescriptor<ItemCopy>()).sorted { $0.sortOrder < $1.sortOrder }
         holdings = try context.fetch(FetchDescriptor<ItemCopyHolding>())
         histories = try context.fetch(FetchDescriptor<ItemCopyHistory>()).sorted { $0.sortOrder < $1.sortOrder }
-        levelSelections = try levelSelectionContext.fetch(FetchDescriptor<ItemCopyLevelSelection>())
+    }
+
+    func importTemplateLevelSelections(_ selections: [ItemCopyLevelSelection]) throws {
+        for selection in selections { levelSelectionContext.insert(selection) }
+        do {
+            if levelSelectionContext.hasChanges { try levelSelectionContext.save() }
+            try refreshCopyRecords()
+            levelSelections.append(contentsOf: selections)
+        } catch {
+            levelSelectionContext.rollback()
+            try? refreshCopyRecords()
+            throw error
+        }
+    }
+
+    func removeTemplateData(itemIDs: Set<UUID>) throws {
+        let copiesToRemove = try context.fetch(FetchDescriptor<ItemCopy>()).filter { itemIDs.contains($0.itemID) }
+        let copyIDs = Set(copiesToRemove.map(\.id))
+        try context.fetch(FetchDescriptor<ItemCopyHolding>()).filter { copyIDs.contains($0.copyID) }.forEach(context.delete)
+        try context.fetch(FetchDescriptor<ItemCopyHistory>()).filter { copyIDs.contains($0.copyID) }.forEach(context.delete)
+        try levelSelectionContext.fetch(FetchDescriptor<ItemCopyLevelSelection>()).filter { copyIDs.contains($0.copyID) }.forEach(levelSelectionContext.delete)
+        copiesToRemove.forEach(context.delete)
+        do {
+            if context.hasChanges { try context.save() }
+            if levelSelectionContext !== context, levelSelectionContext.hasChanges { try levelSelectionContext.save() }
+            try refresh()
+        } catch {
+            context.rollback()
+            if levelSelectionContext !== context { levelSelectionContext.rollback() }
+            try? refresh()
+            throw error
+        }
     }
 
     @discardableResult

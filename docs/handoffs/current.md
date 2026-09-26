@@ -1,3 +1,13 @@
+# V10.4 implementation checkpoint（2026-09-26）
+
+- **批准狀態**：R／U／I 均 approved；「搜尋模板」只留白，不呈現公開內容。
+- **已實作**：側欄模板／論壇固定圖示欄寬；草稿發布可多選「奇幻／愛情／冒險」並在發布列顯示；標籤 sidecar 與模板 JSON／地圖 PDF 納入備份和還原。模板分成「我的模板」「搜尋模板」，搜尋頁為純空白。我的模板可從既有書建立並編輯名稱；模板包含書籍設定、人物與物品資料、大綱、時間線、地圖與 PDF，不帶正文；卡片加號會建立獨立的新書草稿，內部參照使用新 UUID。
+- **資料安全**：模板套用在各 store 保存失敗時會回復／清理新書及已建立的設定、大綱、地圖資產；來源書不修改。完整資料模型快照仍應以隔離資料人工驗收。
+- **驗證**：受影響 Swift frontend parse 與 `git diff --check` 通過；未執行 XCTest。一般 sandbox build 遇 Swift macro server malformed response；提升權限型別檢查發現並修正錯誤後，macOS Debug build 已成功。隔離 GUI 啟動驗收仍被主機擋住：`open -n` 回報 `kLSNoExecutableErr`（雖 bundle 內執行檔存在），直接執行以 134 中止；`/private/tmp/sailune-v104-ui-isolated` 未生成 store，沒有進入或修改任何作者資料。
+- **工作樹邊界**：保留既有 `docs/ux-principles.md` 使用者修改；V10.4 功能與文件修改留在目前工作樹。
+- **下一步**：待有可啟動 Sailune GUI 的主機環境時，以隔離書籍人工驗收模板 snapshot/apply、空白正文、地圖 PDF／大綱關聯、發布標籤及導覽對齊；目前不可宣稱完成 GUI 驗收。
+- **最小文件集合**：本檔、`docs/work-items/current.md`、`docs/work-items/v10.4-community-and-book-templates.md`。
+
 # 2026-09-26 完結作品恢復連載／唯讀閱覽 implementation checkpoint
 
 - **決策**：R／U／I 均 approved。完結作品可恢復連載；完結時同書全部資料唯讀並維持可閱覽／導覽。狀態沿用 publication sidecar，V5 schema 不變。整本刪除與全域備份還原仍屬已確認的範圍邊界。

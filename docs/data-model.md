@@ -102,3 +102,5 @@ TimelineEventCardMetadata ─ eventID + 可選 outlineItemID
 ## V10.1 書籍發布狀態
 
 `Book.status` 仍是 V5 主 store 的暫存欄位，發布流程不以它作持久來源。`BookPublicationStore` 以書籍 UUID 為鍵，保存於獨立 `Sailune/Publication Status.json`；缺少紀錄即草稿，狀態只可依序進入發布中、完結。此路徑避免直接修改已發布的 V5 schema；未來若改存主 store，仍須完整 schema 遷移。
+
+V10.4 發布標籤另存於 `Sailune/Publication Tags.json`，依書籍 UUID 保存多選標籤。草稿只有在標籤確認並成功保存後才進入連載；刪書時同時移除狀態與標籤。V10.4 書籍模板保存為版本化 JSON，只保留設定集、地圖與按世界日期定義的時間軸。卷／節次、敘事大綱、正文及章節定位不進入模板；舊模板載入時會移除這些欄位。套用為新書時為保留的模型與跨 store 關係重配 UUID。
