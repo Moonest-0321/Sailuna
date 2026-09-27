@@ -26,7 +26,6 @@ struct ContentView: View {
     @State private var showingAboutMeSheet = false
     @State private var showingAccountPopover = false
     @State private var selectedPlan: AccountPlan = .light
-    @State private var sectionUnitUpdateError: String?
     @AppStorage(SectionUnitPreference.storageKey) private var sectionUnitRawValue = BookTextSectionMarker.section.rawValue
 
     private var selectedSectionUnit: BookTextSectionMarker {
@@ -42,13 +41,7 @@ struct ContentView: View {
 
     private func applySectionUnit(_ unit: BookTextSectionMarker) {
         guard unit != selectedSectionUnit else { return }
-        do {
-            try SectionUnitCoordinator.apply(unit, to: books, in: modelContext)
-            sectionUnitRawValue = unit.rawValue
-            sectionUnitUpdateError = nil
-        } catch {
-            sectionUnitUpdateError = "無法更新章節單位，請再試一次。"
-        }
+        sectionUnitRawValue = unit.rawValue
     }
 
     private var showsStartTopBar: Bool {
@@ -283,7 +276,7 @@ struct ContentView: View {
         case .home, .find:
             libraryBookContent(metrics: metrics)
         case .settings:
-            StartSettingsView(sectionUnit: sectionUnitBinding, updateError: sectionUnitUpdateError)
+            StartSettingsView(sectionUnit: sectionUnitBinding)
         case .publish:
             StartPublishingView(
                 books: books,
@@ -671,7 +664,6 @@ private struct AccountPopoverView: View {
 
 private struct StartSettingsView: View {
     @Binding var sectionUnit: BookTextSectionMarker
-    let updateError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -695,11 +687,6 @@ private struct StartSettingsView: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                if let updateError {
-                    Text(updateError)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                }
             }
 
             Spacer(minLength: 0)
