@@ -44,6 +44,7 @@ struct SailuneDataLocations {
     var publicationTagsURL: URL { directory.appendingPathComponent("Sailune/Publication Tags.json") }
     var bookTemplatesDirectory: URL { directory.appendingPathComponent("Sailune/Book Templates", isDirectory: true) }
     var writingStatsURL: URL { directory.appendingPathComponent("Sailune/Writing Stats.json") }
+    var forumPostsURL: URL { directory.appendingPathComponent("Sailune/Forum Posts.json") }
 }
 
 enum SailuneBackupService {
@@ -139,6 +140,7 @@ enum SailuneBackupService {
         let publicationTagsURL = locations.publicationTagsURL
         let bookTemplatesDirectory = locations.bookTemplatesDirectory
         let writingStatsURL = locations.writingStatsURL
+        let forumPostsURL = locations.forumPostsURL
         var moved: [(original: URL, backup: URL)] = []
         do {
             for (_, storeURL, _) in locations.stores {
@@ -182,6 +184,11 @@ enum SailuneBackupService {
                 let backup = rollback.appendingPathComponent("Writing Stats.json")
                 try fm.moveItem(at: writingStatsURL, to: backup)
                 moved.append((writingStatsURL, backup))
+            }
+            if fm.fileExists(atPath: forumPostsURL.path) {
+                let backup = rollback.appendingPathComponent("Forum Posts.json")
+                try fm.moveItem(at: forumPostsURL, to: backup)
+                moved.append((forumPostsURL, backup))
             }
 
             let files = Dictionary(uniqueKeysWithValues: archive.files.map { ($0.path, $0.data) })
@@ -238,6 +245,10 @@ enum SailuneBackupService {
                 try fm.createDirectory(at: writingStatsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try writingStatsData.write(to: writingStatsURL, options: .atomic)
             }
+            if let forumPostsData = files["forum-posts.json"] {
+                try fm.createDirectory(at: forumPostsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try forumPostsData.write(to: forumPostsURL, options: .atomic)
+            }
             try fm.removeItem(at: pending)
             try fm.removeItem(at: rollback)
         } catch {
@@ -251,6 +262,7 @@ enum SailuneBackupService {
             if fm.fileExists(atPath: publicationTagsURL.path) { try? fm.removeItem(at: publicationTagsURL) }
             if fm.fileExists(atPath: bookTemplatesDirectory.path) { try? fm.removeItem(at: bookTemplatesDirectory) }
             if fm.fileExists(atPath: writingStatsURL.path) { try? fm.removeItem(at: writingStatsURL) }
+            if fm.fileExists(atPath: forumPostsURL.path) { try? fm.removeItem(at: forumPostsURL) }
             for pair in moved.reversed() where fm.fileExists(atPath: pair.backup.path) {
                 try? fm.moveItem(at: pair.backup, to: pair.original)
             }
@@ -319,6 +331,10 @@ enum SailuneBackupService {
         if fm.fileExists(atPath: writingStatsURL.path) {
             files.append(ArchiveFile(path: "writing-stats.json", data: try Data(contentsOf: writingStatsURL)))
         }
+        let forumPostsURL = locations.forumPostsURL
+        if fm.fileExists(atPath: forumPostsURL.path) {
+            files.append(ArchiveFile(path: "forum-posts.json", data: try Data(contentsOf: forumPostsURL)))
+        }
         let entries = files.map { Manifest.FileEntry(path: $0.path, byteCount: $0.data.count, sha256: checksum($0.data)) }
         let info = Bundle.main.infoDictionary
         let manifest = Manifest(
@@ -385,6 +401,14 @@ enum SailuneBackupService {
                 guard document.version == 1 else { throw BookWritingStatsStore.StoreError.unsupportedVersion(document.version) }
             } catch {
                 throw BackupError.invalidArchive("每日編輯統計格式無效")
+            }
+        }
+        if let forumPostsData = files["forum-posts.json"] {
+            do {
+                let document = try JSONDecoder().decode(ForumPostDocument.self, from: forumPostsData)
+                guard document.version == 1 else { throw LocalForumPostsStore.StoreError.unsupportedVersion(document.version) }
+            } catch {
+                throw BackupError.invalidArchive("論壇文章格式無效")
             }
         }
         return archive

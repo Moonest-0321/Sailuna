@@ -37,6 +37,7 @@ V4.4.8 在主 container 與 StoryPlanning store 都成功開啟後，會以現�
 - 故事規劃：`Sailune-v5-story-planning.store`
 - 地圖背景：`Sailune/Maps/<bookID>/<mapID>/<versionID>.pdf`（舊 `<bookID>.pdf` 只作待遷移來源）
 - 每日編輯統計：`Sailune/Writing Stats.json`（V10.2 sidecar，按書籍 UUID 與本地日保存有號淨字數）
+- 本機論壇文章：`Sailune/Forum Posts.json`（V10.6 版本化文件，含五分類純文字貼文）
 
 實際位置由應用程式的 Application Support 目錄決定；測試時可使用 `SAILUNE_TEST_STORE_URL` 指定主資料庫。
 
@@ -97,3 +98,8 @@ V4.4.8 在主 container 與 StoryPlanning store 都成功開啟後，會以現�
 ## V10.4 發布標籤與書籍模板
 
 完整備份可包含 `publication-tags.json` 和 `book-templates/` 目錄中的模板 JSON；模板內含來源書地圖版本 PDF 資料。還原前驗證標籤格式、模板路徑與 checksum，還原時將現有 sidecar／模板目錄納入 rollback。舊備份缺少標籤檔時回到空標籤，缺少模板目錄時建立空模板庫；V5 及其他 SwiftData schema 不變。
+
+
+## V10.6 本機論壇文章
+
+論壇文章存於 `Sailune/Forum Posts.json`，使用版本 1 Codable sidecar，不改 SwiftData schema，也不關聯書籍。完整備份可選包含 `forum-posts.json`，建立備份時記錄 checksum；排程還原會先驗證格式，正式置換時將現有文章檔納入 rollback。舊備份沒有此檔時，還原會清除目前論壇文章；還原失敗則嘗試復原原檔。

@@ -984,6 +984,38 @@ final class ItemV3Tests: XCTestCase {
         }
     }
 
+    func testBackupRestoresForumPostsAndOlderBackupClearsThem() throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SailuneForumBackup-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let locations = SailuneDataLocations(mainStore: root.appendingPathComponent("Sailune-v5.store"))
+        for (index, store) in locations.stores.enumerated() {
+            try writeSQLiteValue(index + 40, at: store.url)
+        }
+        let postStore = LocalForumPostsStore(url: locations.forumPostsURL)
+        let original = try postStore.create(board: .writing, title: "備份文章", body: "備份內容")
+        let backup = root.appendingPathComponent("with-forum-posts.sailunebackup")
+        try SailuneBackupService.createBackup(at: backup, locations: locations)
+
+        _ = try postStore.create(board: .works, title: "後續文章", body: "不應留在還原結果")
+        try SailuneBackupService.scheduleRestore(from: backup, locations: locations)
+        try SailuneBackupService.applyPendingRestoreIfNeeded(locations: locations)
+        XCTAssertEqual(LocalForumPostsStore(url: locations.forumPostsURL).posts(in: .writing), [original])
+        XCTAssertTrue(LocalForumPostsStore(url: locations.forumPostsURL).posts(in: .works).isEmpty)
+
+        try FileManager.default.removeItem(at: locations.forumPostsURL)
+        let oldBackup = root.appendingPathComponent("without-forum-posts.sailunebackup")
+        try SailuneBackupService.createBackup(at: oldBackup, locations: locations)
+        _ = try LocalForumPostsStore(url: locations.forumPostsURL)
+            .create(board: .suggestions, title: "目前文章", body: "還原舊備份後應清除")
+        try SailuneBackupService.scheduleRestore(from: oldBackup, locations: locations)
+        try SailuneBackupService.applyPendingRestoreIfNeeded(locations: locations)
+
+        XCTAssertFalse(FileManager.default.fileExists(atPath: locations.forumPostsURL.path))
+        XCTAssertTrue(LocalForumPostsStore(url: locations.forumPostsURL).posts(in: .suggestions).isEmpty)
+    }
+
     func testDeletingBookImmediatelyRemovesItsCopies() throws {
         let container = try makeContainer()
         let context = container.mainContext

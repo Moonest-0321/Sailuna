@@ -1,3 +1,18 @@
+# V10.6 本機論壇發文 implementation checkpoint（2026-09-27）
+
+- **批准**：R、U、I 均由使用者明確核准。
+- **目標／範圍**：沿用論壇五個分類，在本機建立、瀏覽、修改及刪除純文字貼文；無登入、網路、雲端、留言、按讚、附件或書籍關聯。
+- **工作單**：`docs/work-items/v10.6-local-forum-posts.md`。
+- **工作樹起始狀態**：`main...origin/main`；使用者既有未追蹤文件 `docs/spec-shiye-book-package.md` 必須保留。V10.6 新增／修改界線記於工作單。
+- **實作**：新增版本化 JSON sidecar Store、論壇五分類文章列表／詳情／建立／修改／確認刪除，接入 `.sailunebackup` 建立／驗證／還原／rollback；V5 SwiftData schema 不變。
+- **驗證**：Forum Store 4 項、備份還原 1 項與序列完整 226 項 XCTest 通過；無簽章 Debug build、受影響 Swift frontend parse 與 `git diff --check` 通過。平行完整測試曾有一項既有 V42 測試失敗，序列重跑通過。
+- **尚未完成**：隔離資料人工 GUI 驗收；當前執行環境未取得可靠 GUI Automation／螢幕擷取，不以程式測試代替。
+- **唯一下一步**：有可用 GUI 權限時，以隔離 stores 驗收分類、新增／取消、詳情、修改、刪除確認／取消、關閉重開與備份還原；不可操作正式作者資料。
+- **最小文件集合**：本檔、`docs/work-items/current.md`、`docs/work-items/v10.6-local-forum-posts.md`、`docs/backup-and-migration.md`。
+- **既有 GUI 驗收狀態**：使用者 2026-09-27 回報 V10.0、V10.1、V10.2、V10.4 均已驗收；V10.5 原 GUI 待辦另行保留。
+
+---
+
 # V10.5 社群介面骨架 checkpoint（2026-09-26）
 
 - **批准**：R 與 U 已分別由使用者回覆核准；I 由使用者先前「搜尋模板照我說的做、論壇先做框架」的直接指示授權。帳號後續處理。
