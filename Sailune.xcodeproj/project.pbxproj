@@ -6,6 +6,11 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		85C96CB8300E6FDF0089544C /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 85C96CC8300E6FDF0089544C /* Supabase */; };
+		85C96CB9300E6FDF0089544C /* Auth in Frameworks */ = {isa = PBXBuildFile; productRef = 85C96CC9300E6FDF0089544C /* Auth */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		85A5AA7E3015D44D007D17F6 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -19,6 +24,7 @@
 /* Begin PBXFileReference section */
 		85A5AA7A3015D44D007D17F6 /* SailuneTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = SailuneTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		85C96CB5300E6FDF0089544C /* Sailune.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Sailune.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		A41D7E630001000000000001 /* Config/Sailune-Auth-Defaults.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = "Config/Sailune-Auth-Defaults.xcconfig"; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -46,6 +52,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				85C96CB8300E6FDF0089544C /* Supabase in Frameworks */,
+				85C96CB9300E6FDF0089544C /* Auth in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -55,6 +63,7 @@
 		85C96CAC300E6FDF0089544C = {
 			isa = PBXGroup;
 			children = (
+				A41D7E630001000000000001 /* Config/Sailune-Auth-Defaults.xcconfig */,
 				85C96CB7300E6FDF0089544C /* Sailune */,
 				85A5AA833015D44D007D17F6 /* SailuneTests */,
 				85C96CB6300E6FDF0089544C /* Products */,
@@ -113,6 +122,8 @@
 			);
 			name = Sailune;
 			packageProductDependencies = (
+				85C96CC8300E6FDF0089544C /* Supabase */,
+				85C96CC9300E6FDF0089544C /* Auth */,
 			);
 			productName = Sailune;
 			productReference = 85C96CB5300E6FDF0089544C /* Sailune.app */;
@@ -147,6 +158,9 @@
 			);
 			mainGroup = 85C96CAC300E6FDF0089544C;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				85C96CCA300E6FDF0089544C /* XCRemoteSwiftPackageReference "supabase-swift" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 85C96CB6300E6FDF0089544C /* Products */;
 			projectDirPath = "";
@@ -295,6 +309,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				INFOPLIST_KEY_SailuneSupabasePublishableKey = "";
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.5;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
@@ -355,6 +370,7 @@
 				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
+				INFOPLIST_KEY_SailuneSupabasePublishableKey = "";
 				LOCALIZATION_PREFERS_STRING_CATALOGS = YES;
 				MACOSX_DEPLOYMENT_TARGET = 26.5;
 				MTL_ENABLE_DEBUG_INFO = NO;
@@ -367,6 +383,7 @@
 		};
 		85C96CC3300E6FE00089544C /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = A41D7E630001000000000001 /* Config/Sailune-Auth-Defaults.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -395,6 +412,7 @@
 				REGISTER_APP_GROUPS = YES;
 				SAILUNE_AI_BASE_URL = "http://127.0.0.1:8787";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPABASE_PUBLISHABLE_KEY = "sb_publishable_bM7DRofJ3tkPImvI_8O2PQ_Z5Yq-9Dq";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -405,6 +423,7 @@
 		};
 		85C96CC4300E6FE00089544C /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = A41D7E630001000000000001 /* Config/Sailune-Auth-Defaults.xcconfig */;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
@@ -443,6 +462,7 @@
 				REGISTER_APP_GROUPS = YES;
 				SAILUNE_AI_BASE_URL = "";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPABASE_PUBLISHABLE_KEY = "sb_publishable_bM7DRofJ3tkPImvI_8O2PQ_Z5Yq-9Dq";
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -482,6 +502,30 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		85C96CCA300E6FDF0089544C /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift.git";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.55.2;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		85C96CC8300E6FDF0089544C /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 85C96CCA300E6FDF0089544C /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+		85C96CC9300E6FDF0089544C /* Auth */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 85C96CCA300E6FDF0089544C /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Auth;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 85C96CAD300E6FDF0089544C /* Project object */;
 }

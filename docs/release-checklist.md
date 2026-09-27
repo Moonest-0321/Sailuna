@@ -34,6 +34,5 @@
 ## 對外說明
 
 - [ ] 宣傳頁只描述已實作且已驗收的能力。
-- [ ] 「未回收伏筆清單」在正式完成前標為規劃方向。
 - [ ] 列出最低 macOS、資料位置、備份方式、已知限制與回報管道。
 - [ ] 更新 `project-status.md`、`feature-inventory.md`、`consistency-audit.md` 與 CHANGELOG。

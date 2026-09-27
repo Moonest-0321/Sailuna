@@ -1,0 +1,3 @@
+SUPABASE_URL =
+SUPABASE_PUBLISHABLE_KEY =
+#include? "Sailune-Auth-Local.xcconfig"

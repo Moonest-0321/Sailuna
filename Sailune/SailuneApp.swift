@@ -3,6 +3,8 @@ import SwiftData
 
 @main
 struct SailuneApp: App {
+    @State private var accountAuthService = SailuneAccountAuthService()
+
     private enum StartupState {
         case ready(ModelContainer, V5SettingsStore, ItemCopyStore, AbilityProgressStore, StoryPlanningStore, BookPublicationStore, BookWritingStatsStore, LocalForumPostsStore)
         case failed(String)
@@ -304,6 +306,7 @@ struct SailuneApp: App {
             switch startupState {
             case .ready(let container, let settingsStore, let copyStore, let abilityStore, let planningStore, let publicationStore, let writingStatsStore, let forumPostsStore):
                 SailuneRootView(container: container, settingsStore: settingsStore, copyStore: copyStore, abilityStore: abilityStore, planningStore: planningStore, publicationStore: publicationStore, writingStatsStore: writingStatsStore, forumPostsStore: forumPostsStore)
+                    .environment(accountAuthService)
             case .failed(let message):
                 DatabaseStartupFailureView(message: message)
             }

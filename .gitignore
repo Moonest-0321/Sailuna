@@ -25,3 +25,6 @@ Icon
 *.key
 *.cer
 *.p12
+
+# Local-only Supabase client configuration
+Config/Sailune-Auth-Local.xcconfig

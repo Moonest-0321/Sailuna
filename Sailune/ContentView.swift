@@ -6,6 +6,7 @@ import Combine
 
 // MARK: - 主畫面：網格書櫃
 struct ContentView: View {
+    @Environment(SailuneAccountAuthService.self) private var accountAuthService
     @Environment(\.modelContext) private var modelContext
     @Environment(ItemCopyStore.self) private var copyStore
     @Environment(V5SettingsStore.self) private var settingsStore
@@ -27,6 +28,7 @@ struct ContentView: View {
     @State private var selectedSidebarItem: StartSidebarItem = .home
     @State private var showingAboutMeSheet = false
     @State private var showingAccountPopover = false
+    @State private var showingEmailLoginSheet = false
     @State private var selectedPlan: AccountPlan = .light
     @AppStorage(SectionUnitPreference.storageKey) private var sectionUnitRawValue = BookTextSectionMarker.section.rawValue
 
@@ -82,6 +84,7 @@ struct ContentView: View {
                     StartSidebarView(
                         selection: $selectedSidebarItem,
                         profile: profiles.first,
+                        accountEmail: accountAuthService.signedInEmail,
                         onSelect: handleSidebarSelection,
                         onToggleAccountPopover: {
                             showingAccountPopover.toggle()
@@ -113,6 +116,17 @@ struct ContentView: View {
 
                     AccountPopoverView(
                         selectedPlan: $selectedPlan,
+                        signedInEmail: accountAuthService.signedInEmail,
+                        errorMessage: accountAuthService.errorMessage,
+                        onEmailLogin: {
+                            showingAccountPopover = false
+                            showingEmailLoginSheet = true
+                        },
+                        onSignOut: {
+                            Task { await accountAuthService.signOut() }
+                        },
+                        onSwitchAccount: {},
+                        onSignOutPlaceholder: {},
                         onOpenSettings: {
                             showingAccountPopover = false
                             selectedSidebarItem = .settings
@@ -233,6 +247,14 @@ struct ContentView: View {
             }
             .environment(\.sectionUnit, selectedSectionUnit)
             .sailuneFileExporter(request: $publicationExportRequest)
+            .sheet(isPresented: $showingEmailLoginSheet) {
+                EmailLoginView(authService: accountAuthService) {
+                    showingEmailLoginSheet = false
+                }
+            }
+            .task {
+                await accountAuthService.restoreSession()
+            }
             .fileImporter(
                 isPresented: $showingBookTextImporter,
                 allowedContentTypes: [UTType(filenameExtension: "txt") ?? .plainText],
@@ -532,6 +554,7 @@ private enum StartSidebarItem: String, CaseIterable, Identifiable {
 private struct StartSidebarView: View {
     @Binding var selection: StartSidebarItem
     let profile: AuthorProfile?
+    let accountEmail: String?
     let onSelect: (StartSidebarItem) -> Void
     let onToggleAccountPopover: () -> Void
 
@@ -588,7 +611,9 @@ private struct StartSidebarView: View {
             } label: {
                 HStack(spacing: 9) {
                     SidebarAvatarView(profile: profile)
-                    Text("登入")
+                    Text(accountEmail ?? "登入")
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                         .font(.callout.weight(.medium))
                         .foregroundStyle(.primary)
                     Spacer(minLength: 0)
@@ -657,6 +682,12 @@ private enum AccountPlan: String, CaseIterable, Identifiable {
 
 private struct AccountPopoverView: View {
     @Binding var selectedPlan: AccountPlan
+    let signedInEmail: String?
+    let errorMessage: String?
+    let onEmailLogin: () -> Void
+    let onSignOut: () -> Void
+    let onSwitchAccount: () -> Void
+    let onSignOutPlaceholder: () -> Void
     let onOpenSettings: () -> Void
     @State private var accountStatusMessage: String?
 
@@ -690,22 +721,46 @@ private struct AccountPopoverView: View {
             }
             .pickerStyle(.menu)
 
+            accountAction("以 Email 登入", systemImage: "envelope", action: onEmailLogin)
+
+            if let signedInEmail {
+                Label("已登入", systemImage: "person.crop.circle.fill")
+                    .foregroundStyle(.secondary)
+                    .frame(minHeight: 28)
+                Text(signedInEmail)
+                    .font(.callout)
+                    .textSelection(.enabled)
+                    .padding(.vertical, 4)
+            }
+
+            if let errorMessage {
+                Text(errorMessage)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.vertical, 4)
+            }
+
             Divider()
 
             accountAction("設定", systemImage: SailuneSymbol.settings.systemName, action: onOpenSettings)
-            accountAction("切換帳號", systemImage: "person.2") { }
+            accountAction("切換帳號", systemImage: "person.2", action: onSwitchAccount)
 
             Divider()
 
-            Button(role: .destructive) { } label: {
-                Label("退出登入", systemImage: "rectangle.portrait.and.arrow.right")
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
+            if signedInEmail != nil {
+                accountAction("退出登入", systemImage: "rectangle.portrait.and.arrow.right", action: onSignOut)
+            } else {
+                Button(role: .destructive, action: onSignOutPlaceholder) {
+                    Label("退出登入", systemImage: "rectangle.portrait.and.arrow.right")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
         }
         .padding(12)
-        .frame(width: 220)
+        .frame(width: 250)
     }
 
     private func accountAction(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {

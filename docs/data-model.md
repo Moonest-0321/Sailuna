@@ -95,7 +95,6 @@ TimelineEventCardMetadata ─ eventID + 可選 outlineItemID
 ## 模型風險
 
 - 六個 store 無共同 transaction，任何新增跨域關係都要定義保存順序、失敗狀態、修復與測試。
-- 伏筆目前沒有回收狀態或回收來源，不能從既有 StoryTag 推導「未回收」。
 - 物品正文引用是名稱掃描；重新命名或同名物品無穩定識別保證。
 - 備份必須同時包含六個 store、封面與地圖 PDF，不能只複製主 store。
 

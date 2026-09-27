@@ -1,3 +1,20 @@
+# 2026-09-27 文件修訂 checkpoint
+
+- **已決定**：伏筆回收流程不再列為產品方向或文件需求；只保留目前已實作的故事標籤能力描述及必要的歷史／資料結構說明。
+- **本次修改**：從功能盤點、專案狀態、候選路線圖、故事規劃規格、資料模型、發布檢查清單與一致性稽核移除該方向及其待辦表述。
+- **工作樹邊界**：保留原有 V10.8 登入及其他未提交修改；本輪只調整上述文件。
+- **驗證**：`git diff --check` 通過；文件搜尋未再找到伏筆回收流程作為待辦／產品方向的表述。
+
+# V10.8 Email 登入 checkpoint（2026-09-27）
+
+- **決定**：依 `docs/pagelet-auth-contract.md` v0.1；Email OTP、Supabase 共用帳號、Session 僅保存鑰匙圈。登入後只顯示 Email；不接角色、作者綁定或網站 API。
+- **進度**：帳號入口、寄碼／驗證表單、Session restore／登出及官方 Swift SDK 已接線；無簽章 Debug build、受影響 Swift parse、diff check 通過。
+- **工作樹邊界**：保留原有 V10.7 匯出、作品下架、`docs/pagelet-auth-contract.md`、`Sailune/Localizable.xcstrings` 及其他既有修改；本輪另修改帳號 UI、SDK／build 設定與 V10.8 工作記錄。
+- **外部阻礙**：auth-contract 註記 Email 範本與 SMTP 尚未完成；本機沒有 Supabase URL／publishable key，真實寄碼登入不能驗收。沒有修改 Supabase 專案或後端。
+- **唯一下一步**：待 Supabase SMTP 與 build settings 填妥後，以使用者本人 Email 驗收寄碼／驗證、重開 Session 與登出；不查詢角色或作者綁定。
+
+---
+
 # 作品下架 checkpoint（2026-09-27）
 
 - **狀態**：R／U／I approved；狀態、發布頁、確認視窗、書櫃分組與匯出防護已接線。主機 Debug 建置、Swift parse 與 diff check 通過；未執行 XCTest 或 GUI。
