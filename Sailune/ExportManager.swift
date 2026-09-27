@@ -5,7 +5,7 @@ import AppKit
 import UniformTypeIdentifiers
 
 struct SailuneExportDocument: FileDocument {
-    static var readableContentTypes: [UTType] { [.plainText, .epub, .pdf, .data] }
+    static var readableContentTypes: [UTType] { [.plainText, .epub, .pdf, .json, .data] }
 
     let data: Data
 
@@ -27,11 +27,13 @@ struct SailuneExportRequest: Identifiable {
     let document: SailuneExportDocument
     let contentType: UTType
     let defaultFilename: String
+    var onSaved: ((URL) -> Void)? = nil
 }
 
 private struct SailuneFileExporterModifier: ViewModifier {
     @Binding var request: SailuneExportRequest?
     @State private var errorMessage: String?
+    @State private var activeRequest: SailuneExportRequest?
 
     func body(content: Content) -> some View {
         content
@@ -44,9 +46,12 @@ private struct SailuneFileExporterModifier: ViewModifier {
                 contentType: request?.contentType ?? .data,
                 defaultFilename: request?.defaultFilename
             ) { result in
+                let completedRequest = activeRequest ?? request
+                activeRequest = nil
                 request = nil
                 switch result {
                 case .success(let url):
+                    completedRequest?.onSaved?(url)
                     NSWorkspace.shared.selectFile(
                         url.path,
                         inFileViewerRootedAtPath: url.deletingLastPathComponent().path
@@ -56,6 +61,9 @@ private struct SailuneFileExporterModifier: ViewModifier {
                         errorMessage = error.localizedDescription
                     }
                 }
+            }
+            .onChange(of: request?.id) { _, _ in
+                if let request { activeRequest = request }
             }
             .alert("匯出失敗", isPresented: Binding(
                 get: { errorMessage != nil },

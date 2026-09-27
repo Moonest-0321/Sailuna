@@ -1,8 +1,8 @@
 # 目前功能工作單
 
 > 整體狀態：active
-> 目前階段：V10.7 書籍交換格式 UI 提案（R approved，U 待確認）。詳見 [V10.7 工作單](v10.7-shiye-book-package.md)。
-> 單一下一步：在對話中確認發布頁匯出流程。V10.6 隔離資料 GUI 驗收仍為獨立待辦，詳見 [V10.6 工作單](v10.6-local-forum-posts.md)。
+> 目前階段：作品下架實作（R／U／I approved）；詳見 [作品下架工作單](book-delisting.md)。
+> 單一下一步：以隔離資料驗收下架操作；V10.7 已完成，V10.6 隔離資料 GUI 驗收仍為獨立待辦。
 
 ## V8.2 AI 閱讀、設定分析與角色一致性比較（R approved）
 

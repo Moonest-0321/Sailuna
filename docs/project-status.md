@@ -24,11 +24,19 @@
 
 > 2026-09-26 補充：V10.1 完結作品恢復連載及全部同書資料唯讀已接入，兩項發布狀態 XCTest、受影響 Swift parse 與 diff check 通過；隔離資料 GUI 驗收待完成。發布狀態沿用 sidecar、V5 schema 不變。V10.2 發布數據頁 GUI 驗收仍待補。
 
-## V10.6 目前工作
+## 作品下架目前工作
+
+R／U／I 已核准；下架功能已接線，主機 Debug 建置與靜態檢查通過；隔離 GUI 驗收未執行。詳見 `docs/work-items/book-delisting.md`。
+
+## V10.7 已完成
+
+R／U／I 已核准；作品發布匯出已完成。11 項專項 XCTest、無簽章 Debug 建置及隔離 GUI 的取消、首次儲存、更新匯出均通過；兩次匯出保留同一書籍 UUID。詳見 `docs/work-items/v10.7-book-json-export.md`。
+
+## V10.6 待辦
 
 本機論壇發文已完成 R／U／I 核准與實作：五分類文章列表、純文字建立／閱讀／修改／刪除；文章存在 `Forum Posts.json` sidecar，納入完整備份／還原，不改 SwiftData schema，也不登入或連網。Forum Store 4 項、備份 1 項、序列完整 226 項 XCTest 通過；無簽章 Debug build、受影響 Swift parse 與 `git diff --check` 通過。尚待隔離資料 GUI 人工驗收，詳見 `docs/work-items/v10.6-local-forum-posts.md`。
 
-V10.5 社群介面骨架仍有獨立 GUI 驗收紀錄；目前工作優先 V10.6。
+V10.5 社群介面骨架仍有獨立 GUI 驗收紀錄；V10.6 GUI 驗收仍待完成。
 
 ## 專案定位
 

@@ -21,7 +21,9 @@ struct ContentView: View {
     @State private var bookTextImportSource: BookTextImportSource?
     @State private var searchText = ""
     @State private var deletionRequest: BookDeletionRequest?
+    @State private var delistingBookID: UUID?
     @State private var bookDeletionError: String?
+    @State private var publicationExportRequest: SailuneExportRequest?
     @State private var selectedSidebarItem: StartSidebarItem = .home
     @State private var showingAboutMeSheet = false
     @State private var showingAccountPopover = false
@@ -132,7 +134,7 @@ struct ContentView: View {
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
 
-                if showingNewBookSheet || showingAboutMeSheet || deletionRequest != nil || bookDeletionError != nil {
+                if showingNewBookSheet || showingAboutMeSheet || deletionRequest != nil || delistingBookID != nil || bookDeletionError != nil {
                     Color.black.opacity(0.08)
                         .ignoresSafeArea()
                         .contentShape(Rectangle())
@@ -140,6 +142,7 @@ struct ContentView: View {
                             showingNewBookSheet = false
                             showingAboutMeSheet = false
                             deletionRequest = nil
+                            delistingBookID = nil
                             bookDeletionError = nil
                         }
                         .zIndex(10)
@@ -190,11 +193,23 @@ struct ContentView: View {
                 }
 
                 if let request = deletionRequest {
-                    HomeDeletionPopup(
+                    HomeConfirmationPopup(
                         title: "刪除《\(request.title)》？",
                         message: "這會刪除本書的正文、角色與設定、敘事大綱、世界時間資料及封面，而且無法復原。",
+                        confirmTitle: "刪除書籍",
                         onCancel: { deletionRequest = nil },
                         onConfirm: { deleteBook(request) }
+                    )
+                    .zIndex(11)
+                }
+
+                if let delistingBookID, let book = books.first(where: { $0.id == delistingBookID }) {
+                    HomeConfirmationPopup(
+                        title: "下架《\(book.title)》？",
+                        message: "下架只會更改帆夢本機狀態，不會通知網站。之後可轉為草稿，若要再次上架，需重新發布。",
+                        confirmTitle: "下架",
+                        onCancel: { self.delistingBookID = nil },
+                        onConfirm: { delistPublication(delistingBookID) }
                     )
                     .zIndex(11)
                 }
@@ -217,6 +232,7 @@ struct ContentView: View {
                 }
             }
             .environment(\.sectionUnit, selectedSectionUnit)
+            .sailuneFileExporter(request: $publicationExportRequest)
             .fileImporter(
                 isPresented: $showingBookTextImporter,
                 allowedContentTypes: [UTType(filenameExtension: "txt") ?? .plainText],
@@ -283,8 +299,11 @@ struct ContentView: View {
                 statusForBook: { publicationStore.status(for: $0) },
                 onAdvance: advancePublication,
                 onPublish: publishPublication,
+                onExportUpdate: exportPublicationUpdate,
                 tagsForBook: { publicationStore.tags(for: $0) },
                 onResume: resumePublication,
+                onDelist: { delistingBookID = $0 },
+                onRestoreDraft: restoreDraftPublication,
                 writingStats: writingStatsStore
             )
         case .achievements:
@@ -335,7 +354,7 @@ struct ContentView: View {
     }
 
     private var shelfStatuses: [BookStatus] {
-        [.ongoing, .draft, .completed]
+        [.ongoing, .draft, .completed, .delisted]
     }
 
     private func bookStatusSections(
@@ -420,10 +439,32 @@ struct ContentView: View {
     }
 
     private func publishPublication(_ bookID: UUID, tags: [String]) {
+        guard let book = books.first(where: { $0.id == bookID }) else { return }
         do {
-            try publicationStore.publish(bookID, tags: tags)
+            publicationExportRequest = try PublicationExportCoordinator.initialRequest(
+                book: book,
+                categories: tags,
+                sectionUnit: selectedSectionUnit,
+                publicationStore: publicationStore,
+                onStatusError: { error in
+                    bookDeletionError = "《\(book.title)》匯出檔已儲存，但本機發布狀態更新失敗：\(error.localizedDescription)"
+                }
+            )
         } catch {
-            bookDeletionError = "無法發布《\(books.first(where: { $0.id == bookID })?.title ?? "作品")》：\(error.localizedDescription)"
+            bookDeletionError = "無法匯出《\(book.title)》：\(error.localizedDescription)"
+        }
+    }
+
+    private func exportPublicationUpdate(_ bookID: UUID) {
+        guard let book = books.first(where: { $0.id == bookID }) else { return }
+        do {
+            publicationExportRequest = try PublicationExportCoordinator.updateRequest(
+                book: book,
+                sectionUnit: selectedSectionUnit,
+                publicationStore: publicationStore
+            )
+        } catch {
+            bookDeletionError = "無法匯出《\(book.title)》更新檔：\(error.localizedDescription)"
         }
     }
 
@@ -440,6 +481,23 @@ struct ContentView: View {
             try publicationStore.resume(bookID)
         } catch {
             bookDeletionError = "無法恢復《\(books.first(where: { $0.id == bookID })?.title ?? "作品")》連載：\(error.localizedDescription)"
+        }
+    }
+
+    private func delistPublication(_ bookID: UUID) {
+        delistingBookID = nil
+        do {
+            try publicationStore.delist(bookID)
+        } catch {
+            bookDeletionError = "無法下架《\(books.first(where: { $0.id == bookID })?.title ?? "作品")》：\(error.localizedDescription)"
+        }
+    }
+
+    private func restoreDraftPublication(_ bookID: UUID) {
+        do {
+            try publicationStore.restoreDraft(bookID)
+        } catch {
+            bookDeletionError = "無法將《\(books.first(where: { $0.id == bookID })?.title ?? "作品")》轉為草稿：\(error.localizedDescription)"
         }
     }
 
@@ -1042,9 +1100,10 @@ struct BookCoverArtwork: View {
     }
 }
 
-private struct HomeDeletionPopup: View {
+private struct HomeConfirmationPopup: View {
     let title: String
     let message: String
+    let confirmTitle: String
     let onCancel: () -> Void
     let onConfirm: () -> Void
 
@@ -1061,7 +1120,7 @@ private struct HomeDeletionPopup: View {
                 Spacer()
                 Button(SailuneActionCopy.cancel) { onCancel() }
                     .keyboardShortcut(.cancelAction)
-                Button("刪除書籍", role: .destructive) { onConfirm() }
+                Button(confirmTitle, role: .destructive) { onConfirm() }
                     .keyboardShortcut(.defaultAction)
             }
         }

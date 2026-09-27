@@ -6,6 +6,7 @@ enum BookStatus: String, CaseIterable, Codable, Identifiable {
     case ongoing = "連載"
     case completed = "完結"
     case draft = "草稿"
+    case delisted = "下架"
 
     var id: String { rawValue }
 
@@ -62,7 +63,7 @@ final class BookPublicationStore {
         switch status(for: bookID) {
         case .draft: next = .ongoing
         case .ongoing: next = .completed
-        case .completed: return
+        case .completed, .delisted: return
         }
         var updated = statuses
         updated[bookID] = next
@@ -74,6 +75,22 @@ final class BookPublicationStore {
         guard status(for: bookID) == .completed else { return }
         var updated = statuses
         updated[bookID] = .ongoing
+        try save(updated)
+        statuses = updated
+    }
+
+    func delist(_ bookID: UUID) throws {
+        guard status(for: bookID) == .ongoing || status(for: bookID) == .completed else { return }
+        var updated = statuses
+        updated[bookID] = .delisted
+        try save(updated)
+        statuses = updated
+    }
+
+    func restoreDraft(_ bookID: UUID) throws {
+        guard status(for: bookID) == .delisted else { return }
+        var updated = statuses
+        updated[bookID] = .draft
         try save(updated)
         statuses = updated
     }

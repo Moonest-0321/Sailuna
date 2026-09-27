@@ -51,8 +51,11 @@ struct StartPublishingView: View {
     let statusForBook: (UUID) -> BookStatus
     let onAdvance: (UUID) -> Void
     let onPublish: (UUID, [String]) -> Void
+    let onExportUpdate: (UUID) -> Void
     let tagsForBook: (UUID) -> [String]
     let onResume: (UUID) -> Void
+    let onDelist: (UUID) -> Void
+    let onRestoreDraft: (UUID) -> Void
     let writingStats: BookWritingStatsStore
     @State private var selectedBookID: UUID?
     @State private var publishingBookID: UUID?
@@ -88,17 +91,30 @@ struct StartPublishingView: View {
                                         Text(status.publicationTitle)
                                             .foregroundStyle(.secondary)
                                         if status == .completed {
-                                            Button("恢復連載") { onResume(book.id) }
-                                                .accessibilityLabel("恢復《\(book.title)》連載")
+                                            HStack(spacing: SailuneLayout.spacingS) {
+                                                Button("恢復連載") { onResume(book.id) }
+                                                    .accessibilityLabel("恢復《\(book.title)》連載")
+                                                Button("下架") { onDelist(book.id) }
+                                                    .accessibilityLabel("下架《\(book.title)》")
+                                            }
                                         } else if status == .draft {
                                             Button("發布") {
                                                 selectedTags = Set(tagsForBook(book.id))
                                                 publishingBookID = book.id
                                             }
                                             .accessibilityLabel("發布《\(book.title)》")
+                                        } else if status == .delisted {
+                                            Button("轉為草稿") { onRestoreDraft(book.id) }
+                                                .accessibilityLabel("將《\(book.title)》轉為草稿")
                                         } else {
-                                            Button("完結") { onAdvance(book.id) }
-                                                .accessibilityLabel("完結《\(book.title)》")
+                                            HStack(spacing: SailuneLayout.spacingS) {
+                                                Button("匯出更新檔") { onExportUpdate(book.id) }
+                                                    .accessibilityLabel("匯出《\(book.title)》更新檔")
+                                                Button("完結") { onAdvance(book.id) }
+                                                    .accessibilityLabel("完結《\(book.title)》")
+                                                Button("下架") { onDelist(book.id) }
+                                                    .accessibilityLabel("下架《\(book.title)》")
+                                            }
                                         }
                                     }
 
@@ -137,8 +153,10 @@ struct StartPublishingView: View {
                     selection: $selectedTags,
                     onCancel: { self.publishingBookID = nil },
                     onPublish: {
-                        onPublish(book.id, Self.availableTags.filter(selectedTags.contains))
+                        let bookID = book.id
+                        let tags = Self.availableTags.filter(selectedTags.contains)
                         self.publishingBookID = nil
+                        DispatchQueue.main.async { onPublish(bookID, tags) }
                     }
                 )
                 .frame(width: 420)

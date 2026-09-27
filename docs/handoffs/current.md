@@ -1,8 +1,17 @@
+# 作品下架 checkpoint（2026-09-27）
+
+- **狀態**：R／U／I approved；狀態、發布頁、確認視窗、書櫃分組與匯出防護已接線。主機 Debug 建置、Swift parse 與 diff check 通過；未執行 XCTest 或 GUI。
+- **唯一下一步**：以隔離資料驗收下架確認、草稿轉換與重開保存。
+- **工作樹邊界**：V10.7 程式與測試修改保留；新出現的 `Sailune/Localizable.xcstrings` 擷取變更與未追蹤 `docs/pagelet-auth-contract.md` 保留，未由下架工作修改。
+
+---
+
 # V10.7 書籍交換格式 checkpoint（2026-09-27）
 
-- **狀態**：R approved；U 提案待確認；I 未開始，沒有功能程式修改。
-- **唯一下一步**：在對話中確認發布頁匯出流程。
-- **工作樹邊界**：保留既有 V10.6 工作樹與使用者原有 `.shiye` 草案；本輪只更新批准狀態記錄。
+- **狀態**：V10.7 completed；R／U／I approved，11 項專項 XCTest、無簽章 Debug 建置與隔離 GUI 驗收通過。
+- **唯一下一步**：V10.6 隔離資料 GUI 驗收。
+- **驗證**：`xcodebuild -quiet -project Sailune.xcodeproj -scheme Sailune -configuration Debug -destination 'platform=macOS' -derivedDataPath /private/tmp/SailuneV107Derived -only-testing:SailuneTests/BookTextTransferTests CODE_SIGNING_ALLOWED=NO test`，11 項通過；隔離 GUI 驗證取消、首次儲存、更新匯出及兩次書籍 UUID 一致；`git diff --check` 通過。GUI 隔離資料位於 `/private/tmp/SailuneV107GUI`，未操作正式書籍。
+- **工作樹邊界**：本輪修改作品發布匯出程式、專項測試與最少量狀態記錄；保留既有 V10.6 工作樹、使用者原有 `.shiye` 草案及工作期間出現的未追蹤 `docs/pagelet-auth-contract.md`。
 
 ---
 
