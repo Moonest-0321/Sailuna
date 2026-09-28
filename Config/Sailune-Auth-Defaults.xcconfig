@@ -1,3 +1,4 @@
 SUPABASE_URL =
 SUPABASE_PUBLISHABLE_KEY =
+SAILUNE_PAGELET_URL = https:/$()/pagelet-nu.vercel.app
 #include? "Sailune-Auth-Local.xcconfig"

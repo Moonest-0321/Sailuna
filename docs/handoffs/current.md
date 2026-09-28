@@ -1,3 +1,16 @@
+# 2026-09-28 `.shiye` 發布 checkpoint
+
+- **批准／決策**：R／U／I approved；使用者選網站固定顯示「節」，保留來源 sectionUnit；App 不提供 `.shiye` 匯出／另存。
+- **進度**：帆夢 ZIP／預覽／共用 Session／TUS／重試及 sidecar 保存、拾頁 parser／CLI／作者 RPC／RLS／收據／API 已實作；詳見 [工作單](../work-items/shiye-publication.md)。SwiftData V5 不變。
+- **驗證**：42 項網站單元／PostgreSQL 替身測試、16 項 Swift 專項、4 項實際本機 HTTP 邊界測試、typecheck／lint／CLI dry-run／Next webpack build 通過。Swift 含／不含封面 ZIP 都由 TypeScript CLI 驗證通過；diff check、auth-contract 正複本一致。兩個 repo 位於 feat/shiye-publication，未 commit／push。
+- **GUI**：隔離 `/private/tmp/ShiyePublicationGUI`，Auth 停用；已確認入口、標籤、預覽、登入與取消後返回、草稿保持。遮罩座標點擊因 CUA noWindowsAvailable 尚未驗證；Escape 已修正 keyboard shortcut，需複驗。CUA 關閉隔離副本後顯示另一個既有 Sailune 視窗，隨即停止操作。
+- **正式環境未變更**：migration 尚未套用、作者尚未綁定、網站尚未部署，未用正式作品測試。啟用操作在 Pagelet/docs/publication-api.md。
+- **工作樹邊界**：Sailune 起始只有未追蹤發布工作單；Pagelet 起始的 current.md、admin/page.tsx、serverAccount.ts、reader.e2e.ts 使用者修改保留，本輪只在 current.md 追加跨專案紀錄，不改另外三檔。兩個 repo 的本輪檔案由 git status／工作單追蹤，未提交。
+- **唯一下一步**：依部署文件在隔離 Supabase 套用 migration、綁定測試作者、部署 staging API，驗收真實 TUS／首次與重複發布，再操作正式環境。
+- **最小文件集合**：本檔、工作單、spec-shiye-book-package.md、Pagelet/docs/publication-api.md；auth-contract v0.2 正本及帆夢複本已同步。
+
+---
+
 # 2026-09-27 文件修訂 checkpoint
 
 - **已決定**：伏筆回收流程不再列為產品方向或文件需求；只保留目前已實作的故事標籤能力描述及必要的歷史／資料結構說明。

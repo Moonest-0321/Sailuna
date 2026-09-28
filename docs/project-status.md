@@ -1,3 +1,5 @@
+> 2026-09-28 `.shiye` 一鍵發布：R／U／I approved。帆夢內部 ZIP、預覽／登入／TUS／重試／成功後本機保存已接線；拾頁 parser、作者交易、RLS、收據與 API 已實作。網站固定顯示「節」，不提供 `.shiye` 另存。隔離測試通過；正式 migration、作者綁定與 API 部署待完成。詳見 [發布工作單](work-items/shiye-publication.md)。
+
 > 2026-09-26 V10.1 設定頁版本欄改顯示開發版本「V10.1」，不取用 app bundle 行銷版本。
 
 > 2026-09-26 修正 Xcode 顯示的兩個 TXT 匯入診斷：純值章節標記與解析器明確設為 nonisolated，讓背景解析可直接呼叫；移除未使用的行號綁定。無簽章 Debug build 通過且未出現該兩項警告；未執行 XCTest 或 GUI。下一步沿用隔離資料 GUI 驗收。

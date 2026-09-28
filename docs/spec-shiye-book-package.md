@@ -1,6 +1,6 @@
-# 拾頁書籍交換格式（`.shiye`）規格草案 v1
+# 拾頁書籍交換格式（`.shiye`）規格 v1
 
-> 狀態：v1。帆夢匯出給拾頁網站讀取並轉為閱讀頁的檔案格式。
+> 狀態：v1 已實作（2026-09-28，R／U／I approved）；正式 API 與 migration 待部署。帆夢在內部建立封包直接傳送，不提供 `.shiye` 另存入口。
 > 依據：目前 `Book`／`Volume`／`Section` 模型、`BookPublicationStore`（狀態／標籤）、`EpubExporter` 的幕標題判斷。
 
 ## 1. 設計原則
@@ -73,12 +73,12 @@
 | `formatVersion` | 是 | 整數。網站只接受已知版本；新增可選欄位不升版，改變既有欄位意義才升版。 |
 | `exportedAt`、`updatedAt` | 是 | ISO 8601 UTC，`Z` 結尾，精確到秒。 |
 | `book.id`／`volumes[].id`／`sections[].id` | 是 | app 內 UUID 大寫字串；同一書重複匯出不變。 |
-| `book.status` | 是 | `draft`／`ongoing`／`completed`，對應 app 的草稿／連載／完結。 |
+| `book.status` | 是 | 只接受 `ongoing`／`completed`；首次草稿傳送使用 ongoing，遠端成功後才改本機狀態。 |
 | `book.tags` | 是 | 可為空陣列；去除空白與重複，保留作者順序。 |
-| `book.sectionUnit` | 是 | `section`／`zhang`／`chapter`，對應節／張／章；網站用來顯示「第 N 章」等字樣。 |
-| `book.cover` | 否 | 有封面時為 `cover.png`，否則 `null`。PNG、sRGB，建議 1600×2400（2:3）；沿用 EPUB 匯出的「畫面實際顯示封面」。 |
+| `book.sectionUnit` | 是 | `section`／`zhang`／`chapter`，保留來源的節／張／章設定；使用者 2026-09-28 決定網站固定顯示「節」。 |
+| `book.cover` | 否 | 有封面時為 `cover.png`，否則 `null`。PNG、sRGB，建議 1600×2400（2:3）；傳送自訂封面；沒有自訂封面時不含 cover.png，由網站使用預設封面。 |
 | `index` | 是 | 從 1 起算，依 app 的 `sortOrder` 重新編號，連續不跳號。 |
-| `title` | 是 | 作者原始卷名／節名純文字，不加「第X卷」前綴；前綴由網站依 `index`＋`sectionUnit` 產生。可為空字串。 |
+| `title` | 是 | 作者原始卷名／節名純文字，不加「第X卷」前綴；前綴由網站依 `index` 產生，章節單位固定「節」。可為空字串。 |
 | `wordCount` | 是 | 沿用 app 字數計算；`book.wordCount` 為各節總和。 |
 | `contentHash` | 是 | 對該節 JSON 檔「原始位元組」做 SHA-256，小寫 hex，前綴 `sha256:`。 |
 
@@ -103,3 +103,45 @@
 - `blank`：作者刻意留的空行；連續多個照實輸出，網站可自行合併顯示。
 - 不輸出字型、字級、顏色等本機編輯器格式；網站用自己的閱讀樣式。
 - 空節（沒有任何文字）仍輸出，`blocks` 為空陣列；是否對讀者隱藏由網站決定。
+
+## 5. 相容與擴充
+
+- 第一版每次傳送完整快照；相同 ID 更新，缺少的舊卷／節下架，不刪除。以 hash 及正文／標題／位置／字數比較跳過未變更的節，保留 updated_at。
+- 未知 formatVersion 拒絕；未知選填 JSON 欄位忽略；新增選填欄位不升版，改變既有欄位語意／必要結構才升版。
+- `requiredCapabilities` 為選填陣列；v1 支援 `full-snapshot-v1`。未知必要 capability 在任何寫入前拒絕。省略時仍按完整快照處理。
+- 新資料領域可使用 `extensions` 描述獨立版本與檔案。v1 不解讀 extension 的領域內容，接受已宣告且 hash 正確的選填 extension；未知必要 extension 拒絕。
+
+```json
+{
+  "extensions": [{
+    "id": "illustrations",
+    "version": 1,
+    "required": false,
+    "files": [{
+      "path": "extensions/illustrations-v1/scene.json",
+      "contentHash": "sha256:<64 lowercase hex>"
+    }]
+  }]
+}
+```
+
+`id` 僅小寫英數與連字號，1–64 字；version 1–999999；檔名僅 ASCII 英數、底線、點及連字號，不能以點開頭。每個檔案必須位於對應的 `extensions/<id>-v<version>/`，不可重複引用或未宣告。新領域仍須另行核定資料與權限規則；舊接收端能忽略選填 extension，能明確拒絕必要 extension。
+
+## 6. 第一版容量與驗證
+
+| 項目 | 上限 |
+|---|---|
+| ZIP bytes | 24 MiB |
+| 全部解壓 bytes | 32 MiB |
+| manifest.json | 2 MiB |
+| 每節／extension 檔案 | 1 MiB |
+| cover.png | 4 MiB；長寬各 4096 px |
+| entries | 4096；只接受白名單檔案，不含 directory entries |
+| 卷與節合計 | 4094 |
+| entry 解壓倍率 | 200 |
+
+ZIP 接受 Store／Deflate，拒絕加密、symlink、重複路徑、路徑穿越、CRC 不符或非合法 UTF-8；文字不含 BOM、NUL、CR，已知文字欄位須為 NFC。UUID 必須大寫，卷／節 index 從 1 連續編號，節 JSON 的 ID／標題須與 manifest 相同，全書字數等於各節加總。空卷及空節皆可傳送，但作品至少一卷，書名與筆名不可空白。
+
+拾頁將正文以 `shiye-blocks-v1` JSON blocks 保存，不再經 Markdown 字串轉換。幕標題只依 block.type 呈現；作者正文中的 `##` 保持純文字。blank block 保留於資料庫，閱讀頁合併空行。完整快照不含封面時清除網站自訂封面，顯示網站預設封面；舊 pagelet-book 維運入口仍維持沒有新封面就保留的相容行為。
+
+發布流程與啟用步驟見 [拾頁 API 與部署約定](../../Pagelet/docs/publication-api.md)。

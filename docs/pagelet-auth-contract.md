@@ -1,8 +1,6 @@
 # 拾頁／帆夢 帳號登入實作約定（auth-contract）
 
-> ⚠ 複本：正本在 SailuneWeb `docs/auth-contract.md`。只能整份覆蓋同步，請勿在此修改。
-
-> 版本：v0.1（草案）｜2026-09-27
+> 版本：v0.2｜2026-09-28；`.shiye` 作者發布程式已實作，正式 migration／API 待部署
 > 正本：SailuneWeb `docs/auth-contract.md`。帆夢 repo 的 `docs/pagelet-auth-contract.md` 是複本，只能整份覆蓋同步，不在複本上修改。
 > 每一項都標示狀態：**已實作**（可以照著寫程式）／**已決定**（規則定了，後端尚未完成）／**計畫中**（還會變，不可據此實作）。
 
@@ -42,11 +40,11 @@
 - 不使用登入連結（magic link），也沒有密碼。
 - 網站與帆夢寄出的是同一封信、同一種驗證碼。
 
-### 後端前置（拾頁 agent；狀態：**未完成**）
+### 後端前置（使用者 2026-09-27 回報已完成；見 V2 工作單）
 
 - Email 範本改為顯示驗證碼（`{{ .Token }}`），不是登入連結。
 - 自訂 SMTP：完成前 Supabase 只能寄給專案團隊成員、每小時數封，**開發期只能用使用者本人的 Email 測試**。
-- 完成後本節改標「已實作」並升版。
+- SMTP、驗證碼範本與正式登入已由使用者在 V2 驗收；本輪隔離程式測試不寄信。
 
 ### 錯誤對應（已決定）
 
@@ -65,33 +63,16 @@
 - **不得**寫入 SwiftData、UserDefaults、JSON sidecar 或 `.sailunebackup`；還原備份後需重新登入。
 - 未登入、離線或 Session 失效時，寫作與所有本機功能照常運作；只有需要網站的功能（發布、讀者數據）要求登入。
 
-## 5. 角色與作者綁定（計畫中，不可實作）
+## 5. 作者綁定（程式已實作，正式 migration 待套用）
 
-預計提供（名稱與欄位可能變動）：
+- `authors.user_id` unique 連到 Auth 使用者；管理者核對既有作者及作品後人工綁定，不以封包筆名認領，不提供自助認領或轉移。
+- `publication_author_v1(p_book_id text default null)` 回傳 caller 的作者 UUID；未登入、未綁定或書屬於另一作者即拒絕。包含隱藏作品，不依公開 RLS 的可見性猜測。
+- `my_account_v1()` 與完整角色資料仍屬後續需求；App 登入頁仍只顯示 Email，發布時才查作者權限。
 
-- `my_account_v1()` → `{ userId, email, isAuthor, isAdmin, authorId, penName }`
-- 作者綁定：第一次以作者身分登入時，把既有筆名（`authors`）綁到該帳號；流程待拾頁 V2 決定。
+## 6. 帆夢發布介面（程式已實作，正式 API 待部署）
 
-## 6. 帆夢會用到的網站介面（計畫中，不可實作）
-
-- 發布 `.shiye`、讀取讀者數據（閱讀數、加入書架人數、追更率）。
-- 一律帶版本號（`*_v1`），權限由資料庫檢查「登入者是這本書的作者」。
-- 另開約定章節，本版不定義。
-
-## 7. 之後的 Google／Apple 登入（計畫中）
-
-- 使用系統登入視窗（`ASWebAuthenticationSession`）＋ PKCE，回呼 `sailune://login-callback`；不使用 App 內嵌網頁（Google 會拒絕）。
-- Apple 走網頁 OAuth，不需要 App 的 Sign in with Apple capability，但需付費 Apple 開發者帳號。
-- 屆時拾頁 agent 會把回呼網址加入 Supabase 允許清單，帆夢 agent 再加 URL scheme。
-
-## 8. 帆夢端驗收（建議）
-
-- 用使用者本人 Email 完成寄碼→輸入→登入；錯誤碼顯示正確訊息。
-- 關閉重開 App 仍為登入狀態；登出後鑰匙圈清空。
-- 建立 `.sailunebackup` 後檢查內容不含任何 Session 或 token。
-- 關閉網路時寫作、存檔、匯出不受影響。
-- 以隔離資料驗收，不操作正式作者資料。
-
-## 變更紀錄
-
-- v0.1（2026-09-27）：初版草案。§1–4 已決定；§3 後端前置、§5–7 未完成。
+- 私有 Storage staging + TUS 上傳 `.shiye`，再 `POST /api/publications/v1` 傳 attempt UUID。所有請求使用同一 SDK Session 的 JWT，不使用 service role。
+- `publish_book_v1` 以 caller UID 驗證作者歸屬並單一交易更新內容／收據；資料庫不信任 App 的 userId／authorId／筆名。
+- 版本化格式、容量、HTTP 回應、重試與啟用步驟見 [發布 API](publication-api.md)。
+- 讀者數據 API 仍屬後續需求。
+- 新增範圍依 2026-09-28 跨專案 `.shiye` 工作單 R／U／I 核准，取代 v0.1 對作者與發布「計畫中，不可實作」的限制；既有登入 UI 與鑰匙圈保存契約維持。

@@ -51,7 +51,7 @@ struct StartPublishingView: View {
     let statusForBook: (UUID) -> BookStatus
     let onAdvance: (UUID) -> Void
     let onPublish: (UUID, [String]) -> Void
-    let onExportUpdate: (UUID) -> Void
+    let onSendUpdate: (UUID) -> Void
     let tagsForBook: (UUID) -> [String]
     let onResume: (UUID) -> Void
     let onDelist: (UUID) -> Void
@@ -92,24 +92,26 @@ struct StartPublishingView: View {
                                             .foregroundStyle(.secondary)
                                         if status == .completed {
                                             HStack(spacing: SailuneLayout.spacingS) {
+                                                Button("傳送至拾頁") { onSendUpdate(book.id) }
+                                                    .accessibilityLabel("傳送《\(book.title)》至拾頁")
                                                 Button("恢復連載") { onResume(book.id) }
                                                     .accessibilityLabel("恢復《\(book.title)》連載")
                                                 Button("下架") { onDelist(book.id) }
                                                     .accessibilityLabel("下架《\(book.title)》")
                                             }
                                         } else if status == .draft {
-                                            Button("發布") {
+                                            Button("傳送至拾頁") {
                                                 selectedTags = Set(tagsForBook(book.id))
                                                 publishingBookID = book.id
                                             }
-                                            .accessibilityLabel("發布《\(book.title)》")
+                                            .accessibilityLabel("傳送《\(book.title)》至拾頁")
                                         } else if status == .delisted {
                                             Button("轉為草稿") { onRestoreDraft(book.id) }
                                                 .accessibilityLabel("將《\(book.title)》轉為草稿")
                                         } else {
                                             HStack(spacing: SailuneLayout.spacingS) {
-                                                Button("匯出更新檔") { onExportUpdate(book.id) }
-                                                    .accessibilityLabel("匯出《\(book.title)》更新檔")
+                                                Button("傳送至拾頁") { onSendUpdate(book.id) }
+                                                    .accessibilityLabel("傳送《\(book.title)》至拾頁")
                                                 Button("完結") { onAdvance(book.id) }
                                                     .accessibilityLabel("完結《\(book.title)》")
                                                 Button("下架") { onDelist(book.id) }
@@ -205,7 +207,8 @@ private struct PublicationTagPickerPopup: View {
                 Spacer()
                 Button(SailuneActionCopy.cancel, action: onCancel)
                     .buttonStyle(.bordered)
-                Button("發布", action: onPublish)
+                    .keyboardShortcut(.cancelAction)
+                Button("下一步", action: onPublish)
                     .buttonStyle(.borderedProminent)
             }
         }

@@ -6,149 +6,117 @@ import UniformTypeIdentifiers
 
 @MainActor
 final class BookTextTransferTests: XCTestCase {
-    func testReaderJSONExportPreservesIdentityOrderAndReadableChinese() throws {
-        let styled = NSMutableAttributedString(string: "幕一\n內文\n")
-        styled.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: 18), range: NSRange(location: 0, length: 2))
-        let section = Sailune.Section(title: "相遇", content: AttributedString(styled), sortOrder: 4, wordCount: 4)
+    func testShiyePackagePreservesIdentityHashBlocksAndOneBasedOrder() throws {
+        let styled = NSMutableAttributedString(string: "第一幕\n　　海風。\n\n## 純文字")
+        styled.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: 18), range: NSRange(location: 0, length: 3))
+        let section = Sailune.Section(title: "相遇", content: AttributedString(styled), sortOrder: 4, wordCount: 9)
+        section.id = UUID(uuidString: "33333333-3333-4333-8333-333333333333")!
         let volume = Sailune.Volume(title: "霧港", sortOrder: 8, sections: [section])
-        let book = Book(title: "旅程/測試", author: "作者", synopsis: "簡介", volumes: [volume])
-        let exportedAt = Date(timeIntervalSince1970: 1_700_000_000)
-
-        let package = BookJSONExporter.makePackage(
-            book: book, categories: ["奇幻"], status: .ongoing, sectionUnit: .section, exportedAt: exportedAt
-        )
-        let request = try BookJSONExporter.exportRequest(
-            book: book, categories: ["奇幻"], status: .ongoing, sectionUnit: .section, onSaved: { _ in }
-        )
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        let decoded = try decoder.decode(BookJSONExporter.Package.self, from: request.document.data)
-
-        XCTAssertEqual(request.defaultFilename, "旅程_測試.json")
-        XCTAssertEqual(request.contentType, .json)
-        XCTAssertEqual(decoded.format, "sailune.reader-book")
-        XCTAssertEqual(decoded.version, 1)
-        XCTAssertEqual(decoded.book.id, book.id)
-        XCTAssertEqual(decoded.book.author, "作者")
-        XCTAssertEqual(decoded.book.synopsis, "簡介")
-        XCTAssertEqual(decoded.book.categories, ["奇幻"])
-        XCTAssertEqual(decoded.book.publicationStatus, "ongoing")
-        XCTAssertEqual(decoded.book.volumes[0].id, volume.id)
-        XCTAssertEqual(decoded.book.volumes[0].order, 0)
-        XCTAssertEqual(decoded.book.volumes[0].sections[0].id, section.id)
-        XCTAssertEqual(decoded.book.volumes[0].sections[0].wordCount, 4)
-        XCTAssertEqual(decoded.book.volumes[0].sections[0].blocks.map(\.type), ["sceneHeading", "paragraph", "paragraph"])
-        XCTAssertEqual(decoded.book.volumes[0].sections[0].blocks.map(\.text), ["幕一", "內文", ""])
-        XCTAssertEqual(decoded.book.volumes[0].sections[0].contentHash, package.book.volumes[0].sections[0].contentHash)
-        XCTAssertNil(decoded.book.cover)
-        XCTAssertLessThan(request.document.data.count, 4_096)
-        let jsonText = try XCTUnwrap(String(data: request.document.data, encoding: .utf8))
-        XCTAssertTrue(jsonText.contains("旅程/測試"))
-        XCTAssertTrue(jsonText.contains("幕一"))
-        XCTAssertFalse(jsonText.contains("\\u65c5"))
-
-        section.content = AttributedString("幕一\n新內文\n")
-        let changed = BookJSONExporter.makePackage(
-            book: book, categories: ["奇幻"], status: .ongoing, sectionUnit: .section, exportedAt: exportedAt
-        )
-        XCTAssertNotEqual(changed.book.volumes[0].sections[0].contentHash, package.book.volumes[0].sections[0].contentHash)
+        let book = Book(title: "測試書", author: "測試作者", volumes: [volume])
+        let package = try BookJSONExporter.makePackage(book: book, categories: ["奇幻", "奇幻"], status: .ongoing, sectionUnit: .chapter)
+        XCTAssertEqual(package.manifest.format, "sailune.shiye-book")
+        XCTAssertEqual(package.manifest.book.id, book.id)
+        XCTAssertEqual(package.manifest.book.sectionUnit, "chapter")
+        XCTAssertEqual(package.manifest.book.tags, ["奇幻"])
+        XCTAssertEqual(package.manifest.volumes.first?.index, 1)
+        let entry = try XCTUnwrap(package.manifest.volumes.first?.sections.first)
+        XCTAssertEqual(entry.index, 1)
+        let bytes = try XCTUnwrap(package.entries[entry.file])
+        let fixture = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/Shiye/section.json")
+        XCTAssertEqual(bytes, try Data(contentsOf: fixture))
+        XCTAssertEqual(entry.contentHash, "sha256:" + BookJSONExporter.hash(bytes))
+        XCTAssertEqual(Array(package.data.prefix(4)), [0x50, 0x4b, 0x03, 0x04])
+        XCTAssertNil(package.entries["cover.png"])
+        if let path = ProcessInfo.processInfo.environment["SHIYE_CROSS_LANGUAGE_PACKAGE"] {
+            try package.data.write(to: URL(fileURLWithPath: path), options: .atomic)
+        }
+        section.content = AttributedString("新內容")
+        let changed = try BookJSONExporter.makePackage(book: book, categories: [], status: .ongoing, sectionUnit: .section)
+        XCTAssertNotEqual(changed.manifest.volumes[0].sections[0].contentHash, entry.contentHash)
     }
 
-    func testPublishingStateChangesOnlyAfterExportSaveAndUpdateKeepsState() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("SailuneReaderPublish-\(UUID().uuidString)", isDirectory: true)
-        defer { try? FileManager.default.removeItem(at: directory) }
-        let store = try BookPublicationStore(url: directory.appendingPathComponent("Publication Status.json"))
-        let book = Book(title: "待發布", author: "作者")
-        var statusError: Error?
-        let request = try PublicationExportCoordinator.initialRequest(
-            book: book,
-            categories: ["冒險"],
-            sectionUnit: .chapter,
-            publicationStore: store,
-            onStatusError: { statusError = $0 }
-        )
+    func testShiyePackageContainsSeparateCustomPNGAndRemoteReadableZip() throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("ShiyeCover-\(UUID())")
+        defer { BookCoverStore.setDirectoryOverrideForTesting(nil); try? FileManager.default.removeItem(at: directory) }
+        BookCoverStore.setDirectoryOverrideForTesting(directory)
+        let book = Book(title: "封面測試", author: "作者", volumes: [Sailune.Volume(title: "卷")])
+        let image = NSImage(size: NSSize(width: 8, height: 8))
+        image.lockFocus(); NSColor.red.setFill(); NSRect(x: 0, y: 0, width: 8, height: 8).fill(); image.unlockFocus()
+        try BookCoverStore.save(image: image, for: book)
+        let package = try BookJSONExporter.makePackage(book: book, categories: [], status: .ongoing, sectionUnit: .section)
+        XCTAssertEqual(package.manifest.book.cover, "cover.png")
+        XCTAssertEqual(package.entries["cover.png"], BookCoverStore.pngData(for: book))
+        if let path = ProcessInfo.processInfo.environment["SHIYE_CROSS_LANGUAGE_COVER_PACKAGE"] {
+            try package.data.write(to: URL(fileURLWithPath: path), options: .atomic)
+        }
+    }
 
+    func testShiyeRejectsTooManyVolumesBeforePreparingUpload() {
+        let volumes = (0..<4095).map { Sailune.Volume(title: "", sortOrder: $0) }
+        let book = Book(title: "容量測試", author: "作者", volumes: volumes)
+        XCTAssertThrowsError(try BookJSONExporter.makePackage(book: book, categories: [], status: .ongoing, sectionUnit: .section))
+    }
+
+    func testEmptySectionAndNFCTextAreRepresentedWithoutPrivateSettings() throws {
+        let section = Sailune.Section(title: "e\u{301}", content: AttributedString(""))
+        let book = Book(title: "空節", author: "作者", volumes: [Sailune.Volume(title: "", sections: [section])])
+        let package = try BookJSONExporter.makePackage(book: book, categories: [], status: .completed, sectionUnit: .zhang)
+        let bytes = try XCTUnwrap(package.entries["sections/\(section.id.uuidString).json"])
+        let decoded = try JSONDecoder().decode(BookJSONExporter.SectionContent.self, from: bytes)
+        XCTAssertEqual(decoded.title, "é")
+        XCTAssertTrue(decoded.blocks.isEmpty)
+        XCTAssertEqual(package.manifest.book.status, "completed")
+        XCTAssertEqual(package.manifest.book.sectionUnit, "zhang")
+        XCTAssertThrowsError(try BookJSONExporter.makePackage(book: book, categories: [], status: .delisted, sectionUnit: .section))
+    }
+
+    func testRemoteFailureLeavesDraftUntouchedAndRetryKeepsSameAttempt() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("ShiyePublish-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = try BookPublicationStore(url: directory.appendingPathComponent("status.json"))
+        let book = Book(title: "待發布", author: "作者", volumes: [Sailune.Volume(title: "卷")])
+        let coordinator = PublicationCoordinator()
+        try coordinator.prepare(book: book, tags: ["冒險"], status: .draft, sectionUnit: .section)
+        var firstAttempt: UUID?
+        coordinator.send(store: store) { attempt, _, _ in firstAttempt = attempt.id; throw PublicationFailure.connection }
+        await coordinator.waitForCompletion()
         XCTAssertEqual(store.status(for: book.id), .draft)
         XCTAssertTrue(store.tags(for: book.id).isEmpty)
-        request.onSaved?(directory.appendingPathComponent(request.defaultFilename))
-        XCTAssertNil(statusError)
+        coordinator.send(store: store) { attempt, _, commit in
+            XCTAssertEqual(attempt.id, firstAttempt)
+            commit()
+            return PublicationResult(bookId: book.id.uuidString, createdChapters: 0, updatedChapters: 0, unchangedChapters: 0, hiddenChapters: 0, hiddenVolumes: 0)
+        }
+        await coordinator.waitForCompletion()
+        XCTAssertEqual(coordinator.phase, .success)
         XCTAssertEqual(store.status(for: book.id), .ongoing)
         XCTAssertEqual(store.tags(for: book.id), ["冒險"])
-
-        let update = try PublicationExportCoordinator.updateRequest(
-            book: book, sectionUnit: .chapter, publicationStore: store
-        )
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
-        let decoded = try decoder.decode(BookJSONExporter.Package.self, from: update.document.data)
-        XCTAssertEqual(decoded.book.id, book.id)
-        XCTAssertEqual(decoded.book.categories, ["冒險"])
-        XCTAssertEqual(decoded.book.publicationStatus, "ongoing")
-        XCTAssertEqual(store.status(for: book.id), .ongoing)
     }
 
-    func testSavedExportReportsLocalPublicationFailureWithoutChangingState() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("SailuneReaderPublishFailure-\(UUID().uuidString)", isDirectory: true)
+    func testLocalSaveFailureRetriesWithoutAnotherRemotePublication() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent("ShiyeLocalFailure-\(UUID())")
         defer { try? FileManager.default.removeItem(at: directory) }
-        let statusURL = directory.appendingPathComponent("Publication Status.json")
+        let statusURL = directory.appendingPathComponent("status.json")
         let store = try BookPublicationStore(url: statusURL)
-        let book = Book(title: "待發布", author: "作者")
-        var statusError: Error?
-        let request = try PublicationExportCoordinator.initialRequest(
-            book: book,
-            categories: ["奇幻"],
-            sectionUnit: .section,
-            publicationStore: store,
-            onStatusError: { statusError = $0 }
-        )
+        let book = Book(title: "待發布", author: "作者", volumes: [Sailune.Volume(title: "卷")])
+        let coordinator = PublicationCoordinator()
+        try coordinator.prepare(book: book, tags: ["奇幻"], status: .draft, sectionUnit: .section)
         try FileManager.default.createDirectory(at: statusURL, withIntermediateDirectories: true)
-        request.onSaved?(directory.appendingPathComponent(request.defaultFilename))
-
-        XCTAssertNotNil(statusError)
-        XCTAssertEqual(store.status(for: book.id), .draft)
-        XCTAssertTrue(store.tags(for: book.id).isEmpty)
-    }
-
-    func testReaderJSONExportSortsVolumesAndSections() {
-        let laterSection = Sailune.Section(title: "後節", sortOrder: 9)
-        let earlierSection = Sailune.Section(title: "前節", sortOrder: 1)
-        let laterVolume = Sailune.Volume(title: "後卷", sortOrder: 8, sections: [laterSection, earlierSection])
-        let earlierVolume = Sailune.Volume(title: "前卷", sortOrder: 2)
-        let book = Book(title: "順序", author: "作者", volumes: [laterVolume, earlierVolume])
-
-        let package = BookJSONExporter.makePackage(
-            book: book, categories: [], status: .ongoing, sectionUnit: .section
-        )
-        XCTAssertEqual(package.book.volumes.map(\.id), [earlierVolume.id, laterVolume.id])
-        XCTAssertEqual(package.book.volumes.map(\.order), [0, 1])
-        XCTAssertEqual(package.book.volumes[1].sections.map(\.id), [earlierSection.id, laterSection.id])
-        XCTAssertEqual(package.book.volumes[1].sections.map(\.order), [0, 1])
-    }
-
-    func testReaderJSONExportIncludesCustomCover() throws {
-        let directory = FileManager.default.temporaryDirectory
-            .appendingPathComponent("SailuneReaderCover-\(UUID().uuidString)", isDirectory: true)
-        defer {
-            BookCoverStore.setDirectoryOverrideForTesting(nil)
-            try? FileManager.default.removeItem(at: directory)
+        var calls = 0
+        let operation: @MainActor (PublicationAttempt, @escaping @MainActor @Sendable (Double) -> Void, @escaping @MainActor () -> Void) async throws -> PublicationResult = { _, _, commit in
+            calls += 1; commit()
+            return PublicationResult(bookId: book.id.uuidString, createdChapters: 0, updatedChapters: 0, unchangedChapters: 0, hiddenChapters: 0, hiddenVolumes: 0)
         }
-        BookCoverStore.setDirectoryOverrideForTesting(directory)
-        let book = Book(title: "自訂封面", author: "作者")
-        let image = NSImage(size: NSSize(width: 2, height: 2))
-        image.lockFocus()
-        NSColor.red.setFill()
-        NSRect(x: 0, y: 0, width: 2, height: 2).fill()
-        image.unlockFocus()
-        try BookCoverStore.save(image: image, for: book)
-
-        let package = BookJSONExporter.makePackage(
-            book: book, categories: [], status: .ongoing, sectionUnit: .section
-        )
-        let cover = try XCTUnwrap(package.book.cover)
-        XCTAssertEqual(cover.mediaType, "image/png")
-        XCTAssertEqual(Data(base64Encoded: cover.base64), BookCoverStore.pngData(for: book))
+        coordinator.send(store: store, operation: operation)
+        await coordinator.waitForCompletion()
+        XCTAssertEqual(coordinator.phase, .failure)
+        XCTAssertEqual(store.status(for: book.id), .draft)
+        XCTAssertNotNil(coordinator.result)
+        try FileManager.default.removeItem(at: statusURL)
+        coordinator.send(store: store, operation: operation)
+        await coordinator.waitForCompletion()
+        XCTAssertEqual(calls, 1)
+        XCTAssertEqual(store.status(for: book.id), .ongoing)
     }
 
     func testParserKeepsVolumeTitleAndSectionsInSourceOrder() throws {

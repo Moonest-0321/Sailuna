@@ -6,6 +6,8 @@
     <string>$(SUPABASE_URL)</string>
     <key>SailuneSupabasePublishableKey</key>
     <string>$(SUPABASE_PUBLISHABLE_KEY)</string>
+    <key>SailunePageletURL</key>
+    <string>$(SAILUNE_PAGELET_URL)</string>
     <key>SailuneAIBaseURL</key>
     <string>$(SAILUNE_AI_BASE_URL)</string>
 </dict>

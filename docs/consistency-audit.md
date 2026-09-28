@@ -71,3 +71,9 @@ EPUB 匯出會使用畫面目前顯示的封面：優先直接讀取書籍 UUID 
 ## V10.6 本機論壇貼文資料邊界
 
 論壇文章目前只存於本機，無跨裝置一致性或書籍關聯。文章 JSON 讀取錯誤時 Store 停用寫入並保留原檔；保存失敗不替換記憶體文件。備份 checksum 驗證涵蓋文章 sidecar；還原舊備份缺檔時清除現有論壇文章。自動測試已覆蓋 Store CRUD／重開／損毀與寫入失敗保護、含文章備份還原及舊備份清除；GUI 操作與完整還原 rollback 故障注入仍待人工驗收。
+
+## 2026-09-28 `.shiye` 發布邊界
+
+- SwiftData V5 schema 不變；UUID、閱讀進度引用及既有 TXT／EPUB 匯出保留。EPUB stored ZIP writer 抽成共用型別，封裝行為保持一致。
+- 原發布 JSON 存檔入口替換為受保護發布；遠端 RPC 成功才更新本機 publication sidecar。sidecar 失敗保留遠端結果並只重試本機保存。
+- Session 仍只在鑰匙圈，不加入備份；staging／API 使用登入者 JWT。網站交易保留推薦與站長下架欄位，缺卷節只下架不刪除。

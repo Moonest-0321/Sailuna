@@ -24,7 +24,7 @@ struct ContentView: View {
     @State private var deletionRequest: BookDeletionRequest?
     @State private var delistingBookID: UUID?
     @State private var bookDeletionError: String?
-    @State private var publicationExportRequest: SailuneExportRequest?
+    @State private var publicationCoordinator = PublicationCoordinator()
     @State private var selectedSidebarItem: StartSidebarItem = .home
     @State private var showingAboutMeSheet = false
     @State private var showingAccountPopover = false
@@ -104,6 +104,8 @@ struct ContentView: View {
                         libraryContent(metrics: metrics)
                     }
                 }
+                .disabled(publicationCoordinator.isPresented)
+                .accessibilityHidden(publicationCoordinator.isPresented)
 
                 if showingAccountPopover {
                     Color.clear
@@ -228,6 +230,16 @@ struct ContentView: View {
                     .zIndex(11)
                 }
 
+                if publicationCoordinator.isPresented {
+                    PublicationPreviewView(
+                        coordinator: publicationCoordinator,
+                        isSignedIn: accountAuthService.signedInEmail != nil,
+                        onLogin: { showingEmailLoginSheet = true },
+                        onSend: { publicationCoordinator.send(auth: accountAuthService, store: publicationStore) }
+                    )
+                    .zIndex(12)
+                }
+
                 if let bookDeletionError {
                     HomeMessagePopup(
                         title: "書籍操作結果",
@@ -246,7 +258,6 @@ struct ContentView: View {
                 }
             }
             .environment(\.sectionUnit, selectedSectionUnit)
-            .sailuneFileExporter(request: $publicationExportRequest)
             .sheet(isPresented: $showingEmailLoginSheet) {
                 EmailLoginView(authService: accountAuthService) {
                     showingEmailLoginSheet = false
@@ -321,7 +332,7 @@ struct ContentView: View {
                 statusForBook: { publicationStore.status(for: $0) },
                 onAdvance: advancePublication,
                 onPublish: publishPublication,
-                onExportUpdate: exportPublicationUpdate,
+                onSendUpdate: sendPublicationUpdate,
                 tagsForBook: { publicationStore.tags(for: $0) },
                 onResume: resumePublication,
                 onDelist: { delistingBookID = $0 },
@@ -463,31 +474,15 @@ struct ContentView: View {
     private func publishPublication(_ bookID: UUID, tags: [String]) {
         guard let book = books.first(where: { $0.id == bookID }) else { return }
         do {
-            publicationExportRequest = try PublicationExportCoordinator.initialRequest(
-                book: book,
-                categories: tags,
-                sectionUnit: selectedSectionUnit,
-                publicationStore: publicationStore,
-                onStatusError: { error in
-                    bookDeletionError = "《\(book.title)》匯出檔已儲存，但本機發布狀態更新失敗：\(error.localizedDescription)"
-                }
-            )
+            try publicationCoordinator.prepare(book: book, tags: tags,
+                status: publicationStore.status(for: bookID), sectionUnit: selectedSectionUnit)
         } catch {
-            bookDeletionError = "無法匯出《\(book.title)》：\(error.localizedDescription)"
+            bookDeletionError = "無法準備《\(book.title)》：\(error.localizedDescription)"
         }
     }
 
-    private func exportPublicationUpdate(_ bookID: UUID) {
-        guard let book = books.first(where: { $0.id == bookID }) else { return }
-        do {
-            publicationExportRequest = try PublicationExportCoordinator.updateRequest(
-                book: book,
-                sectionUnit: selectedSectionUnit,
-                publicationStore: publicationStore
-            )
-        } catch {
-            bookDeletionError = "無法匯出《\(book.title)》更新檔：\(error.localizedDescription)"
-        }
+    private func sendPublicationUpdate(_ bookID: UUID) {
+        publishPublication(bookID, tags: publicationStore.tags(for: bookID))
     }
 
     private func advancePublication(_ bookID: UUID) {

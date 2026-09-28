@@ -12,6 +12,7 @@ final class SailuneAccountAuthService {
     private(set) var errorMessage: String?
 
     private let client: SupabaseClient?
+    private var publicationConfiguration: (URL, String)?
 
     var isConfigured: Bool { client != nil }
 
@@ -26,6 +27,7 @@ final class SailuneAccountAuthService {
             return
         }
 
+        publicationConfiguration = (url, publishableKey)
         client = SupabaseClient(
             supabaseURL: url,
             supabaseKey: publishableKey,
@@ -93,6 +95,29 @@ final class SailuneAccountAuthService {
             errorMessage = "無法退出登入，請稍後再試。"
         }
     }
+
+    func publicationCredentials(for bookID: UUID) async throws -> PublicationCredentials {
+        guard let client, let (url, key) = publicationConfiguration else { throw PublicationFailure.configuration }
+        let session: Session
+        do { session = try await client.auth.session }
+        catch { signedInEmail = nil; throw PublicationFailure.login }
+        signedInEmail = session.user.email
+        do {
+            let _: UUID = try await client.rpc("publication_author_v1", params: ["p_book_id": bookID.uuidString]).execute().value
+        } catch let error as PostgrestError {
+            if error.message.contains("publication_author_unbound") { throw PublicationFailure.authorUnbound }
+            if error.message.contains("publication_not_owner") { throw PublicationFailure.notOwner }
+            if error.code == "42501" || error.code == "PGRST301" {
+                signedInEmail = nil; throw PublicationFailure.login
+            }
+            throw PublicationFailure.connection
+        } catch {
+            throw PublicationFailure.connection
+        }
+        return PublicationCredentials(supabaseURL: url, publishableKey: key, token: session.accessToken, userID: session.user.id)
+    }
+
+    func requirePublicationLogin() { signedInEmail = nil }
 
     private func safeMessage(for error: Error, isVerification: Bool) -> String {
         if let authError = error as? AuthError {
