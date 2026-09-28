@@ -47,6 +47,13 @@ struct EmailLoginView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
+            if authService.needsKeychainRetry {
+                Button("重試鑰匙圈授權") {
+                    Task { await authService.retryKeychainAccess() }
+                }
+                .disabled(authService.isWorking)
+            }
+
             HStack {
                 Button("取消") { dismiss() }
                     .keyboardShortcut(.cancelAction)
@@ -56,11 +63,11 @@ struct EmailLoginView: View {
                         .disabled(authService.isWorking)
                     Button("登入") { Task { await verifyCode() } }
                         .keyboardShortcut(.defaultAction)
-                        .disabled(authService.isWorking || verificationCode.count != 6)
+                        .disabled(authService.isWorking || authService.needsKeychainRetry || verificationCode.count != 6)
                 } else {
                     Button("寄送驗證碼") { Task { await sendCode() } }
                         .keyboardShortcut(.defaultAction)
-                        .disabled(authService.isWorking || normalizedEmail.isEmpty)
+                        .disabled(authService.isWorking || authService.needsKeychainRetry || normalizedEmail.isEmpty)
                 }
             }
         }

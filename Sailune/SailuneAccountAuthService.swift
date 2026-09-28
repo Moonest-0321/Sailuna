@@ -11,6 +11,10 @@ final class SailuneAccountAuthService {
     private(set) var isWorking = false
     private(set) var errorMessage: String?
 
+    private let storage = SailuneAuthStorage()
+    private var didRestore = false
+    private(set) var needsKeychainRetry = false
+
     private let client: SupabaseClient?
     private var publicationConfiguration: (URL, String)?
 
@@ -32,18 +36,48 @@ final class SailuneAccountAuthService {
             supabaseURL: url,
             supabaseKey: publishableKey,
             options: SupabaseClientOptions(
-                auth: .init(storage: KeychainLocalStorage())
+                auth: .init(storage: storage, autoRefreshToken: false)
             )
         )
+        storage.setFailureHandler { [weak self] in
+            Task { @MainActor [weak self] in await self?.reportStorageFailure() }
+        }
+    }
+
+    private func reportStorageFailure() async {
+        guard storage.failure != nil else { return }
+        signedInEmail = nil
+        needsKeychainRetry = true
+        errorMessage = "無法存取登入鑰匙圈，已停止背景重試。請按「重試鑰匙圈授權」。"
+        await client?.auth.stopAutoRefresh()
+    }
+
+    func retryKeychainAccess() async {
+        guard !isWorking else { return }
+        storage.beginUserRetry()
+        defer { storage.endUserRetry() }
+        needsKeychainRetry = false
+        errorMessage = nil
+        didRestore = false
+        await restoreSession()
     }
 
     func restoreSession() async {
-        guard let client else { return }
+        guard let client, !didRestore, !isWorking else { return }
+        didRestore = true
+        isWorking = true
+        defer { isWorking = false }
         do {
             let session = try await client.auth.session
+            guard storage.failure == nil else { await reportStorageFailure(); return }
             signedInEmail = session.user.email
+            await client.auth.startAutoRefresh()
         } catch {
             signedInEmail = nil
+            if storage.failure != nil { await reportStorageFailure() }
+            else if let authError = error as? AuthError, authError == .sessionMissing {
+                // No saved login is normal on first launch.
+            } else { errorMessage = "無法恢復登入，請稍後重試登入。" }
         }
     }
 
@@ -52,13 +86,17 @@ final class SailuneAccountAuthService {
             errorMessage = "登入服務尚未設定。"
             return
         }
+        guard !isWorking else { return }
+        guard storage.failure == nil else { await reportStorageFailure(); return }
         isWorking = true
         errorMessage = nil
         defer { isWorking = false }
 
         do {
             try await client.auth.signInWithOTP(email: email)
+            if storage.failure != nil { await reportStorageFailure() }
         } catch {
+            if storage.failure != nil { await reportStorageFailure(); return }
             errorMessage = safeMessage(for: error, isVerification: false)
         }
     }
@@ -68,15 +106,20 @@ final class SailuneAccountAuthService {
             errorMessage = "登入服務尚未設定。"
             return false
         }
+        guard !isWorking else { return false }
+        guard storage.failure == nil else { await reportStorageFailure(); return false }
         isWorking = true
         errorMessage = nil
         defer { isWorking = false }
 
         do {
             let response = try await client.auth.verifyOTP(email: email, token: code, type: .email)
+            guard storage.failure == nil else { await reportStorageFailure(); return false }
             signedInEmail = response.user.email ?? email
+            await client.auth.startAutoRefresh()
             return true
         } catch {
+            if storage.failure != nil { await reportStorageFailure(); return false }
             errorMessage = safeMessage(for: error, isVerification: true)
             return false
         }
@@ -84,14 +127,19 @@ final class SailuneAccountAuthService {
 
     func signOut() async {
         guard let client else { return }
+        guard !isWorking else { return }
+        guard storage.failure == nil else { await reportStorageFailure(); return }
         isWorking = true
         errorMessage = nil
         defer { isWorking = false }
 
         do {
             try await client.auth.signOut()
+            guard storage.failure == nil else { await reportStorageFailure(); return }
+            await client.auth.stopAutoRefresh()
             signedInEmail = nil
         } catch {
+            if storage.failure != nil { await reportStorageFailure(); return }
             errorMessage = "無法退出登入，請稍後再試。"
         }
     }
@@ -100,7 +148,12 @@ final class SailuneAccountAuthService {
         guard let client, let (url, key) = publicationConfiguration else { throw PublicationFailure.configuration }
         let session: Session
         do { session = try await client.auth.session }
-        catch { signedInEmail = nil; throw PublicationFailure.login }
+        catch {
+            signedInEmail = nil
+            await reportStorageFailure()
+            throw PublicationFailure.login
+        }
+        guard storage.failure == nil else { await reportStorageFailure(); throw PublicationFailure.login }
         signedInEmail = session.user.email
         do {
             let _: UUID = try await client.rpc("publication_author_v1", params: ["p_book_id": bookID.uuidString]).execute().value

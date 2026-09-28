@@ -6,6 +6,27 @@ import UniformTypeIdentifiers
 
 @MainActor
 final class BookTextTransferTests: XCTestCase {
+    func testNewWholeBookPackageKeepsBookIDAndReplacesVolumeSectionAndBlankContent() throws {
+        let oldSection = Sailune.Section(title: "舊節", content: AttributedString("舊正文"))
+        let oldVolume = Sailune.Volume(title: "舊卷", sections: [oldSection])
+        let book = Book(title: "整本覆蓋", author: "測試作者", volumes: [oldVolume])
+        let first = try BookJSONExporter.makePackage(book: book, categories: ["奇幻"], status: .ongoing, sectionUnit: .section)
+        let newSection = Sailune.Section(title: "新節", content: AttributedString("\n新正文\n\n\n"))
+        let newVolume = Sailune.Volume(title: "新卷", sections: [newSection])
+        book.volumes = [newVolume]
+        book.title = "更新書名"
+        let replacement = try BookJSONExporter.makePackage(book: book, categories: [], status: .completed, sectionUnit: .section)
+        XCTAssertEqual(replacement.manifest.book.id, first.manifest.book.id)
+        XCTAssertEqual(replacement.manifest.book.title, "更新書名")
+        XCTAssertEqual(replacement.manifest.book.status, "completed")
+        XCTAssertTrue(replacement.manifest.book.tags.isEmpty)
+        XCTAssertEqual(replacement.manifest.volumes.map(\.id), [newVolume.id])
+        XCTAssertNil(replacement.entries["sections/\(oldSection.id.uuidString).json"])
+        let bytes = try XCTUnwrap(replacement.entries["sections/\(newSection.id.uuidString).json"])
+        let content = try JSONDecoder().decode(BookJSONExporter.SectionContent.self, from: bytes)
+        XCTAssertEqual(content.blocks.map(\.type), ["blank", "paragraph", "blank", "blank", "blank"])
+        XCTAssertEqual(content.blocks[1].text, "新正文")
+    }
     func testShiyePackagePreservesIdentityHashBlocksAndOneBasedOrder() throws {
         let styled = NSMutableAttributedString(string: "第一幕\n　　海風。\n\n## 純文字")
         styled.addAttribute(.font, value: NSFont.boldSystemFont(ofSize: 18), range: NSRange(location: 0, length: 3))

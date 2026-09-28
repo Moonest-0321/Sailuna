@@ -1,3 +1,20 @@
+# V11.1 鑰匙圈 checkpoint（active）
+
+- 已決定：使用者直接授權具體修正，只處理 Sailune 登入；安全儲存／原 service 與 account key／ACL 不變，不改拾頁權限。UI 只在既有登入表單增加重試。
+- 已查證：目前主機沒有 Sailune 程序。SDK SessionStorage 每次讀取執行三個 migration，再讀 Session；失敗吞為 nil。背景 tick 及 View restore、publicationCredentials 都有讀取路徑。測試產物 adhoc，不能當使用者實際 App 簽章。
+- 本次修改：SailuneAuthStorage、AccountAuthService、EmailLoginView、SailuneAuthStorageTests 及工作／規格／狀態文件；起始 Localizable、BookTextTransferTests、AGENTS 與發布文件修改全部保留。
+- 暫時假設：穩定簽章可能影響既有項目 ACL；尚無實際安裝 App／ACL 證據，拒絕斷言唯一根因。不放寬 ACL 或換 service 迴避。
+- 最終回歸 9 通過／0 失敗／1 明確略過，test 建置及 diff check 通過；不撤回先前真實測試失敗。驗證詳見 ../implementation-log.md；四項使用者實機验收未完成，不以測試成功替代。
+- 真實 Security 後端測試被 signal term 終止，9 通過／1 失敗；原因與隨機測試項目清理未確認。保留 off-main opt-in 測試，普通回歸 skip，不能當已通過。
+- 使用者確認從 Xcode 開啟，無需再要求完整路徑；最新預設 Debug 候選 adhoc。Debug 已補與 Release 同 Team，簽章建置結果以實作紀錄為準。
+- 簽章 build session 51297 尚在等待 codesign／SecurityAgent，CUA 安全規則不允許存取該系統 App，需使用者自行完成；不可將 build 記為成功。
+- 唯一下一步：完成系統簽章授權後恢復 session 51297，確認產物簽章，再由 Xcode Run 修正版，核對執行產物簽章／ACL並完成四項實機驗收；真實後端測試阻塞仍未釐清。不要重新部署拾頁或修改作者權限。
+- 最小文件：本檔、work-items/current.md、implementation-log.md、spec-sailune-keychain-v11.1.md。
+
+---
+
+> 2026-09-28 最新：正常 App → 正式拾頁的首次整本上傳與再次覆蓋已驗收；同一書／節網址、正文／章名／簡介更新、未新增副本。main 已整合 fda616e，正式部署從 main 建置完成（Ready／Current），部署後 API／測試書正常。詳細證據與未驗證情境以 [共用實作紀錄](../implementation-log.md) 為準；下方舊狀態為歷史紀錄。
+
 # 2026-09-28 `.shiye` 發布 checkpoint
 
 - **批准／決策**：R／U／I approved；使用者選網站固定顯示「節」，保留來源 sectionUnit；App 不提供 `.shiye` 匯出／另存。

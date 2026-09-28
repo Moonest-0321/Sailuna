@@ -2,6 +2,8 @@
 
 ## 對話上下文與開始工作
 
+- 使用者要求每次實作集中記錄於 `docs/implementation-log.md`（帆夢／拾頁共用正本）。開始先讀本檔；修改前記目標及工作樹，結束或暫停前追加變更、原因、驗證命令／結果、未驗證事項及下一步。不可把提交或替身測試等同真實串接成功。
+
 - 每個新對話第一次工作時，依序讀取本文件、`docs/project-status.md`、`docs/work-items/current.md` 與 `docs/handoffs/current.md`；若兩份 current 文件皆為 `closed`，只需確認沒有未完成工作。
 - 接手交接內容後，先以 `git status`、`git diff`、相關程式與測試驗證交接敘述；交接檔是導航，不是最終事實來源。
 - 只讀取與當前任務直接相關的 `docs/spec-*.md`、技術文件或測試報告。
