@@ -295,3 +295,77 @@
 - 實際 GUI：AX 按鈕「作者頭像、登入」點開後出現帳號／方案／Email／設定／切換／退出列；截圖確認彈窗下緣緊接按鈕上緣，小間距且沒有上浮。點空白後 AX 移除彈窗列，再點帳號重新出現。這是最新建置的實際未登入 GUI 驗收。
 - 未驗證：登入後高度、小視窗捲動與長筆名；未跑 XCTest／真實 OTP。未操作作者正式 stores；測試 App 已送出 Quit。
 - 本次「不出現」修正已完成建置與開啟／取消／重開 GUI 驗證；其他 V11.2 未批准草案及待驗收事項保留。
+
+## 2026-09-29：集中作者／帳號入口（需求與 UI 提案）
+
+- 使用者確認先集中入口，資料切換稍後討論。R approved：集中左下帳號入口，移除側欄獨立「關於我」入口；不新增身份綁定或資料遷移。
+- 本輪只讀 ContentView 入口／callback，未改程式。U 提案：帳號彈窗在既有設定前增加「關於我」，點擊關閉帳號彈窗並開啟原有筆名／頭像／簡介編輯彈窗；未登入也可使用。U pending、I pending，等待排列確認。
+- 保留所有既有修改；未執行 build／XCTest／GUI。下一步為確認 U 排列，再確認實作計畫。
+
+## 2026-09-29：帳號頁與頭像選單（I approved，開始）
+
+- 使用者確認 R／U：「帳號」文字開主內容頁，筆名／簡介可編輯，Email 為帳號名稱，使用方案沿用選單；頭像另開登入／切換帳號／登出／設定小選單。資料切換延後。使用者回覆「I」批准實作計畫，取代前段彈窗內「關於我」提案。
+- 本輪起始 git status 僅三份文件修改（implementation-log／current work item／handoff），先前程式已在目前基線，保留所有既有修改。
+- 沿用 AuthorProfile、SailuneFormTextField／AuthorBioEditor、Book Account auth service 與 Anchor 彈窗定位；移除獨立關於我入口，保存既有頭像編輯能力。切換帳號先登出成功才開 Email 表單，失敗保持錯誤；不更改資料歸屬或 schema。
+- 驗證計畫：Swift parse、Debug build、實際隔離 GUI 兩個入口／保存／取消；真實登入者切換需另列驗收邊界。
+
+### 帳號頁實作與驗證結果
+
+- ContentView 分離頭像及帳號文字按鈕，建立 account 路由及 AccountPageView／Form，移除關於我獨立入口／modal。頁內筆名、簡介、Email 與方案，沿用共用欄位與編輯器；保留更換頭像，明確保存主 context，失敗回報。
+- 頭像四項選單與登入状態／busy disabled 已接入；切換 callback 等待 signOut 後只在 signedInEmail nil 且 error nil 時開 Email。尚未用真實登入者驗收，不把程式接線當成功。
+- 編輯腳本第一次因搜尋舊 modal 後續標記不符而停止，尚未寫 source；讀正確標記後修改成功。Swift parse／diff check、主機無簽章 Debug build exit 0，日誌 /private/tmp/sailune-v112-account-page-build.log。
+- 隔離 App 用 /private/tmp/SailuneV112PageGUI/Isolated.store；實際 AX／截图確認頭像「帳號選單」、文字「開啟帳號頁」，頁內四欄及無關於我入口。輸入固定測試筆名／簡介後 AX 反映新值，唯讀 SQLite 新連線驗證兩欄已保存 True。沒有正式作者資料輸出。
+- 頭像選單實際出现登入／切換／登出／設定；當次 restore 尚在處理，帳號操作 disabled。按設定後工具報 native pipe closed；reset 重連同錯，未取得設定結果或正常 Quit；session 42229 尚運行。未宣稱保存 UI 重開、登入表單或真實切換驗收完成。
+- 未執行 XCTest、真實 OTP／切換、簽章或部署。工作單維持 active；唯一下一步最新 Xcode Run 補剩餘 GUI／真實登入者流程。更新工作單／handoff／spec／project-status，未提交。
+
+## 2026-09-29：頭像彈窗再次未顯示（修正開始）
+
+- 使用者確認頭像原有彈窗無法出現；修復已批准的頭像選單，帳號文字仍開主頁。此為具體 bug 修正，沿用 R/U/I approved。
+- 起始 ContentView、Localizable.xcstrings 與五份文件已有修改，全部保留。程式仍有 overlay，不能將缺失判定為選單被刪除；CUA 重連仍報 native pipe closed，尚未取得當前故障畫面。
+- 將 anchor 恢復至底部整列容器，頭像使用明確 44 pt 命中範圍；避免拆分後 anchor 綁在內層小按鈕。這是修正候選，未宣稱已確認故障根因。
+
+### 本輪結果／限制
+
+- 頭像 44 × 44 命中範圍，anchor 改回底部整列；維持按鈕上方 8 pt、自訂選單四項與空白取消。帳號頁及登入資料契約未改。
+- Swift parse、git diff --check 通過；Debug 無簽章 build exit 0，/private/tmp/sailune-v112-avatar-repair-build.log。
+- CUA 原生連線仍報 native pipe closed，本輪無法驗證實際點擊、取消／重開；不得將 build 當作故障已消除。唯一下一步：最新 Xcode Run 點頭像確認選單顯示。Localizable.xcstrings 既有變更未觸碰。
+
+## 2026-09-29：頭像事件誤入帳號頁（修正）
+
+- 使用者補充實際故障是點擊頭像直接開帳號頁，並非只有彈窗看不見。保留兩個已批准入口，改為兩個明確且互不重疊的 44 pt 命中區：頭像按鈕固定寬度、裁切並提高同列命中優先；帳號文字只使用剩餘寬度並裁切。
+- 彈窗內容、定位 anchor、帳號頁與資料行為均未改動。待以下建置與實際 GUI 驗證結果補記。
+
+### 頭像事件修正驗證
+
+- Swift parse、git diff --check 與無簽章 Debug build通過。
+- 最新建置實際 GUI：點 accessibility「帳號選單」後出現登入／切換帳號／登出／設定四項；再次點頭像後四項消失；點「開啟帳號頁」後主內容顯示筆名、簡介、Email 帳號名稱與方案。兩個入口已分流，未再發生頭像誤開帳號頁。
+- 當次登入服務已恢復 Email，畫面顯示既有 Email；未操作登出、切換或 OTP。工作單維持 active，剩餘真實帳號流程驗收不變。
+
+## 2026-09-29：頭像實際滑鼠命中再調查（開始）
+
+- 使用者提供截圖並確認實際滑鼠點擊頭像仍未出現彈窗。前次 CUA 使用 accessibility action，會直接呼叫按鈕 action，不能證明實體座標 hit testing 正確；撤回「兩入口已完成實際點擊驗證」的結論。
+- 本輪以最新建置的畫面座標重現，檢查同列 layout／hit area／overlay 層級，再依結果修正。保留帳號頁及其他工作樹修改。
+
+### 詳查與修正結果
+
+- 找到前次誤判：accessibility click 直接執行 action，不能代表滑鼠 hit testing；測試視窗另有底部超出螢幕的狀態，早期座標測試也未點到頭像。
+- 「帳號」Button 原先以 `maxWidth: .infinity` 擴張，與頭像同列時存在覆蓋頭像命中區的可能；已改為文字固有寬度並在後方放 Spacer。頭像不再包在 Button label，改為獨立 44 × 44 `contentShape` 與直接 `onTapGesture`，accessibility action 另行保留。兩者不共享或重疊 hit area。
+- 中途 build 因 accessibilityAction 使用不支援的 `perform:` 標籤 exit 65；改用 closure 語法後，Swift parse、diff check 與最終 Debug build exit 0。
+- 實際座標驗證：在移除帳號按鈕延展後，最新建置以畫面座標點頭像成功顯示四項彈窗；最終 direct gesture 版本因 CUA 全螢幕／視窗座標反覆回報 noWindowsAvailable，未取得第二張實體座標截圖。最終建置的 accessibility tree 仍明確分成「帳號選單」「開啟帳號頁」，頭像 action 可顯示四項彈窗。尚待使用者以正常視窗確認最終滑鼠結果。
+
+## 2026-09-29：右下帳號卡片流程校正（開始）
+
+- 使用者明確校正 UI：右下整張卡片（頭像與「帳號」文字）第一次點擊都只開帳號彈窗；由彈窗內新增的「帳號」項目進入帳號主頁。這取代先前將頭像與文字分成兩個入口的設計。
+- 實作範圍：恢復整張卡片為單一 Button；彈窗最上方新增「帳號」action，沿用既有 account route。登入／切換／登出／設定、資料模型與帳號頁欄位不變。
+
+### 單一卡片流程驗證
+
+- Swift parse、git diff --check 與無簽章 Debug build exit 0。
+- 最新 App accessibility tree 的右下入口只有一個「開啟帳號選單」Button；啟動後選單顯示帳號、登入、切換帳號、登出、設定。點選單「帳號」後，選單關閉並進入含筆名、簡介、帳號名稱、使用方案的帳號頁。
+- 此流程校正已完成；真實登出／切換／OTP 仍屬原工作單未驗證範圍。
+
+## 2026-09-29：登入後帳號卡片顯示筆名
+
+- 使用者明確要求：右下帳號卡片未登入顯示「帳號」，登入後將兩字替換為筆名；卡片仍開啟帳號選單。
+- StartSidebarView 接收共用登入服務的登入狀態，登入後讀既有 AuthorProfile.penName；空白筆名回退「帳號」，長筆名單行尾端截斷。未改資料模型、登入流程或彈窗路由。
+- Swift parse、git diff --check 與無簽章 Debug build exit 0。最新 App 未恢復登入 session，實際 GUI 僅確認未登入仍顯示「帳號」；登入後筆名分支未用真實 session 驗證，不把程式接線當作登入整合成功。

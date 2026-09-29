@@ -1,3 +1,17 @@
+> 2026-09-29 最新流程：右下整張帳號卡片開帳號選單，選單「帳號」進入主內容頁；未登入卡片顯示「帳號」，登入後顯示 AuthorProfile 筆名。parse／diff／Debug build 通過；GUI 確認未登入文字與兩步路由，登入後筆名待真實 session 驗收。
+
+# V11.2 帳號頁與頭像選單
+
+- 狀態：active（已實作，剩餘 GUI／真實帳號流程驗收待完成）；R approved、U approved（使用者「是的」）、I approved（使用者「I」）。
+- 已確認 UI：右下整張帳號卡片開小選單；選單內「帳號」開主內容新頁。頁內筆名／簡介可直接編輯、帳號名稱顯示登入 Email、使用方案沿用現有選單；側欄不再有「關於我」。
+- 資料：沿用本機 AuthorProfile，保留頭像編輯；Email 沿用共用登入服務。資料隨帳號切換、雲端同步及 schema 變更不在範圍。方案沿用記憶體選擇，不接付費／後端。
+- I：ContentView 使用整張卡片的單一選單入口，account route 移至選單「帳號」action；原作者表單轉主內容頁並明確保存，切換先成功登出才開 Email 登入，失敗留錯誤。
+- 驗收證據：Swift parse、主機無簽章 Debug build、diff check 通過；最新 GUI 確認單一卡片入口、五項選單及由「帳號」進入四欄頁。先前唯讀 SQLite 新連線確認已保存筆名／簡介。
+- 未驗證：GUI 在按設定時 native pipe closed，重連亦失敗；設定結果／登入表單／重開 UI／小視窗未確認。未跑 XCTest或真實登入者切換；當次 restore 處理中選單登入操作 disabled，未推論真實 Session 可用。
+- 唯一下一步：以最新 Xcode Run 完成頭像登入／設定跳轉、登入者切換與重開作者資料 GUI 驗收。
+
+---
+
 > 2026-09-29 最新修復：帳號彈窗改用按鈕 Anchor 與父 overlay 同次排版定位，移除 CGRect State 零高依賴。主機無簽章 Debug build、parse／diff check 通過；最新隔離 App 實際 GUI 已確認點開、按鈕上方小間距、空白取消與再次開啟。登入後高度／小視窗捲動仍未驗證，其他未批准草案狀態保留。
 
 # V11.2 帳號顯示與彈窗排列

@@ -26,7 +26,6 @@ struct ContentView: View {
     @State private var bookDeletionError: String?
     @State private var publicationCoordinator = PublicationCoordinator()
     @State private var selectedSidebarItem: StartSidebarItem = .home
-    @State private var showingAboutMeSheet = false
     @State private var showingAccountPopover = false
     @State private var showingEmailLoginSheet = false
     @State private var selectedPlan: AccountPlan = .light
@@ -45,10 +44,11 @@ struct ContentView: View {
 
     private var accountPopover: some View {
         AccountPopoverView(
-            selectedPlan: $selectedPlan,
             signedInEmail: accountAuthService.signedInEmail,
-            penName: profiles.first?.penName,
             errorMessage: accountAuthService.errorMessage,
+            onOpenAccount: {
+                handleSidebarSelection(.account)
+            },
             onEmailLogin: {
                 showingAccountPopover = false
                 showingEmailLoginSheet = true
@@ -56,8 +56,17 @@ struct ContentView: View {
             onSignOut: {
                 Task { await accountAuthService.signOut() }
             },
-            onSwitchAccount: {},
-            onSignOutPlaceholder: {},
+            isWorking: accountAuthService.isWorking,
+            onSwitchAccount: {
+                Task {
+                    guard !accountAuthService.isWorking else { return }
+                    await accountAuthService.signOut()
+                    guard accountAuthService.signedInEmail == nil,
+                          accountAuthService.errorMessage == nil else { return }
+                    showingAccountPopover = false
+                    showingEmailLoginSheet = true
+                }
+            },
             onOpenSettings: {
                 showingAccountPopover = false
                 selectedSidebarItem = .settings
@@ -115,7 +124,7 @@ struct ContentView: View {
                     StartSidebarView(
                         selection: $selectedSidebarItem,
                         profile: profiles.first,
-                        accountEmail: accountAuthService.signedInEmail,
+                        isSignedIn: accountAuthService.signedInEmail != nil,
                         onSelect: handleSidebarSelection,
                         onToggleAccountPopover: {
                             showingAccountPopover.toggle()
@@ -138,13 +147,12 @@ struct ContentView: View {
                 .disabled(publicationCoordinator.isPresented)
                 .accessibilityHidden(publicationCoordinator.isPresented)
 
-                if showingNewBookSheet || showingAboutMeSheet || deletionRequest != nil || delistingBookID != nil || bookDeletionError != nil {
+                if showingNewBookSheet || deletionRequest != nil || delistingBookID != nil || bookDeletionError != nil {
                     Color.black.opacity(0.08)
                         .ignoresSafeArea()
                         .contentShape(Rectangle())
                         .onTapGesture {
                             showingNewBookSheet = false
-                            showingAboutMeSheet = false
                             deletionRequest = nil
                             delistingBookID = nil
                             bookDeletionError = nil
@@ -184,16 +192,6 @@ struct ContentView: View {
                             navigationPath.append(BookRoute(id: bookID, opensEditor: true))
                         }
                     )
-                }
-
-                if showingAboutMeSheet {
-                    AboutMeView(onDismiss: {
-                        showingAboutMeSheet = false
-                    })
-                    .background(SailuneTheme.windowSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .shadow(color: .black.opacity(0.14), radius: 8, x: 0, y: 2)
-                    .zIndex(11)
                 }
 
                 if let request = deletionRequest {
@@ -317,10 +315,7 @@ struct ContentView: View {
         var transaction = Transaction()
         transaction.animation = .easeInOut(duration: 0.24)
         withTransaction(transaction) {
-            if item == .about {
-                showingAboutMeSheet = true
-                return
-            }
+            showingAccountPopover = false
 
             selectedSidebarItem = item
             navigationPath = NavigationPath()
@@ -361,9 +356,8 @@ struct ContentView: View {
             }
         case .forum:
             ForumView()
-        case .about:
-            Color.clear
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .account:
+            AccountPageView(selectedPlan: $selectedPlan, signedInEmail: accountAuthService.signedInEmail)
         }
     }
 
@@ -538,7 +532,7 @@ private enum StartSidebarItem: String, CaseIterable, Identifiable {
     case templates = "模板"
     case forum = "論壇"
     case achievements = "成就"
-    case about = "關於我"
+    case account = "帳號"
     case settings = "設定"
 
     var id: String { rawValue }
@@ -551,7 +545,7 @@ private enum StartSidebarItem: String, CaseIterable, Identifiable {
         case .templates: return SailuneSymbol.template.systemName
         case .forum: return SailuneSymbol.forum.systemName
         case .achievements: return "trophy"
-        case .about: return "person"
+        case .account: return "person"
         case .settings: return SailuneSymbol.settings.systemName
         }
     }
@@ -567,14 +561,15 @@ private struct AccountButtonAnchorPreference: PreferenceKey {
 private struct StartSidebarView: View {
     @Binding var selection: StartSidebarItem
     let profile: AuthorProfile?
-    private var accountTitle: String {
-        let name = profile?.penName.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return name.isEmpty ? "尚未設定筆名" : name
-    }
-
-    let accountEmail: String?
+    let isSignedIn: Bool
     let onSelect: (StartSidebarItem) -> Void
     let onToggleAccountPopover: () -> Void
+
+    private var accountCardTitle: String {
+        guard isSignedIn else { return "帳號" }
+        let penName = profile?.penName.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return penName.isEmpty ? "帳號" : penName
+    }
 
     var body: some View {
         ZStack(alignment: .bottomLeading) {
@@ -620,31 +615,27 @@ private struct StartSidebarView: View {
             Divider()
 
             sidebarButton(.achievements)
-            sidebarButton(.about)
 
             Spacer(minLength: 0)
 
-            Button {
-                onToggleAccountPopover()
-            } label: {
+            Button(action: onToggleAccountPopover) {
                 HStack(spacing: 9) {
                     SidebarAvatarView(profile: profile)
-                    Text(accountEmail == nil ? "登入" : accountTitle)
-                        .lineLimit(1)
-                        .truncationMode(.middle)
+                    Text(accountCardTitle)
                         .font(.callout.weight(.medium))
-                        .foregroundStyle(.primary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
                     Spacer(minLength: 0)
                 }
                 .padding(.horizontal, 10)
-                .padding(.vertical, 8)
+                .padding(.vertical, 4)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
-            .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .background(SailuneTheme.navigationCardSurface, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
             .anchorPreference(key: AccountButtonAnchorPreference.self, value: .bounds) { $0 }
-            .contentShape(Rectangle())
+            .accessibilityLabel("開啟帳號選單，\(accountCardTitle)")
             .padding(.horizontal, 2)
             .padding(.bottom, 14)
             }
@@ -700,98 +691,46 @@ private enum AccountPlan: String, CaseIterable, Identifiable {
 }
 
 private struct AccountPopoverView: View {
-    @Binding var selectedPlan: AccountPlan
     let signedInEmail: String?
-    let penName: String?
     let errorMessage: String?
+    let onOpenAccount: () -> Void
     let onEmailLogin: () -> Void
     let onSignOut: () -> Void
+    let isWorking: Bool
     let onSwitchAccount: () -> Void
-    let onSignOutPlaceholder: () -> Void
     let onOpenSettings: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Label("帳號", systemImage: "person.crop.circle")
-                .font(.headline)
-                .frame(minHeight: SailuneLayout.regularControlHeight)
-
-            Picker(selection: $selectedPlan) {
-                ForEach(AccountPlan.allCases) { plan in
-                    Text(plan.title).tag(plan)
-                }
-            } label: {
-                Label("方案", systemImage: "sparkles")
-            }
-            .pickerStyle(.menu)
-
-            if signedInEmail == nil {
-                accountAction("以 Email 登入", systemImage: "envelope", action: onEmailLogin)
-            }
-
-            if let signedInEmail {
-                Label("已登入", systemImage: "person.crop.circle.fill")
-                    .foregroundStyle(.secondary)
-                    .frame(minHeight: 28)
-                Text(displayTitle)
-                    .font(.callout.weight(.medium))
-                    .lineLimit(2)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Text(signedInEmail)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(.vertical, 4)
-            }
-
+        VStack(alignment: .leading, spacing: SailuneLayout.spacingXS) {
+            accountAction("帳號", systemImage: StartSidebarItem.account.icon, action: onOpenAccount)
+            Divider()
+            accountAction("登入", systemImage: "envelope", action: onEmailLogin)
+                .disabled(signedInEmail != nil || isWorking)
+            accountAction("切換帳號", systemImage: "person.2", action: onSwitchAccount)
+                .disabled(signedInEmail == nil || isWorking)
+            accountAction("登出", systemImage: "rectangle.portrait.and.arrow.right", action: onSignOut)
+                .disabled(signedInEmail == nil || isWorking)
+            Divider()
+            accountAction("設定", systemImage: SailuneSymbol.settings.systemName, action: onOpenSettings)
             if let errorMessage {
                 Text(errorMessage)
                     .font(.caption)
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.vertical, 4)
-            }
-
-            Divider()
-
-            accountAction("設定", systemImage: SailuneSymbol.settings.systemName, action: onOpenSettings)
-            accountAction("切換帳號", systemImage: "person.2", action: onSwitchAccount)
-
-            Divider()
-
-            if signedInEmail != nil {
-                accountAction("退出登入", systemImage: "rectangle.portrait.and.arrow.right", action: onSignOut)
-            } else {
-                Button(role: .destructive, action: onSignOutPlaceholder) {
-                    Label("退出登入", systemImage: "rectangle.portrait.and.arrow.right")
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
             }
         }
-        .padding(12)
+        .padding(SailuneLayout.spacingM)
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var displayTitle: String {
-        let name = penName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return name.isEmpty ? "尚未設定筆名" : name
     }
 
     private func accountAction(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Label(title, systemImage: systemImage)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: .infinity, minHeight: SailuneLayout.regularControlHeight, alignment: .leading)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .frame(minHeight: 28)
     }
-
 }
 
 private struct StartSettingsView: View {
@@ -829,95 +768,82 @@ private struct StartSettingsView: View {
 
 }
 
-private struct AboutMeView: View {
+private struct AccountPageView: View {
     @Environment(\.modelContext) private var modelContext
     @Query private var profiles: [AuthorProfile]
-    let onDismiss: () -> Void
+    @Binding var selectedPlan: AccountPlan
+    let signedInEmail: String?
+    @State private var persistenceError: String?
 
     var body: some View {
-        Group {
-            if let profile = profiles.first {
-                AboutMeForm(profile: profile, onDismiss: onDismiss)
-            } else {
-                ProgressView()
+        ScrollView {
+            VStack(alignment: .leading) {
+                if let profile = profiles.first {
+                    AccountPageForm(profile: profile, selectedPlan: $selectedPlan, signedInEmail: signedInEmail)
+                } else {
+                    ProgressView()
+                }
+                if let persistenceError { Text(persistenceError).foregroundStyle(.red) }
             }
+            .padding(SailuneLayout.spacingXL)
+            .frame(maxWidth: 640, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(24)
-        .frame(width: 420, height: 430)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .onAppear {
-            if profiles.isEmpty {
-                modelContext.insert(AuthorProfile(penName: "我的筆名"))
-            }
+            guard profiles.isEmpty else { return }
+            modelContext.insert(AuthorProfile(penName: "我的筆名"))
+            do { try modelContext.save() }
+            catch { persistenceError = "無法保存作者資料：\(error.localizedDescription)" }
         }
     }
 }
 
-private struct AboutMeForm: View {
+private struct AccountPageForm: View {
     @Bindable var profile: AuthorProfile
-    @Environment(\.dismiss) private var dismiss
-    let onDismiss: () -> Void
-
-    private var defaultInitial: String {
-        let trimmed = profile.penName.trimmingCharacters(in: .whitespacesAndNewlines)
-        return String(trimmed.first ?? "夢")
-    }
+    @Environment(\.modelContext) private var modelContext
+    @Binding var selectedPlan: AccountPlan
+    let signedInEmail: String?
+    @State private var persistenceError: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Text("關於我")
-                .font(.title2.weight(.semibold))
-
-            HStack(spacing: 16) {
-                Group {
-                    if let data = profile.avatarData, let image = NSImage(data: data) {
-                        Image(nsImage: image)
-                            .resizable()
-                            .scaledToFill()
-                    } else {
-                        Text(defaultInitial)
-                            .font(.system(size: 28, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, maxHeight: .infinity)
-                            .background(Color.secondary.opacity(0.12))
-                    }
-                }
-                .frame(width: 72, height: 72)
-                .clipShape(Circle())
-                .overlay(Circle().stroke(Color.primary.opacity(0.12), lineWidth: 1))
-
-                VStack(alignment: .leading, spacing: 5) {
-                    Text("頭像")
-                        .font(.headline)
-                    Text("尚未設定圖片時，使用筆名第一個字。")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                    Button("加入圖片", systemImage: SailuneSymbol.imageAsset.systemName) {
-                        selectAvatar()
-                    }
+        VStack(alignment: .leading, spacing: SailuneLayout.spacingL) {
+            Text("帳號").font(.title2.weight(.semibold))
+            HStack(spacing: SailuneLayout.spacingL) {
+                SidebarAvatarView(profile: profile)
+                Button("加入圖片", systemImage: SailuneSymbol.imageAsset.systemName) { selectAvatar() }
                     .buttonStyle(.borderless)
-                }
             }
-
-            SailuneFormTextField(title: "筆名", text: $profile.penName)
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("簡介")
-                    .font(.headline)
+            VStack(alignment: .leading, spacing: SailuneLayout.spacingS) {
+                Text("筆名").font(.headline)
+                SailuneFormTextField(title: "筆名", text: $profile.penName)
+            }
+            VStack(alignment: .leading, spacing: SailuneLayout.spacingS) {
+                Text("簡介").font(.headline)
                 SailuneAuthorBioEditor(text: Binding(
                     get: { profile.bio ?? "" },
                     set: { profile.bio = $0 }
                 ), height: 110, borderColor: Color.primary.opacity(0.12))
             }
-
-            HStack {
-                Spacer()
-                Button(SailuneActionCopy.done) {
-                    onDismiss()
-                    dismiss()
+            LabeledContent("帳號名稱", value: signedInEmail ?? "尚未登入")
+                .textSelection(.enabled)
+            Picker("使用方案", selection: $selectedPlan) {
+                ForEach(AccountPlan.allCases) { plan in
+                    Text(plan.title).tag(plan)
                 }
-                    .buttonStyle(.borderedProminent)
             }
+            .pickerStyle(.menu)
+            if let persistenceError { Text(persistenceError).foregroundStyle(.red) }
         }
+        .onChange(of: profile.penName) { _, _ in saveProfile() }
+        .onChange(of: profile.bio) { _, _ in saveProfile() }
+        .onChange(of: profile.avatarData) { _, _ in saveProfile() }
+    }
+
+    private func saveProfile() {
+        profile.updatedAt = .now
+        do { try modelContext.save(); persistenceError = nil }
+        catch { persistenceError = "無法保存作者資料：\(error.localizedDescription)" }
     }
 
     private func selectAvatar() {

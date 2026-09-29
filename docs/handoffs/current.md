@@ -1,3 +1,19 @@
+> 2026-09-29 流程校正完成：右下整張卡片開五項選單，選單「帳號」進入四欄頁；未登入卡片顯示「帳號」，登入後顯示 AuthorProfile 筆名。parse／diff／Debug build 與未登入 GUI 通過；登入後文字待真實 session 驗收。
+
+# V11.2 帳號頁 implementation checkpoint（2026-09-29）
+
+- 已決定：R／U approved、I 由使用者「I」批准；最新 UI 校正為整張右下帳號卡片開選單，選單「帳號」開主內容四欄。關於我獨立入口移除，資料切換延後，頭像編輯保留。
+- 本次修改：ContentView 的路由／兩點擊區／AccountPageView／Form／選單 callback；AuthorProfile 保存沿用主 context，未改 schema 或 auth service。切換帳號先確認登出成功再開 Email。
+- 工作樹：起始只三份文件修改，保留；本輪另改 ContentView、spec-account-v11.2.md／project-status 及紀錄，未提交。
+- 驗證：Swift parse、主機無簽章 Debug build exit 0（/private/tmp/sailune-v112-account-page-build.log）、diff check；隔離 GUI /private/tmp/SailuneV112PageGUI/Isolated.store 確認兩個入口／四欄／輸入／四項選單，唯讀 SQLite 新連線確認筆名簡介保存。作者正式 stores 未操作。
+- 阻礙：CUA 按設定後 native pipe closed，reset 後重連同錯；測試 App session 42229 尚運行，未宣稱已正常退出。當次選單帳號操作因 restore 工作狀態 disabled，不當作已登入／切換驗收。
+- 未驗證：真實登出／切換失敗／新登入、設定結果、UI 重開、小視窗；未跑 XCTest。本輪資料保存僅本機，方案仍既有記憶體值。
+- 唯一下一步：最新 Xcode Run 驗收頭像登入／設定與真實登入者切換；原 V11.1 待驗收維持。
+
+---
+
+> 最新工作：集中作者／帳號入口 R approved，U／I pending。提案為移除側欄「關於我」，在帳號彈窗設定前增加同名入口並沿用原作者編輯彈窗。資料切換延後；本輪未改程式。下一步確認 U 排列。
+
 > 2026-09-29 最新修復：帳號彈窗改用按鈕 Anchor 與父 overlay 同次排版定位，移除 CGRect State 零高依賴。主機無簽章 Debug build、parse／diff check 通過；最新隔離 App 實際 GUI 已確認點開、按鈕上方小間距、空白取消與再次開啟。登入後高度／小視窗捲動仍未驗證，其他未批准草案狀態保留。
 
 # V11.2 定位校正 checkpoint（2026-09-29）
