@@ -43,6 +43,37 @@ struct ContentView: View {
         )
     }
 
+    private var accountPopover: some View {
+        AccountPopoverView(
+            selectedPlan: $selectedPlan,
+            signedInEmail: accountAuthService.signedInEmail,
+            penName: profiles.first?.penName,
+            errorMessage: accountAuthService.errorMessage,
+            onEmailLogin: {
+                showingAccountPopover = false
+                showingEmailLoginSheet = true
+            },
+            onSignOut: {
+                Task { await accountAuthService.signOut() }
+            },
+            onSwitchAccount: {},
+            onSignOutPlaceholder: {},
+            onOpenSettings: {
+                showingAccountPopover = false
+                selectedSidebarItem = .settings
+                searchText = ""
+                navigationPath = NavigationPath()
+            }
+        )
+        .frame(maxWidth: .infinity)
+        .background(SailuneTheme.windowSurface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.12), radius: 5, x: 0, y: 1)
+    }
+
     private func applySectionUnit(_ unit: BookTextSectionMarker) {
         guard unit != selectedSectionUnit else { return }
         sectionUnitRawValue = unit.rawValue
@@ -106,49 +137,6 @@ struct ContentView: View {
                 }
                 .disabled(publicationCoordinator.isPresented)
                 .accessibilityHidden(publicationCoordinator.isPresented)
-
-                if showingAccountPopover {
-                    Color.clear
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            showingAccountPopover = false
-                        }
-                        .zIndex(8)
-
-                    AccountPopoverView(
-                        selectedPlan: $selectedPlan,
-                        signedInEmail: accountAuthService.signedInEmail,
-                        errorMessage: accountAuthService.errorMessage,
-                        onEmailLogin: {
-                            showingAccountPopover = false
-                            showingEmailLoginSheet = true
-                        },
-                        onSignOut: {
-                            Task { await accountAuthService.signOut() }
-                        },
-                        onSwitchAccount: {},
-                        onSignOutPlaceholder: {},
-                        onOpenSettings: {
-                            showingAccountPopover = false
-                            selectedSidebarItem = .settings
-                            searchText = ""
-                            navigationPath = NavigationPath()
-                        }
-                    )
-                    .frame(width: 220)
-                    .background(SailuneTheme.windowSurface, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 10, style: .continuous)
-                            .stroke(Color.primary.opacity(0.08), lineWidth: 1)
-                    )
-                    .shadow(color: .black.opacity(0.12), radius: 5, x: 0, y: 1)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-                    .padding(.leading, 8)
-                    .padding(.bottom, 78)
-                    .zIndex(9)
-                    .transition(.move(edge: .bottom).combined(with: .opacity))
-                }
 
                 if showingNewBookSheet || showingAboutMeSheet || deletionRequest != nil || delistingBookID != nil || bookDeletionError != nil {
                     Color.black.opacity(0.08)
@@ -296,6 +284,29 @@ struct ContentView: View {
                         data: nil,
                         readError: "無法讀取檔案：\(error.localizedDescription)"
                     )
+                }
+            }
+            .overlayPreferenceValue(AccountButtonAnchorPreference.self) { anchor in
+                GeometryReader { geometry in
+                    if showingAccountPopover, let anchor {
+                        let button = geometry[anchor]
+                        let margin = SailuneLayout.spacingS
+                        let panelBottom = max(margin, min(geometry.size.height - margin, button.minY - margin))
+                        let availableHeight = max(0, panelBottom - margin)
+                        let width = max(0, min(300, geometry.size.width - margin * 2))
+                        let leading = max(margin, min(button.minX, geometry.size.width - width - margin))
+                        ZStack(alignment: .topLeading) {
+                            Color.clear
+                                .contentShape(Rectangle())
+                                .onTapGesture { showingAccountPopover = false }
+                            ViewThatFits(in: .vertical) {
+                                accountPopover
+                                ScrollView { accountPopover }
+                            }
+                            .frame(width: width, height: availableHeight, alignment: .bottomLeading)
+                            .position(x: leading + width / 2, y: margin + availableHeight / 2)
+                        }
+                    }
                 }
             }
             .animation(.easeInOut(duration: 0.18), value: showingAccountPopover)
@@ -546,9 +557,21 @@ private enum StartSidebarItem: String, CaseIterable, Identifiable {
     }
 }
 
+private struct AccountButtonAnchorPreference: PreferenceKey {
+    static var defaultValue: Anchor<CGRect>? = nil
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+        if let anchor = nextValue() { value = anchor }
+    }
+}
+
 private struct StartSidebarView: View {
     @Binding var selection: StartSidebarItem
     let profile: AuthorProfile?
+    private var accountTitle: String {
+        let name = profile?.penName.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return name.isEmpty ? "尚未設定筆名" : name
+    }
+
     let accountEmail: String?
     let onSelect: (StartSidebarItem) -> Void
     let onToggleAccountPopover: () -> Void
@@ -606,7 +629,7 @@ private struct StartSidebarView: View {
             } label: {
                 HStack(spacing: 9) {
                     SidebarAvatarView(profile: profile)
-                    Text(accountEmail ?? "登入")
+                    Text(accountEmail == nil ? "登入" : accountTitle)
                         .lineLimit(1)
                         .truncationMode(.middle)
                         .font(.callout.weight(.medium))
@@ -620,6 +643,7 @@ private struct StartSidebarView: View {
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity, minHeight: 50, alignment: .leading)
             .background(Color.secondary.opacity(0.08), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .anchorPreference(key: AccountButtonAnchorPreference.self, value: .bounds) { $0 }
             .contentShape(Rectangle())
             .padding(.horizontal, 2)
             .padding(.bottom, 14)
@@ -678,53 +702,48 @@ private enum AccountPlan: String, CaseIterable, Identifiable {
 private struct AccountPopoverView: View {
     @Binding var selectedPlan: AccountPlan
     let signedInEmail: String?
+    let penName: String?
     let errorMessage: String?
     let onEmailLogin: () -> Void
     let onSignOut: () -> Void
     let onSwitchAccount: () -> Void
     let onSignOutPlaceholder: () -> Void
     let onOpenSettings: () -> Void
-    @State private var accountStatusMessage: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
-            accountAction("帳號", systemImage: "person.crop.circle") {
-                accountStatusMessage = "Apple ID 登入需要付費 Apple Developer Program；目前個人開發團隊不支援。"
-            }
-
-            if let accountStatusMessage {
-                Text(accountStatusMessage)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.vertical, 4)
-            }
+            Label("帳號", systemImage: "person.crop.circle")
+                .font(.headline)
+                .frame(minHeight: SailuneLayout.regularControlHeight)
 
             Picker(selection: $selectedPlan) {
                 ForEach(AccountPlan.allCases) { plan in
                     Text(plan.title).tag(plan)
                 }
             } label: {
-                HStack {
-                    Label("方案", systemImage: "sparkles")
-                    Spacer(minLength: 12)
-                    Text(selectedPlan.title)
-                        .foregroundStyle(.secondary)
-                }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+                Label("方案", systemImage: "sparkles")
             }
             .pickerStyle(.menu)
 
-            accountAction("以 Email 登入", systemImage: "envelope", action: onEmailLogin)
+            if signedInEmail == nil {
+                accountAction("以 Email 登入", systemImage: "envelope", action: onEmailLogin)
+            }
 
             if let signedInEmail {
                 Label("已登入", systemImage: "person.crop.circle.fill")
                     .foregroundStyle(.secondary)
                     .frame(minHeight: 28)
+                Text(displayTitle)
+                    .font(.callout.weight(.medium))
+                    .lineLimit(2)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 Text(signedInEmail)
                     .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
                     .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 4)
             }
 
@@ -755,7 +774,12 @@ private struct AccountPopoverView: View {
             }
         }
         .padding(12)
-        .frame(width: 250)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var displayTitle: String {
+        let name = penName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return name.isEmpty ? "尚未設定筆名" : name
     }
 
     private func accountAction(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {

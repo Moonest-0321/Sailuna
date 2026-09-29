@@ -1,3 +1,35 @@
+> 2026-09-29 最新修復：帳號彈窗改用按鈕 Anchor 與父 overlay 同次排版定位，移除 CGRect State 零高依賴。主機無簽章 Debug build、parse／diff check 通過；最新隔離 App 實際 GUI 已確認點開、按鈕上方小間距、空白取消與再次開啟。登入後高度／小視窗捲動仍未驗證，其他未批准草案狀態保留。
+
+# V11.2 定位校正 checkpoint（2026-09-29）
+
+- 批准：使用者「可」批准彈窗貼近帳號按鈕上緣、小間距、高度不足才捲動。本轮仅修正定位；先前四項細節改列未批准草案，撤回原略過批准說法。
+- 修改：ContentView 量測帳號按鈕全域 bounds 並換算父容器座標；彈窗下緣位於按鈕上方 8 pt，不再依視窗高度比例定位，保留限寬／捲動。
+- 邊界：保留既有 ContentView、文件及 Localizable.xcstrings 修改；未修改 Localizable、登入服務或帳號資料。
+- 唯一下一步：Xcode Run 最新版驗收實際間距及小視窗捲動。
+
+---
+
+# V11.2 帳號 UI checkpoint（2026-09-29）
+
+- 已決定：使用者四項具體修正直接授權；Email 使用現行 OTP，本機 AuthorProfile.penName 作登入後稱號。沒有網站筆名同步或 schema 變更。
+- 已修改：ContentView 的 Apple 提示移除、Email 入口依登入狀態呈現、側欄及彈窗筆名稱號；父容器限寬／限高與捲動 fallback、長文字截斷、方案 Picker 去除重複選值。外部空白遮罩沿用取消入口。
+- 邊界：起始只有前輪閱讀三份文件修改；本輪改 ContentView 與工作／規格／紀錄文件，未改帳號服務、鑰匙圈、作者資料或外部網站。
+- 驗證：parse、git diff --check、主機無簽章 Debug build exit 0；日誌 /private/tmp/sailune-v112-build-host.log。首次 sandbox build 因 SwiftPM／clang 快取權限失敗；CUA getApp Sailune 159.7698 秒後 timeoutReached，沒有取得 GUI 驗收結果。未跑 XCTest、真實 OTP 或签章建置。
+- 唯一下一步：Xcode Run 最新程式驗收帳號彈窗、長筆名／Email、小視窗捲動及空白取消；完成前維持 active。V11.1 未驗收事項保留。
+
+---
+
+# 2026-09-29 V11.2 前置閱讀 checkpoint
+
+- 已決定：本輪只做全專案脈絡閱讀、模組盤點與關鍵路徑核對，未開始 V11.2 功能實作；唯讀工作略過不適用 R／U／I。
+- 查證：`feat/shiye-publication`、HEAD `c4f513b`，起始工作樹乾淨；106 個 App Swift 檔、12 個 XCTest 檔、244 個測試方法。測試數量不代表本輪執行成功。
+- 工作樹邊界：本輪只追加 implementation-log.md、project-status.md 與本檔；未改功能程式或正式資料。
+- 待確認：V11.2 具體需求；既有 V11.1 簽章／鑰匙圈待驗收及其他工作批准狀態保留。舊 session 51297、外部部署及 App 簽章狀態本輪未重驗，不視為即時事實。
+- 驗證：靜態閱讀／盤點、git diff --check；未執行 build、XCTest、GUI 或真實串接。
+- 唯一下一步：接收 V11.2 具體需求並整理 R。最小文件：本檔、work-items/current.md、implementation-log.md，及需求所屬規格。
+
+---
+
 # V11.1 鑰匙圈 checkpoint（active）
 
 - 已決定：使用者直接授權具體修正，只處理 Sailune 登入；安全儲存／原 service 與 account key／ACL 不變，不改拾頁權限。UI 只在既有登入表單增加重試。

@@ -241,3 +241,57 @@
 - ps 確認 codesign 與 SecurityAgent 正在執行，尚未成功簽章；建置中讀 codesign 曾顯示未簽章，不能當最終產物結論。
 - 嘗試透過 CUA 唯讀核對 SecurityAgent，被該工具安全規則禁止存取此 app，未讀取／操作授權視窗，未輸入密碼、未修改 private key ACL。需使用者自行完成 macOS codesign 的開發者憑證授權；這與 Sailune 登入 Session 存取是不同項目。
 - 下一步：使用者完成該系統授權後恢復 session 51297，檢查 exit／codesign Authority／Team／designated requirement，再從 Xcode Run 驗收。若使用者取消則記錄未完成，不宣稱簽章修正驗收成功。一般程式專項沿用 9 通過／1 略過，未因單一 Team 設定重跑；真實四項仍未驗收。
+
+
+## 2026-09-29：V11.2 開始前專案閱讀
+
+- 使用者要求先閱讀完整專案；本工作單元為全專案脈絡盤點，完成條件為掌握模組責任、資料邊界、現行工作及驗證限制。非目標為功能實作、既有待辦續作、部署及作者資料操作。唯讀調查與必要紀錄依 AGENTS 略過不適用的 R／U／I；V11.2 需求尚未提出。
+- 文件修改前：分支 `feat/shiye-publication`、HEAD `c4f513b`，`git status --porcelain` 空白，工作樹乾淨；本輪只追加本紀錄及 project-status／handoff 閱讀 checkpoint。
+- 閱讀範圍：協作規則、狀態與 current 歷史／現行工作、實作紀錄、架構／資料模型／備份、工程與 UX／測試規則、功能規格與一致性盤點；盤點全部 Swift 檔的型別／責任與 XCTest 名稱，深入核對啟動、正文保存、發布狀態、登入／鑰匙圈、整本封包／TUS／Coordinator、AI 提示／容量預檢及備份／刪除／模板等關鍵路徑。此為專案脈絡閱讀及關鍵路徑核對，並非所有原始碼逐行稽核。
+- 直接查證：106 個 App Swift 檔、12 個 XCTest 檔，244 個 test 方法（原始碼數量，不是執行通過數）。主 schema V5、settings V13、story planning V7；共六個 SwiftData stores，其他檔案資料依既有保存與備份契約。
+- 最新待辦：V11.1 簽章／鑰匙圈實機驗收仍 active；既有 9 通過／1 略過是歷史專項結果，本輪未重驗。整本首次／覆蓋正式驗收已記錄完成，本輪未重新查正式環境。V9 暫緩及其他 GUI 待辦保留。
+- 驗證：讀取、rg／Python 原始碼盤點與 `git diff --check`；本輪未執行 build、XCTest、GUI、真實鑰匙圈或網路串接。沒有修改功能程式、schema、版本顯示或作者資料。
+- 唯一下一步：接收 V11.2 的具體需求，依既有流程整理 R；不把版本名稱當作實作授權。
+
+## 2026-09-29：V11.2 帳號與彈窗修正（開始）
+
+- 使用者直接授權四項具體修正：關閉 Apple 登入、Email 帳號登入、登入後以筆名稱號、修正帳號彈窗排列與越界；依 AGENTS 略過不適用的重新 R／U／I。Email 沿用現行 OTP，筆名沿用 AuthorProfile，不建立新帳號 schema 或網站作者同步。
+- 起始 HEAD c4f513b；已有本輪閱讀留下的 implementation-log、project-status、handoff 三份文件修改，保留。
+- 查證現行 AccountPopoverView 的 Apple 提示為佔位，沒有 SignInWithApple 接線；內層 250 與外層 220 寬度衝突。範圍為 ContentView 帳號彈窗與侧欄稱號；非目標為方案、切換帳號、鑰匙圈政策及網站授權。
+- 計畫：移除 Apple 佔位、未登入顯示 Email 入口、已登入顯示筆名與次要 Email、統一父容器尺寸約束；Swift parse、Debug build、diff check，GUI 未驗證另列。
+
+### V11.2 接線及驗證結果
+
+- ContentView 移除 Apple 提示，Email OTP 入口只在未登入時呈現；登入後側欄／彈窗使用既有筆名，空白顯示「尚未設定筆名」，Email 為次要識別。沒有變更遠端身份或 schema。
+- 彈窗統一父容器限寬（最多 300 pt）與可用高度，ViewThatFits／ScrollView 處理長內容；筆名最多兩行、Email 單行截斷；Picker 不再重複顯示方案。既有外部遮罩取消保留。
+- `swiftc -frontend -parse Sailune/ContentView.swift` 與 `git diff --check` 通過。初次 xcodebuild sandbox 因 SwiftPM／clang 快取寫入權限失敗；核准主機相同 Debug 無簽章 build exit 0，/private/tmp/sailune-v112-build-host.log。
+- CUA `getApp("Sailune")` 159.7698 秒後 timeoutReached，未取得畫面；不宣稱 GUI 排列／命中已验收。未跑 XCTest、真實 OTP、正式簽章或部署。
+- 更新 current 工作單／交接、project-status、新增 spec-account-v11.2.md。既有 V11.1 狀態保留；未提交。
+- 唯一下一步：Xcode Run 最新版，核對筆名稱號、長文字與小視窗彈窗、外部空白取消。
+
+## 2026-09-29：V11.2 彈窗定位校正（開始）
+
+- 使用者指出彈窗過高，並以「可」批准「緊接帳號按鈕上緣、小間距、高度不足才捲動」提案；本輪僅修正定位。前輪四項修正已被使用者指出未確認，改記為未批准草案；不可沿用先前自行宣稱 R／U／I 批准。
+- 起始保留 ContentView、Localizable.xcstrings 與文件既有修改；Localizable 為本輪開始前出現的修改，不覆蓋。
+- 實作方式：量測帳號按鈕實際 bounds，以父容器相對座標決定彈窗下緣，不用視窗高度比例估計按鈕位置；保留 8 pt 間距與既有內容。
+
+### 定位校正結果
+
+- 新增 AccountButtonFramePreference 量測按鈕 bounds，換算 GeometryReader 父容器座標；彈窗下緣與按鈕上緣相距 8 pt，可用高度不足時保留 ScrollView fallback。沒有改動彈窗內容。
+- `swiftc -frontend -parse Sailune/ContentView.swift`、`git diff --check` 通過；同既有主機無簽章 Debug build exit 0，日誌 /private/tmp/sailune-v112-position-build.log。未執行 XCTest；先前 GUI 工具逾時阻礙仍未解除，本輪未取得修正版畫面，不宣稱已完成人工間距／捲動驗收。
+- current、handoff、project-status 與規格同步校正批准狀態。未提交；保留 Localizable.xcstrings 既有修改。唯一下一步：Xcode Run 驗收按鈕上方的小間距與小視窗捲動。
+
+## 2026-09-29：V11.2 彈窗未顯示修復（開始）
+
+- 使用者回報前次定位修正使彈窗無法出現，授權修復同一問題。本輪保持已確認按鈕上緣 8 pt／高度不足捲動；不改內容或帳號行為。
+- 查證前版以 CGRect preference 回存 State，再跨 global 座標運算；default zero 可讓可用高度被壓成 0。改用按鈕 bounds Anchor 在父 overlay 同次 layout 解析，移除零值狀態與跨 layout 時序依賴。這是靜態定位，不宣稱已取得 runtime trace。
+- 起始既有 ContentView／Localizable／文件修改全部保留。
+
+### Anchor 顯示修復與實際 GUI 驗證
+
+- ContentView 改為按鈕 .anchorPreference 與父 .overlayPreferenceValue 同次排版解析；Preference reduce 保留非空 anchor，移除 CGRect 回存 State／global 換算。彈窗仍在按鈕上方 8 pt。
+- Swift parse、主機無簽章 Debug build exit 0（/private/tmp/sailune-v112-anchor-build.log）及 diff check 通過。
+- 首次 sandbox 直接啟動隔離 App exit 134；主機核准後以 SAILUNE_TEST_STORE_URL=/private/tmp/SailuneV112AnchorGUI/Isolated.store 啟動成功。bundle ID 查找有多份安裝歧義，改用明確 /private/tmp/ShiyePublicationDerived/Build/Products/Debug/Sailune.app 取得正確畫面。
+- 實際 GUI：AX 按鈕「作者頭像、登入」點開後出現帳號／方案／Email／設定／切換／退出列；截圖確認彈窗下緣緊接按鈕上緣，小間距且沒有上浮。點空白後 AX 移除彈窗列，再點帳號重新出現。這是最新建置的實際未登入 GUI 驗收。
+- 未驗證：登入後高度、小視窗捲動與長筆名；未跑 XCTest／真實 OTP。未操作作者正式 stores；測試 App 已送出 Quit。
+- 本次「不出現」修正已完成建置與開啟／取消／重開 GUI 驗證；其他 V11.2 未批准草案及待驗收事項保留。
