@@ -34,9 +34,9 @@ final class PublicationCoordinator {
     }
     func waitForCompletion() async { await task?.value }
 
-    func send(auth: SailuneAccountAuthService, store: BookPublicationStore) {
+    func send(auth: SailuneAccountAuthService, store: BookPublicationStore, expectedUserID: UUID? = nil) {
         send(store: store) { attempt, progress, commit in
-            let credentials = try await auth.publicationCredentials(for: attempt.bookID)
+            let credentials = try await auth.publicationCredentials(for: attempt.bookID, expectedUserID: expectedUserID)
             try Task.checkCancellation()
             do { return try await PublicationClient().publish(attempt, credentials: credentials, onProgress: progress, onCommit: commit) }
             catch PublicationFailure.login { auth.requirePublicationLogin(); throw PublicationFailure.login }
@@ -66,7 +66,7 @@ final class PublicationCoordinator {
                 if Task.isCancelled && !attempt.hasStartedCommit {
                     message = "已取消傳送，尚未提交作品；可重試。"
                 } else {
-                    message = (error as? PublicationFailure)?.errorDescription ?? (error is URLError ? "連線中斷，請使用相同傳送重試。" : "無法傳送作品，請重試。")
+                    message = (error as? WorkspaceError)?.errorDescription ?? (error as? PublicationFailure)?.errorDescription ?? (error is URLError ? "連線中斷，請使用相同傳送重試。" : "無法傳送作品，請重試。")
                 }
             }
             task = nil

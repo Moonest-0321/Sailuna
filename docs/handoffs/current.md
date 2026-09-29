@@ -1,3 +1,21 @@
+# V11.5 實作檢查點（2026-09-29）
+
+- 狀態：active，R／U／I approved；功能已實作，人工串接驗收待完成。
+- 已完成：Guest＋最多兩個 Auth UUID／環境帳號目錄；六 store 與資產／偏好／sidecar 隔離；保存後切換、恢復上次空間、快取清除、舊畫面回呼防護；單一 Session 發布 UUID 核對；可備份、可重試完整本機帳號清理；舊共用資料 SQLite snapshot 複製歸 Guest，保留原始來源；同空間還原、舊備份限 Guest。
+- 工作樹：`feat/shiye-publication`／`4b3d1a7` 起始四份前置文件修改保留。本次改動為 Workspace*.swift、WorkspaceTests、帳號／App／編輯器／資產／備份呼叫點及 V11.5 文件；未提交。正式資料未操作，GUI 使用 `/private/tmp/SailuneV115GUI/legacy/Sailune-v5.store`。
+- 驗證：無簽章 Debug build 通過；完整非平行 XCTest 最後 253 passed／1 skipped／0 failed（254 total；略過既有 opt-in 真實 Keychain 測試），`git diff --check` 通過。WorkspaceTests 11 項覆蓋容量、失敗重試、符號連結、六 store／UUID、遷移、備份、保存／busy、重開、刪目前帳號與保留另一帳號、發布身分與偏好隔離。
+- GUI 已驗：帳號選單→工作區面板、Guest 目前使用、兩個新增位置、空白取消不觸發背景；測試 App 已正常退出（exec session 80050 exit 0）。此為最後回呼修正前的測試產物 UI，不推論新版全部操作均驗收。
+- 未驗證：真實雙帳號 OTP／鑰匙圈登出／網站發布、多視窗未存正文與組字保存、帳號列操作／刪除確認／備份按鈕及小視窗／keyboard GUI。不能將 fixture 身分與 XCTest 清理等同真實串接成功。中途完整測試有一回 AI background URLSession 例外 abort；最後重跑全通過，偶發原因未解決。
+- 唯一下一步：使用隔離測試資料進行真實雙帳號 OTP、發布與多視窗切換／刪除人工驗收；讀取本檔、work-items/current.md、spec-workspaces-v11.5.md 及 implementation-log.md 的本輪紀錄。
+
+---
+
+> 2026-09-29 V11.5 U approved（使用者「U」）；R／U approved、I pending。切換面板、刪除確認及登出／刪目前帳號回未登入已確認。I 已提出：工作區注入、多視窗保存、單一網站 Session 身分核對、Guest 遷移與可重試清理；遷移／啟動／備份政策仍是提案。唯一下一步為批准 I，尚未改功能程式或實際資料。詳見 work-items/current.md。
+
+> 2026-09-29 V11.5：三個本機資料空間 R approved（使用者「確認需求」）；一個未登入＋最多兩個帳號、快速切換及完整移除此裝置帳號資料。U／I pending，尚未實作。網站會員／作品不刪除，既有待驗收保留。唯一下一步為確認工作區切換與刪除 U 草案，見 work-items/current.md。
+
+> 2026-09-29 V11.5 前置閱讀：目前 `feat/shiye-publication`／`4b3d1a7`（V11.4）；已建立主要規格、架構及程式入口脈絡，106 個 App Swift 檔／12 個 XCTest 檔／244 個測試方法。非逐行全專案審查，未重跑 build／測試／GUI，既有 active 與批准狀態保留。V11.5 具體需求待提供；詳見 implementation-log.md。
+
 > 2026-09-29 流程校正完成：右下整張卡片開五項選單，選單「帳號」進入四欄頁；未登入卡片顯示「帳號」，登入後顯示 AuthorProfile 筆名。parse／diff／Debug build 與未登入 GUI 通過；登入後文字待真實 session 驗收。
 
 # V11.2 帳號頁 implementation checkpoint（2026-09-29）

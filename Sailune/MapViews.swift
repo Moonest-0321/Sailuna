@@ -44,6 +44,7 @@ private struct AdaptiveToolbarLabel: View {
 }
 
 struct MapWorkspaceView: View {
+    @Environment(WorkspaceCoordinator.self) private var workspaceCoordinator
     let book: Book
     @Binding var viewport: MapViewport
     let onOpenPlaceSettings: (UUID) -> Void
@@ -422,6 +423,7 @@ struct MapWorkspaceView: View {
     }
 
     private func handleImport(_ result: Result<[URL], Error>) {
+        guard workspaceCoordinator.bundle?.settingsStore === settingsStore else { return }
         guard !bookIsReadOnly else { return }
         do {
             let sourceURL = try result.get().first

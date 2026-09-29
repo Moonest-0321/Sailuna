@@ -164,6 +164,8 @@ struct BookOverviewView: View {
 
 // MARK: - 左側：書本基本資訊面板
 struct BookInfoPanel: View {
+    @Environment(WorkspaceCoordinator.self) private var workspaceCoordinator
+    @Environment(\.modelContext) private var modelContext
     @Bindable var book: Book
     let onOpenBackground: () -> Void
     @Environment(StoryPlanningStore.self) private var planningStore
@@ -275,6 +277,7 @@ struct BookInfoPanel: View {
             allowedContentTypes: [.image],
             allowsMultipleSelection: false
         ) { result in
+            guard workspaceCoordinator.bundle?.container === modelContext.container else { return }
             guard case .success(let urls) = result, let url = urls.first else { return }
             importCover(from: url)
         }
@@ -338,6 +341,7 @@ struct BookInfoPanel: View {
 
 // MARK: - 右側：卷/節目錄樹
 struct VolumeSectionTreeView: View {
+    @Environment(WorkspaceCoordinator.self) private var workspaceCoordinator
     let book: Book
     var onSelectSection: ((Section) -> Void)? = nil
     private let dragCoordinateSpace = "book-overview-outline-drag"
@@ -697,6 +701,7 @@ struct VolumeSectionTreeView: View {
         guard let kind, let target else { return }
 
         DispatchQueue.main.async {
+            guard workspaceCoordinator.bundle?.container === modelContext.container else { return }
             var transaction = Transaction()
             transaction.animation = nil
             transaction.disablesAnimations = true
@@ -752,6 +757,7 @@ struct VolumeSectionTreeView: View {
         book.updatedAt = Date()
         deleteTarget = nil
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+            guard workspaceCoordinator.bundle?.container === modelContext.container else { return }
             if undoTarget?.id == target.id {
                 do { try CrossStoreDeletionCoordinator.commitStagedDeletion(in: modelContext); undoTarget = nil }
                 catch { presentPersistenceError(error) }

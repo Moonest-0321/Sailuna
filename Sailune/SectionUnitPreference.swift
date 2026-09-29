@@ -13,7 +13,7 @@ enum SectionUnitPreference {
     }
 
     static var current: BookTextSectionMarker {
-        resolve(UserDefaults.standard.string(forKey: storageKey))
+        resolve(WorkspaceLocationAccess.shared.preferences().string(forKey: storageKey))
     }
 }
 

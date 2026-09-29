@@ -73,11 +73,7 @@ struct EmailLoginView: View {
         }
         .padding(24)
         .frame(width: 420)
-        .onChange(of: authService.signedInEmail) { _, newEmail in
-            guard newEmail != nil else { return }
-            onSignedIn()
-            dismiss()
-        }
+
     }
 
     private func sendCode() async {
@@ -91,6 +87,9 @@ struct EmailLoginView: View {
 
     private func verifyCode() async {
         guard verificationCode.count == 6 else { return }
-        _ = await authService.verifyCode(verificationCode, for: normalizedEmail)
+        if await authService.verifyCode(verificationCode, for: normalizedEmail) {
+            onSignedIn()
+            dismiss()
+        }
     }
 }

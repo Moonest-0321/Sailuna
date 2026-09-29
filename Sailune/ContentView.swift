@@ -6,6 +6,9 @@ import Combine
 
 // MARK: - 主畫面：網格書櫃
 struct ContentView: View {
+    @Environment(WorkspaceCoordinator.self) private var workspaceCoordinator
+    @State private var showingWorkspaceSelection = false
+    @State private var operationID = UUID()
     @Environment(SailuneAccountAuthService.self) private var accountAuthService
     @Environment(\.modelContext) private var modelContext
     @Environment(ItemCopyStore.self) private var copyStore
@@ -44,28 +47,23 @@ struct ContentView: View {
 
     private var accountPopover: some View {
         AccountPopoverView(
-            signedInEmail: accountAuthService.signedInEmail,
+            signedInEmail: workspaceCoordinator.currentAccount?.email,
             errorMessage: accountAuthService.errorMessage,
             onOpenAccount: {
                 handleSidebarSelection(.account)
             },
             onEmailLogin: {
                 showingAccountPopover = false
-                showingEmailLoginSheet = true
+                if workspaceCoordinator.accounts.count == 2 { showingWorkspaceSelection = true }
+                else { showingEmailLoginSheet = true }
             },
             onSignOut: {
-                Task { await accountAuthService.signOut() }
+                Task { await workspaceCoordinator.signOut(auth: accountAuthService) }
             },
             isWorking: accountAuthService.isWorking,
             onSwitchAccount: {
-                Task {
-                    guard !accountAuthService.isWorking else { return }
-                    await accountAuthService.signOut()
-                    guard accountAuthService.signedInEmail == nil,
-                          accountAuthService.errorMessage == nil else { return }
-                    showingAccountPopover = false
-                    showingEmailLoginSheet = true
-                }
+                showingAccountPopover = false
+                showingWorkspaceSelection = true
             },
             onOpenSettings: {
                 showingAccountPopover = false
@@ -81,6 +79,15 @@ struct ContentView: View {
                 .stroke(Color.primary.opacity(0.08), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.12), radius: 5, x: 0, y: 1)
+    }
+
+    private func sendPublication() {
+        guard let account = workspaceCoordinator.currentAccount,
+              workspaceCoordinator.canPublish(auth: accountAuthService) else {
+            showingEmailLoginSheet = true
+            return
+        }
+        publicationCoordinator.send(auth: accountAuthService, store: publicationStore, expectedUserID: account.userID)
     }
 
     private func applySectionUnit(_ unit: BookTextSectionMarker) {
@@ -124,7 +131,7 @@ struct ContentView: View {
                     StartSidebarView(
                         selection: $selectedSidebarItem,
                         profile: profiles.first,
-                        isSignedIn: accountAuthService.signedInEmail != nil,
+                        isSignedIn: workspaceCoordinator.currentAccount != nil,
                         onSelect: handleSidebarSelection,
                         onToggleAccountPopover: {
                             showingAccountPopover.toggle()
@@ -219,11 +226,20 @@ struct ContentView: View {
                 if publicationCoordinator.isPresented {
                     PublicationPreviewView(
                         coordinator: publicationCoordinator,
-                        isSignedIn: accountAuthService.signedInEmail != nil,
+                        isSignedIn: workspaceCoordinator.canPublish(auth: accountAuthService),
                         onLogin: { showingEmailLoginSheet = true },
-                        onSend: { publicationCoordinator.send(auth: accountAuthService, store: publicationStore) }
+                        onSend: { sendPublication() }
                     )
                     .zIndex(12)
+                }
+
+                if showingWorkspaceSelection {
+                    WorkspaceSelectionView(coordinator: workspaceCoordinator, auth: accountAuthService,
+                        onAddAccount: {
+                            showingWorkspaceSelection = false
+                            showingEmailLoginSheet = true
+                        }, onDismiss: { showingWorkspaceSelection = false })
+                        .zIndex(20)
                 }
 
                 if let bookDeletionError {
@@ -246,17 +262,33 @@ struct ContentView: View {
             .environment(\.sectionUnit, selectedSectionUnit)
             .sheet(isPresented: $showingEmailLoginSheet) {
                 EmailLoginView(authService: accountAuthService) {
+                    workspaceCoordinator.openAuthenticatedAccount(auth: accountAuthService)
                     showingEmailLoginSheet = false
                 }
             }
             .task {
                 await accountAuthService.restoreSession()
             }
+            .onChange(of: profiles.first?.penName) { _, name in
+                workspaceCoordinator.updateCurrentPenName(name ?? "")
+            }
+            .onAppear {
+                workspaceCoordinator.registerOperation(id: operationID) {
+                    publicationCoordinator.isWorking || (publicationCoordinator.result != nil && publicationCoordinator.phase == .failure)
+                }
+            }
+            .onDisappear { workspaceCoordinator.unregisterOperation(id: operationID) }
+            .alert("資料空間操作未完成", isPresented: Binding(
+                get: { workspaceCoordinator.errorMessage != nil && !showingWorkspaceSelection },
+                set: { if !$0 { workspaceCoordinator.errorMessage = nil } })) {
+                Button(SailuneActionCopy.acknowledge) { workspaceCoordinator.errorMessage = nil }
+            } message: { Text(workspaceCoordinator.errorMessage ?? "") }
             .fileImporter(
                 isPresented: $showingBookTextImporter,
                 allowedContentTypes: [UTType(filenameExtension: "txt") ?? .plainText],
                 allowsMultipleSelection: false
             ) { result in
+                guard workspaceCoordinator.bundle?.container === modelContext.container else { return }
                 guard case .success(let urls) = result, let url = urls.first else { return }
                 guard url.pathExtension.lowercased() == "txt" else {
                     bookTextImportSource = BookTextImportSource(
@@ -357,7 +389,7 @@ struct ContentView: View {
         case .forum:
             ForumView()
         case .account:
-            AccountPageView(selectedPlan: $selectedPlan, signedInEmail: accountAuthService.signedInEmail)
+            AccountPageView(selectedPlan: $selectedPlan, signedInEmail: workspaceCoordinator.currentAccount?.email)
         }
     }
 
@@ -477,6 +509,7 @@ struct ContentView: View {
     }
 
     private func publishPublication(_ bookID: UUID, tags: [String]) {
+        guard workspaceCoordinator.bundle?.container === modelContext.container else { return }
         guard let book = books.first(where: { $0.id == bookID }) else { return }
         do {
             try publicationCoordinator.prepare(book: book, tags: tags,
@@ -707,7 +740,7 @@ private struct AccountPopoverView: View {
             accountAction("登入", systemImage: "envelope", action: onEmailLogin)
                 .disabled(signedInEmail != nil || isWorking)
             accountAction("切換帳號", systemImage: "person.2", action: onSwitchAccount)
-                .disabled(signedInEmail == nil || isWorking)
+                .disabled(isWorking)
             accountAction("登出", systemImage: "rectangle.portrait.and.arrow.right", action: onSignOut)
                 .disabled(signedInEmail == nil || isWorking)
             Divider()

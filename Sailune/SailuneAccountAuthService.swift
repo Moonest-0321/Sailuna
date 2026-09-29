@@ -8,6 +8,8 @@ import Supabase
 @Observable
 final class SailuneAccountAuthService {
     private(set) var signedInEmail: String?
+    private(set) var signedInUserID: UUID?
+    private(set) var environmentID: String?
     private(set) var isWorking = false
     private(set) var errorMessage: String?
 
@@ -31,6 +33,7 @@ final class SailuneAccountAuthService {
             return
         }
 
+        environmentID = url.absoluteString
         publicationConfiguration = (url, publishableKey)
         client = SupabaseClient(
             supabaseURL: url,
@@ -46,7 +49,7 @@ final class SailuneAccountAuthService {
 
     private func reportStorageFailure() async {
         guard storage.failure != nil else { return }
-        signedInEmail = nil
+        signedInEmail = nil; signedInUserID = nil
         needsKeychainRetry = true
         errorMessage = "無法存取登入鑰匙圈，已停止背景重試。請按「重試鑰匙圈授權」。"
         await client?.auth.stopAutoRefresh()
@@ -70,10 +73,11 @@ final class SailuneAccountAuthService {
         do {
             let session = try await client.auth.session
             guard storage.failure == nil else { await reportStorageFailure(); return }
+            signedInUserID = session.user.id
             signedInEmail = session.user.email
             await client.auth.startAutoRefresh()
         } catch {
-            signedInEmail = nil
+            signedInEmail = nil; signedInUserID = nil
             if storage.failure != nil { await reportStorageFailure() }
             else if let authError = error as? AuthError, authError == .sessionMissing {
                 // No saved login is normal on first launch.
@@ -115,6 +119,7 @@ final class SailuneAccountAuthService {
         do {
             let response = try await client.auth.verifyOTP(email: email, token: code, type: .email)
             guard storage.failure == nil else { await reportStorageFailure(); return false }
+            signedInUserID = response.user.id
             signedInEmail = response.user.email ?? email
             await client.auth.startAutoRefresh()
             return true
@@ -125,7 +130,7 @@ final class SailuneAccountAuthService {
         }
     }
 
-    func signOut() async {
+    func signOut(localOnly: Bool = false) async {
         guard let client else { return }
         guard !isWorking else { return }
         guard storage.failure == nil else { await reportStorageFailure(); return }
@@ -134,34 +139,36 @@ final class SailuneAccountAuthService {
         defer { isWorking = false }
 
         do {
-            try await client.auth.signOut()
+            try await client.auth.signOut(scope: localOnly ? .local : .global)
             guard storage.failure == nil else { await reportStorageFailure(); return }
             await client.auth.stopAutoRefresh()
-            signedInEmail = nil
+            signedInEmail = nil; signedInUserID = nil
         } catch {
             if storage.failure != nil { await reportStorageFailure(); return }
             errorMessage = "無法退出登入，請稍後再試。"
         }
     }
 
-    func publicationCredentials(for bookID: UUID) async throws -> PublicationCredentials {
+    func publicationCredentials(for bookID: UUID, expectedUserID: UUID? = nil) async throws -> PublicationCredentials {
         guard let client, let (url, key) = publicationConfiguration else { throw PublicationFailure.configuration }
         let session: Session
         do { session = try await client.auth.session }
         catch {
-            signedInEmail = nil
+            signedInEmail = nil; signedInUserID = nil
             await reportStorageFailure()
             throw PublicationFailure.login
         }
         guard storage.failure == nil else { await reportStorageFailure(); throw PublicationFailure.login }
-        signedInEmail = session.user.email
+        if let expectedUserID, session.user.id != expectedUserID { throw WorkspaceError.identityMismatch }
+        signedInUserID = session.user.id
+            signedInEmail = session.user.email
         do {
             let _: UUID = try await client.rpc("publication_author_v1", params: ["p_book_id": bookID.uuidString]).execute().value
         } catch let error as PostgrestError {
             if error.message.contains("publication_author_unbound") { throw PublicationFailure.authorUnbound }
             if error.message.contains("publication_not_owner") { throw PublicationFailure.notOwner }
             if error.code == "42501" || error.code == "PGRST301" {
-                signedInEmail = nil; throw PublicationFailure.login
+                signedInEmail = nil; signedInUserID = nil; throw PublicationFailure.login
             }
             throw PublicationFailure.connection
         } catch {
@@ -170,7 +177,7 @@ final class SailuneAccountAuthService {
         return PublicationCredentials(supabaseURL: url, publishableKey: key, token: session.accessToken, userID: session.user.id)
     }
 
-    func requirePublicationLogin() { signedInEmail = nil }
+    func requirePublicationLogin() { signedInEmail = nil; signedInUserID = nil }
 
     private func safeMessage(for error: Error, isVerification: Bool) -> String {
         if let authError = error as? AuthError {

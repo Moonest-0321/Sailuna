@@ -22,6 +22,11 @@ enum BookCoverStore {
         missingCoverIDs.removeAll()
     }
 
+    static func resetWorkspaceCache() {
+        imageCache.removeAllObjects()
+        missingCoverIDs.removeAll()
+    }
+
     static func image(for book: Book) -> NSImage? {
         let key = book.id as NSUUID
         if let cached = imageCache.object(forKey: key) { return cached }
@@ -168,9 +173,7 @@ enum BookCoverStore {
         if let directoryOverrideForTesting {
             return directoryOverrideForTesting
         }
-        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first
-            ?? FileManager.default.temporaryDirectory
-        return appSupport.appendingPathComponent(directoryName, isDirectory: true)
+        return SailuneDataLocations.current.coversDirectory
     }
 
     private static func coversDirectory() throws -> URL {

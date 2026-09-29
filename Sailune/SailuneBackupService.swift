@@ -6,8 +6,11 @@ import UniformTypeIdentifiers
 
 struct SailuneDataLocations {
     let mainStore: URL
+    var workspaceID: String? = nil
+    var preferencesURL: URL { mainStore.deletingLastPathComponent().appendingPathComponent("workspace-preferences.plist") }
 
     static var current: Self {
+        if let active = WorkspaceLocationAccess.shared.current() { return active }
         #if DEBUG
         if let overridePath = ProcessInfo.processInfo.environment["SAILUNE_TEST_STORE_URL"], !overridePath.isEmpty {
             return Self(mainStore: URL(fileURLWithPath: overridePath))
@@ -62,6 +65,7 @@ enum SailuneBackupService {
         let createdAt: Date
         let schemas: [String: String]
         let files: [FileEntry]
+        var workspaceID: String? = nil
     }
 
     private struct ArchiveFile: Codable { let path: String; let data: Data }
@@ -111,7 +115,8 @@ enum SailuneBackupService {
 
     static func scheduleRestore(from source: URL, locations: SailuneDataLocations = .current) throws {
         let data = try Data(contentsOf: source)
-        _ = try decodeAndValidate(data)
+        let archive = try decodeAndValidate(data)
+        try validateWorkspace(archive.manifest, locations: locations)
         if FileManager.default.fileExists(atPath: locations.pendingRestoreURL.path) {
             throw BackupError.pendingRestoreExists
         }
@@ -125,6 +130,7 @@ enum SailuneBackupService {
         guard FileManager.default.fileExists(atPath: pending.path) else { return }
         let data = try Data(contentsOf: pending)
         let archive = try decodeAndValidate(data)
+        try validateWorkspace(archive.manifest, locations: locations)
         let fm = FileManager.default
         try fm.createDirectory(at: locations.recoveryDirectory, withIntermediateDirectories: true)
         let safetyURL = locations.recoveryDirectory.appendingPathComponent("Before-Restore-\(timestamp()).sailunebackup")
@@ -141,6 +147,7 @@ enum SailuneBackupService {
         let bookTemplatesDirectory = locations.bookTemplatesDirectory
         let writingStatsURL = locations.writingStatsURL
         let forumPostsURL = locations.forumPostsURL
+        let preferencesURL = locations.preferencesURL
         var moved: [(original: URL, backup: URL)] = []
         do {
             for (_, storeURL, _) in locations.stores {
@@ -191,6 +198,11 @@ enum SailuneBackupService {
                 moved.append((forumPostsURL, backup))
             }
 
+            if fm.fileExists(atPath: preferencesURL.path) {
+                let backup = rollback.appendingPathComponent("workspace-preferences.plist")
+                try fm.moveItem(at: preferencesURL, to: backup)
+                moved.append((preferencesURL, backup))
+            }
             let files = Dictionary(uniqueKeysWithValues: archive.files.map { ($0.path, $0.data) })
             for (name, storeURL, _) in locations.stores {
                 guard let storeData = files["stores/\(name)"] else {
@@ -249,6 +261,9 @@ enum SailuneBackupService {
                 try fm.createDirectory(at: forumPostsURL.deletingLastPathComponent(), withIntermediateDirectories: true)
                 try forumPostsData.write(to: forumPostsURL, options: .atomic)
             }
+            if let preferences = files["workspace-preferences.plist"] {
+                try preferences.write(to: preferencesURL, options: .atomic)
+            }
             try fm.removeItem(at: pending)
             try fm.removeItem(at: rollback)
         } catch {
@@ -263,6 +278,7 @@ enum SailuneBackupService {
             if fm.fileExists(atPath: bookTemplatesDirectory.path) { try? fm.removeItem(at: bookTemplatesDirectory) }
             if fm.fileExists(atPath: writingStatsURL.path) { try? fm.removeItem(at: writingStatsURL) }
             if fm.fileExists(atPath: forumPostsURL.path) { try? fm.removeItem(at: forumPostsURL) }
+            if fm.fileExists(atPath: preferencesURL.path) { try? fm.removeItem(at: preferencesURL) }
             for pair in moved.reversed() where fm.fileExists(atPath: pair.backup.path) {
                 try? fm.moveItem(at: pair.backup, to: pair.original)
             }
@@ -335,15 +351,25 @@ enum SailuneBackupService {
         if fm.fileExists(atPath: forumPostsURL.path) {
             files.append(ArchiveFile(path: "forum-posts.json", data: try Data(contentsOf: forumPostsURL)))
         }
+        if fm.fileExists(atPath: locations.preferencesURL.path) {
+            files.append(ArchiveFile(path: "workspace-preferences.plist", data: try Data(contentsOf: locations.preferencesURL)))
+        }
         let entries = files.map { Manifest.FileEntry(path: $0.path, byteCount: $0.data.count, sha256: checksum($0.data)) }
         let info = Bundle.main.infoDictionary
         let manifest = Manifest(
             archiveVersion: archiveVersion,
             appVersion: info?["CFBundleShortVersionString"] as? String ?? "unknown",
             buildVersion: info?["CFBundleVersion"] as? String ?? "unknown",
-            createdAt: Date(), schemas: schemas, files: entries
+            createdAt: Date(), schemas: schemas, files: entries, workspaceID: locations.workspaceID
         )
         return Archive(manifest: manifest, files: files)
+    }
+
+    private static func validateWorkspace(_ manifest: Manifest, locations: SailuneDataLocations) throws {
+        guard let id = locations.workspaceID else { return }
+        guard manifest.workspaceID == id || (manifest.workspaceID == nil && id == "guest") else {
+            throw BackupError.invalidArchive("這份備份屬於另一個資料空間，不能直接還原。")
+        }
     }
 
     private static func decodeAndValidate(_ data: Data) throws -> Archive {
@@ -444,7 +470,7 @@ enum SailuneBackupService {
         return true
     }
 
-    private static func sqliteSnapshot(from source: URL, to destination: URL) throws {
+    static func sqliteSnapshot(from source: URL, to destination: URL) throws {
         var sourceDB: OpaquePointer?
         var destinationDB: OpaquePointer?
         guard sqlite3_open_v2(source.path, &sourceDB, SQLITE_OPEN_READONLY, nil) == SQLITE_OK else {

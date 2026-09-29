@@ -103,3 +103,8 @@ V4.4.8 在主 container 與 StoryPlanning store 都成功開啟後，會以現�
 ## V10.6 本機論壇文章
 
 論壇文章存於 `Sailune/Forum Posts.json`，使用版本 1 Codable sidecar，不改 SwiftData schema，也不關聯書籍。完整備份可選包含 `forum-posts.json`，建立備份時記錄 checksum；排程還原會先驗證格式，正式置換時將現有文章檔納入 rollback。舊備份沒有此檔時，還原會清除目前論壇文章；還原失敗則嘗試復原原檔。
+
+
+## V11.5 工作區備份與舊資料
+
+舊共用 SQLite 用 online snapshot 複製至 Guest 暫存目錄，附屬檔案完整複製，完成後置換 Guest 目錄，開啟六 store 並建立遷移備份後才記錄完成；原始來源保留。新備份 manifest 的可選 workspaceID 限制直接還原到相同工作區；舊無來源備份只允許 Guest。工作區偏好 plist 隨備份保存，Session 不備份。切換時處理的 pending restore／rollback／安全備份都限於該工作區。

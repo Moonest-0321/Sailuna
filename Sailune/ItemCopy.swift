@@ -214,6 +214,11 @@ final class ItemCopyStore {
         try refresh()
     }
 
+    func saveForWorkspaceSwitch() throws {
+        if context.hasChanges { try context.save() }
+        if levelSelectionContext.hasChanges { try levelSelectionContext.save() }
+    }
+
     func refresh() throws {
         try refreshCopyRecords()
         levelSelections = try levelSelectionContext.fetch(FetchDescriptor<ItemCopyLevelSelection>())

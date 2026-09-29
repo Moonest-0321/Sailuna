@@ -108,3 +108,8 @@ V10.4 發布標籤另存於 `Sailune/Publication Tags.json`，依書籍 UUID 保
 ## V10.6 本機論壇文章
 
 `ForumPostDocument` 以版本 1 sidecar 保存文章陣列；每篇 `ForumPost` 有穩定 UUID、`ForumBoard` 分類、標題、純文字內文、建立及修改時間。五個分類使用穩定英文 raw value，UI 標題及摘要由 enum 提供。資料不關聯 Book，不受刪書影響；目前沒有使用者 ID、雲端狀態、留言或反應欄位。修改保持建立時間與 ID，列表依 `updatedAt`、`createdAt` 排序。
+
+
+## V11.5 資料空間
+
+六個 store schema 不變，依 Guest 或 Supabase 環境＋Auth user UUID 放在獨立根目錄。版本 1 workspaces.json 保存最多兩個帳號、顯示資料、selectedID、清理狀態與舊資料遷移完成旗標，不保存 Session。所有同書 UUID 關係限於當前空間；Email 修改不建立新空間。

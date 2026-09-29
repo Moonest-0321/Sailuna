@@ -168,6 +168,7 @@ final class EditorBridge {
     }
     func reloadVisibleContent() { coordinator?.reloadFromModel() }
     func flushPendingSave() { coordinator?.flushPendingSave() }
+    func saveForWorkspaceSwitch() throws { try coordinator?.saveForWorkspaceSwitch() }
     fileprivate var pendingSelection: NSRange?
     fileprivate var pendingSectionID: UUID?
 }
@@ -936,6 +937,19 @@ struct RichEditorView: NSViewRepresentable {
             debounceWork?.perform()
             debounceWork = nil
         }
+        func saveForWorkspaceSwitch() throws {
+            guard let tv = textView, let sec = section else { return }
+            if tv.hasMarkedText() { tv.unmarkText() }
+            // 失敗時維持編輯器內容與 debounce，不銷毀舊工作區。
+            textDidChange(Notification(name: NSText.didChangeNotification, object: tv))
+            flushPendingSave()
+            guard let context = sec.modelContext else { throw WorkspaceError.saveFailed }
+            if context.hasChanges { try context.save() }
+            guard storyTagFreeSnapshot(from: tv.attributedString()) == lastCommitted else { throw WorkspaceError.saveFailed }
+            debounceWork?.cancel()
+            debounceWork = nil
+        }
+
         func focusEditor() {
             guard let textView else { return }
             textView.window?.makeFirstResponder(textView)

@@ -1,3 +1,11 @@
+> 2026-09-29 V11.5：R／U／I approved，三個本機資料空間及切換／清理／備份隔離已實作；Debug build、11 個工作區測試及完整 253 passed／1 skipped 通過。隔離 GUI 確認 Guest 面板與空白取消。真實雙帳號 OTP／發布、多視窗及刪除 GUI 尚待驗收；本工作 active，下一步見 handoffs/current.md。未提交、未操作正式資料。
+
+> 2026-09-29 V11.5 U approved（使用者「U」）；R／U approved、I pending。切換面板、刪除確認及登出／刪目前帳號回未登入已確認。I 已提出：工作區注入、多視窗保存、單一網站 Session 身分核對、Guest 遷移與可重試清理；遷移／啟動／備份政策仍是提案。唯一下一步為批准 I，尚未改功能程式或實際資料。詳見 work-items/current.md。
+
+> 2026-09-29 V11.5：三個本機資料空間 R approved（使用者「確認需求」）；一個未登入＋最多兩個帳號、快速切換及完整移除此裝置帳號資料。U／I pending，尚未實作。網站會員／作品不刪除，既有待驗收保留。唯一下一步為確認工作區切換與刪除 U 草案，見 work-items/current.md。
+
+> 2026-09-29 V11.5 前置閱讀：目前 `feat/shiye-publication`／`4b3d1a7`（V11.4）；已建立主要規格、架構及程式入口脈絡，106 個 App Swift 檔／12 個 XCTest 檔／244 個測試方法。非逐行全專案審查，未重跑 build／測試／GUI，既有 active 與批准狀態保留。V11.5 具體需求待提供；詳見 implementation-log.md。
+
 > 2026-09-29 帳號入口流程校正完成：右下整張卡片開五項選單，選單「帳號」進入四欄頁；未登入卡片顯示「帳號」，登入後顯示筆名。parse／diff／Debug build 與未登入 GUI 通過；登入後筆名及真實切換仍待驗收。
 
 > 2026-09-29 帳號頁：R／U／I approved；最新校正為單一帳號卡片入口與選單內「帳號」路由。主內容頁四欄及本機作者保存完成。Debug build／parse／diff check、GUI 入口／選單／帳號頁與 SQLite 保存核對通過；登入／設定結果／真實切換及 UI 重開待驗收，資料切換仍延後。

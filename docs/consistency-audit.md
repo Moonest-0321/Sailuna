@@ -77,3 +77,8 @@ EPUB 匯出會使用畫面目前顯示的封面：優先直接讀取書籍 UUID 
 - SwiftData V5 schema 不變；UUID、閱讀進度引用及既有 TXT／EPUB 匯出保留。EPUB stored ZIP writer 抽成共用型別，封裝行為保持一致。
 - 原發布 JSON 存檔入口替換為受保護發布；遠端 RPC 成功才更新本機 publication sidecar。sidecar 失敗保留遠端結果並只重試本機保存。
 - Session 仍只在鑰匙圈，不加入備份；staging／API 使用登入者 JWT。網站交易保留推薦與站長下架欄位，缺卷節只下架不刪除。
+
+
+## V11.5 本機隔離（實作中）
+
+刪帳號不等於刪除網站會員／作品。WorkspaceRegistry 清理紀錄在刪除前持久化，部分失敗仍占名額且不可開啟；其他工作區與外部備份保留。主／settings／planning schema 不變，舊資料只複製至 Guest，發布前核對工作區與 Session 身分。驗證結果以 implementation-log.md 為準；尚不宣稱 GUI／真實雙帳號串接完成。

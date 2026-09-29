@@ -369,3 +369,74 @@
 - 使用者明確要求：右下帳號卡片未登入顯示「帳號」，登入後將兩字替換為筆名；卡片仍開啟帳號選單。
 - StartSidebarView 接收共用登入服務的登入狀態，登入後讀既有 AuthorProfile.penName；空白筆名回退「帳號」，長筆名單行尾端截斷。未改資料模型、登入流程或彈窗路由。
 - Swift parse、git diff --check 與無簽章 Debug build exit 0。最新 App 未恢復登入 session，實際 GUI 僅確認未登入仍顯示「帳號」；登入後筆名分支未用真實 session 驗證，不把程式接線當作登入整合成功。
+
+
+## 2026-09-29：V11.5 前置專案閱讀
+
+- 目標／授權：使用者要求「V11.5 完整閱讀專案」；本輪為唯讀脈絡建立與文件 checkpoint，R／U／I 不適用，不授權新增功能。完成條件為核對基線、規格、模組責任及待驗收邊界；非目標為修改功能、部署、操作作者資料。
+- 起始 git status 曾顯示 ContentView、Localizable 與五份文件修改；後續核對 HEAD `4b3d1a7`（V11.4）、分支 `feat/shiye-publication`，寫本紀錄前工作樹乾淨。本輪沒有提交、回復或清除那些修改，不推論其狀態變化原因。
+- 閱讀：協作規則、實作紀錄、狀態／current 工作與交接、主要產品規格、架構／模型／備份／工程／測試文件；盤點全部 Swift 檔與型別／action／測試入口，閱讀啟動、首頁帳號、登入儲存、發布、匯入及 sidecar 的主要路徑。大型編輯器、遷移快照及各 View 未逐行完整審查；這不是全專案逐行 code review。
+- 直接查證：106 個 App Swift 檔、12 個 XCTest 檔、244 個 test 方法；計數不代表執行通過。六個 store、主 V5／settings V13／planning V7 契約維持；設定畫面開發版本字串仍為 V10.1，bundle marketing version 1.0，未因聊天標題 V11.5 自動修改。
+- 未完成／邊界：V11.1 實機鑰匙圈與 V11.2 真實切換等既有待驗收保留；歷史規格的部署待辦與最新發布成功紀錄並存，未擅自改寫 auth 契約複本。未重跑 build、XCTest、GUI、遠端部署或真實串接。
+- 本輪修改僅追加紀錄與狀態／交接；V11.5 具體需求尚未提供。下一步為接收具體需求，再閱讀受影響程式全文並整理 R。
+
+
+## 2026-09-29：V11.5 三個資料空間 R 批准（開始）
+
+- 使用者「確認需求」批准一個未登入空間、最多兩個帳號空間、快速切換及完整移除此裝置上的指定帳號資料；本輪只整理需求與 U 草案，不修改功能、不實際刪除資料。
+- 起始：`feat/shiye-publication`／`4b3d1a7`；既有 implementation-log、project-status、handoffs/current 三份閱讀紀錄修改保留。
+- 工作單元：保存 R 契約、驗收條件與待確認事項，提供可評估 U 流程；非目標為雲端同步、永久刪除拾頁會員、網站作品刪除或實作授權。
+
+### R 紀錄結果
+
+- current 工作單新增 V11.5 R approved、U／I pending、隔離與刪除契約、非目標、驗收及 U 草案；project-status 與 handoff 新增目前階段與單一下一步。舊文件內容及三份既有修改保留。
+- `git diff --check` 通過；本輪純文件，未執行 build／XCTest／GUI，未修改功能／帳號憑證或作者資料，未提交。
+- 下一步：使用者評估 U 的切換面板、登出與刪除確認；舊資料遷移歸屬仍是待確認提案。
+
+
+## 2026-09-29：V11.5 U 批准與 I 計畫（開始）
+
+- 使用者「U」批准上一輪工作區選擇面板與刪除確認、登出／刪目前帳號返回未登入空間。僅 U 批准，不當作 I 實作授權。
+- 起始 HEAD 4b3d1a7；work-items/current、handoffs/current、project-status、implementation-log 四份既有修改保留。本輪只改文件。
+- 已核對固定 App startupState、六 store 建立、全域資料位置、封面快取、AI 任務、發布提交及鑰匙圈單一 Session；I 提案沿用單一 Session，不保存兩組 token，不改 V11.1 service／ACL。
+
+### U／I 文件結果
+
+- current 工作單 U 改 approved，補六階段 I 計畫、驗證、身分與備份相容提案；project-status／handoff 追加目前階段。R 契約、V11.1 安全儲存與舊工作未驗收狀態保留。
+- 本輪純文件，未跑 build／XCTest／GUI，未修改程式、憑證或作者資料，未提交；下一步 I 明確批准後實作。
+
+
+## 2026-09-29：V11.5 I 批准／實作開始
+
+- 使用者「I」批准三空間、Guest 舊資料遷移、啟動恢復、單一 Session 身分核對與備份政策。R／U／I approved。
+- 起始 HEAD 4b3d1a7，四份工作文件已有本對話修改，保留。目標為完成工作區生命週期／隔離／切換／刪除及驗證；正式作者資料不作測試。
+- 共用搜尋：沿用 SailuneDataLocations、既有六 store Factory／migration、BookCoverStore、SectionUnitPreference、SharedUI tokens／圖標／copy、EditorBridge flush 與 PublicationCoordinator；新增具名工作區 Coordinator 集中跨模組不變條件。
+
+
+## 2026-09-29：景停品牌官網首頁設計原型
+
+- 使用者批准開始設計；景停為內容品牌、拾頁保持閱讀品牌、帆夢為創作工具。三者以繁體中文為核心，題句「張燈樓結綵 留風盼景停」不改字。
+- 起始 Sailune 分支 feat/shiye-publication、HEAD 4b3d1a7，已有 project-status/current handoff/implementation-log 文件修改；Pagelet HEAD c80fa3b，工作樹乾淨。保留既有修改與 V11.5 U/I pending，沒有實作資料空間。
+- 新增工作區 Innisfree-site 靜態首頁原型（HTML/CSS/JS、favicon、燈樓生成圖片、README）；此為獨立品牌設計，不改帆夢或拾頁功能、schema 或正式資料。文字為設計草案；沒有虛構作者、作品或營運數據。
+- 驗證：本機 http://127.0.0.1:4173 回應 200；CUA 桌面 1280px 畫面確認標題、繁體中文、燈樓圖片及首頁排版。拾頁介紹彈窗開啟及 Escape 關閉通過。CSS 手機配置已建立，實際手機、200% 放大及帆夢介紹尚未逐項驗證。沒有 build、XCTest、遠端串接或部署；本輪只交付設計預覽。
+- 唯一下一步：使用者檢視首頁設計，校正視覺及資訊結構，再決定後續頁面。
+
+- 補充驗證：CUA 390 × 844 手機尺寸核對主視覺、題句及旗下品牌單欄排列；未見截字或橫向溢出。已 reset 暫時 viewport override 並保留預覽 tab。
+
+## 2026-09-29：景停首頁移除敘述與圖片
+
+- 使用者直接要求刪除新增敘述文字、保留空間，暫不放圖片。保留品牌名稱、題句、導覽、區段標籤及原布局；移除所有新增敘述與裝飾文字、彈窗描述／清單及頁面圖片引用。圖片檔保留但不呈現。
+- 以空白文字行保留排版，原圖片區維持尺寸並改為透明。未改帆夢／拾頁功能或正式資料。
+- 驗證：重新載入本機預覽，CUA 畫面確認題句保留、敘述空白且無主視覺圖片；AX 確認敘述與 image 節點已移除。未部署。下一步由使用者檢視留白版。
+
+
+## 2026-09-29 V11.5 I 實作結果與檢查點
+
+- 目標：使用者「I」批准三空間實作、Guest 遷移、啟動恢復、單一 Session、備份相容政策。工作樹 `feat/shiye-publication`／`4b3d1a7`；起始前置四文件保留，無原有程式修改覆蓋，未提交。
+- 變更：新增 WorkspaceRegistry／Factory／Coordinator／LegacyMigration／SelectionView；App 根共用生命週期與偏好注入；六 store、封面／地圖／AI／模板／論壇／統計／發布／restore 隔離；保存 participant、發布 busy 及 UUID／環境核對；本機刪除先標清理狀態、釋放 bundle、清除相符 Session／偏好／資料，失敗可重試。保留所有 domain schema。Guest snapshot 遷移保留 UUID／舊來源，建立工作區安全備份。備份 manifest 帶 workspaceID，舊備份限 Guest。
+- 原因與範圍：實際網站只有一組 Session，因此本機切換不冒充登入；驗證實際 user UUID 後才發布。靜態資產路徑由 coordinator 提供，持久服务捕捉位置；延遲拖曳／刪除、封面／地圖／TXT 匯入及發布準備回呼核對舊 context 是否仍為現空間。
+- 文件：更新 spec-workspaces-v11.5、architecture、data-model、backup-and-migration、consistency-audit、批准計畫／狀態／交接。長期規格與驗證限制分開保存。
+- 驗證命令：`xcodebuild -quiet -project Sailune.xcodeproj -scheme Sailune -configuration Debug -destination 'platform=macOS' -derivedDataPath /private/tmp/SailuneV115Derived -clonedSourcePackagesDirPath /private/tmp/ShiyePublicationDerived/SourcePackages -disableAutomaticPackageResolution -parallel-testing-enabled NO CODE_SIGNING_ALLOWED=NO test`；最後 exit 0。xcresult `Test-Sailune-2026.09.29_14-12-45-+0800.xcresult`（同 derived Logs/Test）由 `xcrun xcresulttool get test-results summary` 核對 253 passed／1 skipped／0 failed／254 total。Debug build 及 diff check 通過。11 WorkspaceTests 含 coordinator 完整刪目前帳號與保留另一帳號，無真實網站登入／刪除。
+- 過程失敗：初次 sandbox build 的空 SourcePackages／網路 DNS／Simulator 權限錯誤，改用既有快取與主機 build；工作區首兩輪 3 passed／5 failed，修正 `/var` 與 `/tmp` 系統 alias 的符號連結判定，第三輪 10 全通過。回呼補強一輪 compile 因 EditorSidebarView 缺 coordinator 環境失敗，補齊後完整通過。新增清理測試後一回完整 runner abort 被記在 V42Outline test，實際 crash lastExceptionBacktrace 在 SailuneAIClient.chat 的 NSURLSession 背景請求；重跑 253 全通過，偶發原因未解決，非宣称功能修復。紀錄 log `/private/tmp/sailune-v115-*`。
+- GUI：隔離路徑 `/private/tmp/SailuneV115GUI/legacy/Sailune-v5.store`，確認工作區選單、Guest active、兩個 add slots、空白點擊取消且不穿透；最後回呼修正前產物。CUA 正常退出後 session 80050 exit 0。未操作正式資料。
+- 未驗證／下一步：真實 OTP／Keychain／網站发布、多視窗未存正文與組字、帳號列切換／刪除確認／備份與小視窗 keyboard；需隔離真實帳號人工驗收。保留 active，不將編譯／fixture／提交等同串接成功。

@@ -64,15 +64,15 @@ enum SailuneAISettingsStore {
     private static let keychainAccount = "personal-api-key"
 
     static var provider: SailuneAIProvider {
-        SailuneAIProvider(rawValue: UserDefaults.standard.string(forKey: providerKey) ?? "") ?? .appleOnDevice
+        SailuneAIProvider(rawValue: WorkspaceLocationAccess.shared.preferences().string(forKey: providerKey) ?? "") ?? .appleOnDevice
     }
 
     static var endpoint: String {
-        UserDefaults.standard.string(forKey: endpointKey) ?? SailuneAISettings.defaultEndpoint
+        WorkspaceLocationAccess.shared.preferences().string(forKey: endpointKey) ?? SailuneAISettings.defaultEndpoint
     }
 
     static var model: String {
-        UserDefaults.standard.string(forKey: modelKey) ?? SailuneAISettings.defaultModel
+        WorkspaceLocationAccess.shared.preferences().string(forKey: modelKey) ?? SailuneAISettings.defaultModel
     }
 
     static func apiKey() throws -> String? {
@@ -107,9 +107,9 @@ enum SailuneAISettingsStore {
                 throw SailuneAISettingsError.keychain(status)
             }
         }
-        UserDefaults.standard.set(settings.endpoint.absoluteString, forKey: endpointKey)
-        UserDefaults.standard.set(settings.model, forKey: modelKey)
-        UserDefaults.standard.set(provider.rawValue, forKey: providerKey)
+        WorkspaceLocationAccess.shared.preferences().set(settings.endpoint.absoluteString, forKey: endpointKey)
+        WorkspaceLocationAccess.shared.preferences().set(settings.model, forKey: modelKey)
+        WorkspaceLocationAccess.shared.preferences().set(provider.rawValue, forKey: providerKey)
     }
 
     private static func keychainQuery(returnData: Bool = false) -> [String: Any] {

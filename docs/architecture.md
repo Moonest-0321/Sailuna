@@ -89,3 +89,8 @@ ContentView（書櫃）
 ## V10.6 本機論壇文章
 
 `LocalForumPostsStore` 負責論壇 JSON sidecar 的解碼、版本檢查、分類投影、排序與原子寫入；`ForumView` 負責分類列表與表單呈現，詳情 View 將修改／刪除意圖交給 Store。`SailuneApp` 在啟動時建立 Store 並注入環境。`SailuneBackupService` 驗證、封裝及還原 `forum-posts.json`，並將目前檔案加入 rollback。此功能不呼叫網路、不建立登入或 SwiftData schema。
+
+
+## V11.5 工作區生命週期
+
+WorkspaceRegistry 保存最多兩個帳號與 Guest／目前空間及清理狀態；WorkspaceFactory 沿用原六 store 建立與修復次序；WorkspaceCoordinator 集中切換前保存、多視窗根環境替換、任務阻擋與帳號清理。非同步 AI／模板服務建立時捕捉資料位置；既有 static 位置呼叫點經 WorkspaceLocationAccess 取得目前工作區，切換時清封面快取。詳見 spec-workspaces-v11.5.md。

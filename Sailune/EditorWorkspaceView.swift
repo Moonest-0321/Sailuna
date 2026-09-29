@@ -59,6 +59,8 @@ enum EditorWorkspaceMode: String, CaseIterable, Identifiable {
 
 // MARK: - 三欄式編輯工作區 (PRD 3.3)
 struct EditorWorkspaceView: View {
+    @Environment(WorkspaceCoordinator.self) private var workspaceCoordinator
+    @State private var workspaceParticipantID = UUID()
     private enum Layout {
         static let minimumWorkspaceWidth: CGFloat = 960
         static let minimumWorkspaceHeight: CGFloat = 560
@@ -265,11 +267,16 @@ struct EditorWorkspaceView: View {
             bridge.reloadVisibleContent()
         }
         .onAppear {
+            workspaceCoordinator.registerParticipant(id: workspaceParticipantID) {
+                try bridge.saveForWorkspaceSwitch()
+                aiChatModel.cancel()
+            }
             keyboardMonitor.start()
             aiChatModel.setReadOnly(bookIsReadOnly)
         }
         .onChange(of: bookIsReadOnly) { _, isReadOnly in aiChatModel.setReadOnly(isReadOnly) }
         .onDisappear {
+            workspaceCoordinator.unregisterParticipant(id: workspaceParticipantID)
             keyboardMonitor.stop()
             aiChatModel.reset()
         }
@@ -626,6 +633,7 @@ private struct ShortcutHelpView: View {
 
 // MARK: - 左欄：目錄
 struct EditorSidebarView: View {
+    @Environment(WorkspaceCoordinator.self) private var workspaceCoordinator
     let book: Book
     @Binding var selectedSection: Section?
     let bridge: EditorBridge
@@ -978,6 +986,7 @@ struct EditorSidebarView: View {
               let volume = book.volumes.first(where: { $0.id == volumeID }) else { return }
 
         DispatchQueue.main.async {
+            guard workspaceCoordinator.bundle?.container === modelContext.container else { return }
             var transaction = Transaction()
             transaction.animation = nil
             transaction.disablesAnimations = true
@@ -1021,6 +1030,7 @@ struct EditorSidebarView: View {
         }
         deleteTarget = nil
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+            guard workspaceCoordinator.bundle?.container === modelContext.container else { return }
             if undoTarget?.id == target.id {
                 do { try CrossStoreDeletionCoordinator.commitStagedDeletion(in: modelContext); undoTarget = nil }
                 catch { presentPersistenceError(error) }
