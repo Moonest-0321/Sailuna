@@ -440,3 +440,93 @@
 - 過程失敗：初次 sandbox build 的空 SourcePackages／網路 DNS／Simulator 權限錯誤，改用既有快取與主機 build；工作區首兩輪 3 passed／5 failed，修正 `/var` 與 `/tmp` 系統 alias 的符號連結判定，第三輪 10 全通過。回呼補強一輪 compile 因 EditorSidebarView 缺 coordinator 環境失敗，補齊後完整通過。新增清理測試後一回完整 runner abort 被記在 V42Outline test，實際 crash lastExceptionBacktrace 在 SailuneAIClient.chat 的 NSURLSession 背景請求；重跑 253 全通過，偶發原因未解決，非宣称功能修復。紀錄 log `/private/tmp/sailune-v115-*`。
 - GUI：隔離路徑 `/private/tmp/SailuneV115GUI/legacy/Sailune-v5.store`，確認工作區選單、Guest active、兩個 add slots、空白點擊取消且不穿透；最後回呼修正前產物。CUA 正常退出後 session 80050 exit 0。未操作正式資料。
 - 未驗證／下一步：真實 OTP／Keychain／網站发布、多視窗未存正文與組字、帳號列切換／刪除確認／備份與小視窗 keyboard；需隔離真實帳號人工驗收。保留 active，不將編譯／fixture／提交等同串接成功。
+
+
+## 2026-09-29 V11.5 Guest 移入帳號／R 與 U 提案開始
+
+- 使用者「可以」接受整個未登入空間移入空帳號方案，R approved；未明確要求開始實作，U／I pending。目標為來源完整移入、成功後 Guest 清空，失敗保留來源；不合併既有帳號資料。
+- 起始工作樹沿用 V11.5 全部未提交改動（feat/shiye-publication／4b3d1a7）；另發現 Localizable.xcstrings 39 行新增，非本輪修改，保留。只修改工作／交接／狀態文件。
+- 唯讀核對 WorkspaceSelectionView、WorkspaceRegistry、WorkspaceCoordinator、WorkspaceFactory、既有 spec：可沿用面板與保存屏障；跨空間還原目前禁止，移入需独立具名流程，不能放寬一般備份還原限制。空帳號不能只檢查書籍數量，需區分系統初始化資料與使用者資料。
+
+- 結果：新增 work/current 獨立 R／U 工作單，提供目的帳號、確認、取消、處理／錯誤文字線框；更新 status／handoff。精確空帳號／發布紀錄等列待 I 收斂，非已決規格。`git diff --check` 通過；純文件未跑 build／測試。下一步確認 U，依 AGENTS R→U→I 規則未修改功能。
+
+
+## 2026-09-29 V11.5 Guest 移入／U approved、I 提案
+
+- 使用者「Ｕ」批准上一輪 UI；R／U approved、I pending。目標為核對並提出完整移入／空間判定／中斷復原實作計畫，不修改功能程式。沿用上一輪工作樹與未提交修改。
+- 唯讀核對 WorkspaceFactory／LegacyMigration／DataLocations、AuthorProfile／ContentView 預設作者、BookPublicationStore／論壇／統計與 schema 型別清單。發現發布 status 無遠端作者 UUID，提出非草稿 Guest 拒絕策略供 I 批准，不推論遠端所有權；完整空間檢查涵蓋作者與所有 stores／sidecar／偏好，排除已知初始化基線。
+- 計畫：Coordinator action＋專用 snapshot／驗證／journal／recovery；保存屏障、卸載 context、目的地 commit、Guest 重置、重開復原；安全備份獨立保存，pending restore 不搬移，既有跨空間還原限制不放寬。純文件更新批准、I 計畫與驗收／風險，保留原三空間未驗收事項。
+- 驗證：git diff --check 通過；未跑 build／XCTest／GUI，未改功能／schema／憑證／正式資料。唯一下一步 I 明確批准後實作。
+
+## 2026-09-29：景停 logo／文案／配色修正
+
+- 使用者指出 AI 感過重，要求更換 logo、全部敘述及配色；先以簡潔中文文字標誌取代印章，白／深灰／少量藍色取代米白／墨青／朱紅／金色。保留原空間及不放圖片的要求。
+- 敘述維持空白，剩餘詩意操作與裝飾改為直接名稱：作品、品牌、拾頁、關於景停；中文序號改阿拉伯數字。只保留使用者指定題句。無正式資料或既有產品變更。
+- 驗證：CUA 重新載入與實際畫面確認文字 logo、白／深灰配色、無圖片與敘述，題句維持原字。未公開部署；等待使用者檢視設計。
+
+
+## 2026-09-29 Guest 移入 I approved／開始實作
+
+- 使用者「Ｉ」批准完整移入計畫與非草稿／pending restore 限制。目標：完整六 store／資產移入空帳號、保存／備份／驗證、持久進度與重開復原、已批准 UI 及故障測試。
+- 當前 HEAD 已由其他工作前進至 `0966e7c`（V11.7），非前輪 `4b3d1a7`；起始僅四份流程文件修改，既有三空間功能已在目前程式。核對現有 Workspace/App／Factory／備份與 shared 資源，沿用現況，不回復其他工作。
+
+## 2026-09-29：景停標誌四方向比較稿
+
+- 使用者確認三款中文字標，並要求加入抽象化「景」字搭配全名的輔助方向。本輪只做黑白比較稿，不換網站、不新增網站敘述或圖片。定位為多文體／多表現形式／多產品的文學集合中樞，僅作設計依據。
+- 設計說明保存於工作區 Innisfree-site/design/logo-directions.md；使用內建 imagegen 製作 A 俐落、B 宋體骨架、C 自由節奏、D 抽象「景」字配全名比較稿。生成結果待核對。
+- Sailune 既有四份文件修改及未追蹤 WorkspaceTransferService.swift 保留；未修改其功能。
+- 結果：首張對比失常不可用，以一次針對白底黑字的 imagegen 編輯修正；完成比較稿保存在 Innisfree-site/design/logo-comparison-v1.png。A 幾何化筆畫仍需校正「景」字辨讀，B/C 風格差距偏小，D 為符號配全名的探索；不宣稱已完成正式向量 logo。下一步由使用者選方向，再精修字形。
+
+
+## 2026-09-29 Guest 移入實作／驗證結束檢查點
+
+- 批准與工作樹：R「可以」、U「Ｕ」、I「Ｉ」均 approved；目標整個 Guest 移入空帳號、不合併。HEAD 0966e7c／feat/shiye-publication，起始四份流程文件保留；其他景停設計紀錄未覆寫，無提交。產品版本與 schema 分開，六個領域 schema／migration 沒有改版。
+- 變更與原因：新增 WorkspaceTransferService／10 個 WorkspaceTransferTests，來源及空目的地先精確掃描、雙端安全備份、SQLite online snapshot、全部模型欄位／實體主鍵與資產 SHA256、stage 重開驗證；不比對 Core Data 內部 Z_OPT 修訂值。root transfer.json 持久 preparing／prepared／installing／committed／completed，Transfer Recovery/<UUID> 保留雙備份／原 Guest／原目的地；commit 前復位、commit 後繼續重置 Guest，未知或驗證錯誤保留 journal／資料。不能以普通跨空間還原替代移入。
+- UI／生命週期：WorkspaceCoordinator 保存所有 participants／contexts／偏好並停止 AI，卸載 bundle／根 generation 等釋放後置換；所有 scene 共用工作區。WorkspaceSelectionView 提供已批准目的地原因／確認取消／進度重試，App root 卸載進度與可恢復失敗，完成 alert 跨 root 保留。目的 Auth UUID／環境／Email／Session 不被來源替換，作者写作資料移入；另一帳號不變。
+- 必要修正：ItemCopyStore 強持有 levelSelectionContainer，實際寫入 selection 才不會在 context 失去容器時 SIGTRAP。ContentView／BookOverviewView／EditorWorkspaceView 比較主 context 本身，避免旧回呼讀 destroyed context.container。SailuneAIClient.chat 先 Task.checkCancellation，阻止已取消排隊請求使用 invalidated session；新增取消回歸測試。這些修正均由本輪資料測試／卸載流程實際暴露，不增加產品功能。
+- 保護政策：只允許空初始作者／已知預設偏好；六 store 任何孤立資料、自訂作者／資產／sidecar／偏好均拒絕覆寫。未知 schema／檔案、損毀、symlink、清理中／pending restore 拒絕；Guest 非草稿發布狀態沒有遠端作者識別，所以拒絕。來源偏好在 validateFiles 檢查，避免有 Book 時 early-return 漏掉壞 plist。commit 後資產 checksum 不符停止 Guest 重置，原始副本保留。
+- 共用搜尋／例外：沿用工作區 panel 的 SailuneLayout／Theme／Symbol／ActionCopy；原生文字 Button 與現有工作區列一致（共用只有純圖標按鈕），未另造樣式。跨模型不變條件集中 Service／Coordinator；View 只送意圖。更新 spec-workspaces-v11.5、architecture、data-model、backup-and-migration、consistency-audit 及工作／交接／狀態文件。
+- Debug build：xcodebuild -quiet -project Sailune.xcodeproj -scheme Sailune -configuration Debug -destination 'platform=macOS' -derivedDataPath /private/tmp/SailuneTransferDerived -clonedSourcePackagesDirPath /private/tmp/ShiyePublicationDerived/SourcePackages -disableAutomaticPackageResolution CODE_SIGNING_ALLOWED=NO build；exit 0。測試共用同參數，另加 -parallel-testing-enabled NO test；主機環境執行，未將沙盒失敗當程式失敗。
+- 完整回歸：/private/tmp/sailune-transfer-full-tests-r2.log，Test-Sailune-2026.09.29_18-01-12-+0800.xcresult（/private/tmp/SailuneTransferDerived/Logs/Test），xcodebuild exit 0；xcrun xcresulttool get test-results summary 核對 Passed／264 passed／1 skipped／0 failed／265 total、runtimeWarnings 空。略過既有 SAILUNE_REAL_KEYCHAIN_TEST opt-in，沒有真實 Security／OTP 成功宣稱。
+- 最後小幅補強：pending recovery = journal exists OR bundle nil，確保 journal 完成後最終 activation 失敗仍有重試入口；其後相同 test 命令加 -only-testing:SailuneTests/WorkspaceTransferTests -only-testing:SailuneTests/SailuneAITests，/private/tmp/sailune-transfer-completion-check.log、Test-Sailune-2026.09.29_18-07-53-+0800.xcresult，exit 0／25 passed／0 failed／0 skipped。最後程式沒有再改；完整回歸在這一行補強前，最後專項在補強後。diff check 通過。
+- 測試覆蓋：六個真實檔案 store／UUID／正文／作者／物品副本及選定等級／能力／設定／規劃與資產、source prefs、另一帳號、Coordinator switch 與重開；preparing／backup／copy／validate／prepared、installing／rename／commit、Guest move／reset／completed／registry 等邊界中斷。每個注入測試確認 reachedBoundary，防止準備失敗被誤當故障復原通過；重複 recover 不再次匯入。拒絕 nonempty author／prefs／orphan settings／unknown file／corrupt prefs／non-draft／pending restore／symlink；commit 後 asset damage 保留 Guest 與 journal。
+- 過程失敗保留：17-34-54 第一輪 4 passed／3 failed，摘要不一致；17-37-11 1 passed／6 crash，ItemCopyStore 容器持有問題；17-41-37 4 passed／3 failed，model 摘要相同但 assets 不同，Foundation /var→/private/var 導致绝對路徑字元截取错位，改資產內相對 key。17-49-53 9 passed 後加腐損偏好成 10 tests。17-53-01 中途取消（exit 75），不算測試通過。17-54-27 完整 261 passed／2 failed，crash 被歸鄰近 Outline／Keychain，實際診斷 Sailune-2026-09-29-175714.ips 的 lastExceptionBacktrace 在 SailuneAIClient.chat URLSession.data，取消前置檢查後上述完整回歸通過。中途 xcresult 猜錯路徑／沙盒 TestReport 寫入權限錯誤改主機讀取，無功能影響。
+- 隔離 GUI：SAILUNE_TEST_STORE_URL=/private/tmp/SailuneTransferGUI/legacy/Sailune-v5.store。先以本機 fixture 身分建立 A／B（非 OTP），透過 GUI 建「移入測試作品／測試作者」、另一 scene 編入「隔離測試正文：移入後仍需保留。」；macOS 自動分頁成兩個 scene。目的地選擇→確認取消無 journal；實際移入顯示移入完成，兩 scene 同步目的地、保留 15 字、舊 editor 卸載；切 Guest 空書櫃且新建可用，再回 A 保留作品。正常 quit session 55600 exit 0；唯讀 SQLite 檢查 Guest 0 book／A 1／B 0、selected A、無 transfer.json、兩個安全備份。
+- 最新 GUI 重開：最後 test build 副本獨立 bundleID com.MooNest.Sailune.TransferPreview／路徑 /private/tmp/SailuneTransferReopenUnique.app（只改暫存 plist 並 ad-hoc 重簽，未改專案身分），同隔離 env 啟動。CUA 確認書籍 15 字、可開卷節、全文與「已儲存」顯示，quit session 83815 exit 0，無存活 Sailune 程序。工具同名快取曾在 shell 沙盒啟動 exit 134 後另開無隔離 env 的測試副本，顯示預設資料；未在該視窗編輯／移入／刪除／發布，只讀辨識後正常關閉。另兩次隔離啟動為辨識改路徑 Ctrl-C exit 130，不算正常 GUI 退出；最終獨立路徑可用。CUA 某 getApp 超時等候約 364 秒，未將等待當驗收成功。
+- 未驗證與下一步：本輪 coordinate click 反覆 noWindowsAvailable，空白取消只保留既有 handler／前輪驗證，沒有宣稱新一輪通過。實體分離視窗、中文 IME 組字 flush、小視窗／keyboard 確認／hit area、磁碟耗盡／真實程序 kill／斷電未實測；故障注入不等同上述實機故障。fixture 不代表真實 OTP／Session／發布或雲端移轉。沒有對正式作者資料執行移入／編輯／刪除。工作維持 active；唯一下一步隔離實體分離視窗與中文 IME 保存驗收，原三空間真實帳號／Keychain／發布／刪除待辦保留。
+
+
+## 2026-09-29 測試版暫時放行已發布 Guest／開始
+
+- 使用者直接要求這一測試版允許遷移、下一版改回。已發出範圍釐清：已發布來源／非空目的地／兩者；目前按「曾登入／測試」採最小暫時假設，先只放行 Guest 非草稿紀錄，不覆寫非空帳號。若回覆指定其他範圍再調整。
+- 可驗證工作單元：僅 Debug 此版暫時允許本機已發布紀錄完整移入空帳號；Release 預設仍拒絕，目的地空間／pending restore／未知與損毀／備份／驗證／journal 保護不變，不代表遠端所有權轉移。直接授權具體調整略過重走 R／U／I，無新 UI。
+- 工作樹仍 HEAD 0966e7c；前輪移入程式／测试／文件全部保留，Localizable.xcstrings 新既有修改亦保留。本輪不執行使用者資料移入，由使用者在 App 確認操作。
+
+### 測試版暫時放行驗證
+
+- 最小例外已實作：WorkspaceTransferService 在 #if DEBUG 下預設允許非草稿來源；Release constant／init 都固定 false。保留發布 sidecar 狀態與標籤，不清掉發布資料，不放寬空目的地／結構／pending restore／備份／journal，不執行網路。下一版恢復點：Debug 常數改 false＋預設測試恢復拒絕。
+- fixture 明確注入嚴格模式，原 10 tests 继续驗證正式限制；新增預設 Debug 移入已發布記錄／tags／book UUID／帳號識別／Guest 重置，以及暫時放行下仍拒絕非空／未知／pending restore。此版專項共 12 tests。
+- 命令：xcodebuild -quiet -project Sailune.xcodeproj -scheme Sailune -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath /private/tmp/SailuneTransferDerived -clonedSourcePackagesDirPath /private/tmp/ShiyePublicationDerived/SourcePackages -disableAutomaticPackageResolution -parallel-testing-enabled NO -only-testing:SailuneTests/WorkspaceTransferTests CODE_SIGNING_ALLOWED=NO test；/private/tmp/sailune-transfer-test-override-r2.log，exit 0。Test-Sailune-2026.09.29_19-48-53-+0800.xcresult（derived Logs/Test），xcrun xcresulttool get test-results summary 核對 12 passed／0 failed／0 skipped、runtimeWarnings 空。
+- 首輪 19-47-18（/private/tmp/sailune-transfer-test-override.log）11 passed／1 crash，新增 XCTest 臨時 WorkspaceBundle(...).container.mainContext 的 assertion 先釋放容器；DiagnosticReports/Sailune-2026-09-29-194750.ips 為該 test line 144／XCTAssertTrue 的 SIGTRAP。改保留 guest 局部 bundle 後重跑通過；不是 migration 資料驗證錯誤，不把失敗輪當已通過。
+- 本輪沒有新 UI／schema／migration 格式，沒有移入使用者資料／GUI 操作／OTP 或網站驗收，不重跑此前完整 264 pass／1 skip。Localizable 既有 18 additions／3 deletions 保留。範圍詢問仍無回覆，沒有推論獲准覆寫非空帳號。工作／狀態／交接／spec／consistency audit 已記本版例外与恢复点。
+
+- Release 驗證：同專案／scheme／快取，-configuration Release -destination 'platform=macOS,arch=arm64' -derivedDataPath /private/tmp/SailuneTransferReleaseDerived CODE_SIGNING_ALLOWED=NO build。首輪 /private/tmp/sailune-transfer-override-release.log exit 0 且產物存在，但出現「command failed with exit code 0」矛盾訊息；增量重查移除 -quiet，/private/tmp/sailune-transfer-override-release-confirm.log exit 0、** BUILD SUCCEEDED **。Release 嚴格行為由 #if DEBUG／Release 固定 false 分支查證，未在正式使用者資料上執行移入。Debug 12 tests 與 Release build 不等同真實帳號迁移完成。
+- 結束檢查：git diff --check 通過；未提交，未執行 GUI／使用者資料移入。唯一下一步使用者在 Xcode Debug Run 確認移入，下一版恢复暫時 Debug 限制（本版仍開啟）；原工作／人工驗收保留。
+
+
+## 2026-09-29 關閉暫時移入許可／禁止未登入發布：開始
+
+- 使用者直接授權「可以關掉許可了，另外，如果是未登入的話禁止發布」。工作單元：移除 Debug 非草稿來源 bypass，預設嚴格且不保留可注入的放行路徑；Guest／無相符有效登入不可開發布預覽或送出，更新入口與服務層防護。已移入內容／備份不回復，不做登出／資料搬移／遠端寫入。
+- 現況查證：ContentView send 已 guard currentAccount＋canPublish，但 publishPublication 可從 Guest 準備預覽；StartPublishingView 的三個傳送按鈕沒 disable。PublicationCoordinator／Auth credentials 的 optional expectedUserID 可漏核對。本輪接到既有 action 契約，集中帳號身分檢查。
+- HEAD 0966e7c，先前全部未提交改動與 Localizable 既有修改保留。使用者直接授權具體調整略過不適用 R／U／I；無額外 UI 改版，僅停用相關傳送操作。完成條件：非草稿移入拒絕、Guest 即使記住別帳號 Session 仍拒絕發布、正確帳號發送契約可用，適用專項與 build 通過。
+
+### 關閉許可／Guest 發布封鎖：結果
+
+- 移除整個 allowsPublishedGuestInCurrentTestBuild／allowsPublishedGuestForTesting 與放行欄位，來源非草稿 guard 恢復無條件嚴格；不保留 Debug 測試後門。以預設服務測 ongoing／completed／delisted 全拒絕，Guest 原 UUID／標籤／狀態、空目的地與 journal 皆不改；先前移入成功資料／備份不作回復。
+- 发布規則集中 WorkspaceCoordinator.requirePublicationAccount：無本機帳號（Guest）丟 publicationRequiresAccount；缺有效／不相符 Session 丟 identityMismatch。identityMatches 接 optional account，nil 即使配相符的記住 user UUID／環境仍 false。ContentView 準備預覽／送出有主 context／帳號檢查；PublicationCoordinator.send(auth:store:workspace:) 在取得憑證前檢查，Auth.publicationCredentials 的 expectedUserID 改必填，實際 session 必須相符，不以 UI disabled 代替服務保護。
+- UI 呼叫點：StartPublishingView 的草稿／連載／完結三個「傳送至拾頁」傳入 canPublish 值並停用；延遲標籤確認仍經 ContentView 再檢查。沒新 icon／文字樣式或讀 Store 的共用 UI，原本機狀態管理／寫作與數據瀏覽保留。View 只呈現授權結果／送意圖。
+- 測試：新增 WorkspaceTests product service guard 驗 Guest／registered-but-unverified 在 credentials 前拒絕、無結果／發布 status 檔不生成／草稿維持；原身分匹配測試擴 Guest 記住另一帳號情境。移除暫時 Debug 成功 tests，改預設嚴格測試，原失敗復原／所有 stores 驗證保留。
+- 命令：xcodebuild -quiet -project Sailune.xcodeproj -scheme Sailune -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath /private/tmp/SailuneTransferDerived -clonedSourcePackagesDirPath /private/tmp/ShiyePublicationDerived/SourcePackages -disableAutomaticPackageResolution -parallel-testing-enabled NO -only-testing:SailuneTests/WorkspaceTransferTests -only-testing:SailuneTests/WorkspaceTests -only-testing:SailuneTests/PublicationClientTests -only-testing:SailuneTests/BookTextTransferTests CODE_SIGNING_ALLOWED=NO test；/private/tmp/sailune-guest-publication-guard-tests.log exit 0，Test-Sailune-2026.09.29_20-12-44-+0800.xcresult（derived Logs/Test）用 xcrun xcresulttool get test-results summary 核對 Passed／40 passed／0 failed／0 skipped、runtimeWarnings 空。quiet build 有舊 SwiftCompile exit 0 訊息矛盾，但實際 XCTest 完成摘要 Passed，不記為測試失敗。未重跑全套 264／Release／真實 Keychain。
+- 最後將一行 .disabled 縮排對齊後，以同 build 參數（無 only-testing／改 build）Debug 建置，/private/tmp/sailune-guest-publication-guard-build.log exit 0；git diff --check 通過，rg 未找到任何舊放行符號。除縮排以外測試後未改程式。
+- 隔離 GUI：複製前輪 /private/tmp/SailuneTransferGUI/legacy 到 /private/tmp/SailuneGuestPublishGUI/legacy，從備份的 original-guest 複本建立測試 Guest，registry selectedID=guest；全是已知 fixture，不讀取使用者資料作測試。從最新 Debug 複製 /private/tmp/SailuneGuestPublishCheck.app，仅暫存 bundleID 改 com.MooNest.Sailune.GuestPublicationCheck 並 ad-hoc sign，SAILUNE_TEST_STORE_URL 指該隔離 mainStore。CUA 首頁→發布，AX 顯示「傳送《移入測試作品》至拾頁」disabled；沒有預覽／登入／網路傳送。正常 quit session 64792 exit 0；使用者的另一 Sailune 未操作。
+- 文件：工作／spec／architecture／consistency audit 更新現況，狀態／交接頂部標明暫時許可已關閉；舊許可／測試紀錄保留為歷史，不宣稱其仍開啟或使用者已完成實際資料移入。本輪沒有提交／正式資料修改／外部發布。限制：僅隔離草稿按鈕實際 GUI，連載／完結共用 canPublish 路徑已編譯；真實 Session 過期／重登／多視窗／IME／網站仍待原人工驗收。唯一下一步隔離實體分離視窗與 IME 保存驗收，維持整體 active。

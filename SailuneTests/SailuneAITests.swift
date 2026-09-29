@@ -173,6 +173,19 @@ final class SailuneAITests: XCTestCase {
         )
     }
 
+    func testCancelledQueuedRequestDoesNotUseInvalidatedSession() async {
+        let session = URLSession(configuration: .ephemeral)
+        let client = SailuneAIClient(baseURL: URL(string: "http://127.0.0.1:8787")!, session: session)
+        let request = SailuneAIChatRequest(sectionContent: "測試", messages: [])
+        let task = Task { try await client.chat(request) }
+        task.cancel()
+        session.invalidateAndCancel()
+        do {
+            _ = try await task.value
+            XCTFail("已取消請求不應送出")
+        } catch { XCTAssertTrue(error is CancellationError) }
+    }
+
     func testEmptySectionDoesNotSendAndCancellationClearsLoadingState() {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [PendingAIURLProtocol.self]

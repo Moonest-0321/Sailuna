@@ -198,6 +198,8 @@ final class ItemCopyStore {
     private static let logger = Logger(subsystem: "com.MooNest.Sailune", category: "ItemCopyStore")
     let container: ModelContainer
     private let context: ModelContext
+    // Context 不保證保留獨立 container，副本等級資料須與 Store 一起存活。
+    private let levelSelectionContainer: ModelContainer?
     private let levelSelectionContext: ModelContext
     private(set) var copies: [ItemCopy] = []
     private(set) var holdings: [ItemCopyHolding] = []
@@ -207,6 +209,7 @@ final class ItemCopyStore {
 
     init(container: ModelContainer, levelSelectionContainer: ModelContainer? = nil) throws {
         self.container = container
+        self.levelSelectionContainer = levelSelectionContainer
         self.context = container.mainContext
         self.levelSelectionContext = levelSelectionContainer?.mainContext ?? container.mainContext
         context.autosaveEnabled = true

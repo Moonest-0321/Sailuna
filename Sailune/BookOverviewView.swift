@@ -277,7 +277,7 @@ struct BookInfoPanel: View {
             allowedContentTypes: [.image],
             allowsMultipleSelection: false
         ) { result in
-            guard workspaceCoordinator.bundle?.container === modelContext.container else { return }
+            guard workspaceCoordinator.bundle?.container.mainContext === modelContext else { return }
             guard case .success(let urls) = result, let url = urls.first else { return }
             importCover(from: url)
         }
@@ -701,7 +701,7 @@ struct VolumeSectionTreeView: View {
         guard let kind, let target else { return }
 
         DispatchQueue.main.async {
-            guard workspaceCoordinator.bundle?.container === modelContext.container else { return }
+            guard workspaceCoordinator.bundle?.container.mainContext === modelContext else { return }
             var transaction = Transaction()
             transaction.animation = nil
             transaction.disablesAnimations = true
@@ -757,7 +757,7 @@ struct VolumeSectionTreeView: View {
         book.updatedAt = Date()
         deleteTarget = nil
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-            guard workspaceCoordinator.bundle?.container === modelContext.container else { return }
+            guard workspaceCoordinator.bundle?.container.mainContext === modelContext else { return }
             if undoTarget?.id == target.id {
                 do { try CrossStoreDeletionCoordinator.commitStagedDeletion(in: modelContext); undoTarget = nil }
                 catch { presentPersistenceError(error) }

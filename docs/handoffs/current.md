@@ -1,3 +1,57 @@
+# 暫時許可已關閉／未登入禁止發布（2026-09-29）
+
+- 使用者直接授權，具體小修略過不適用 R／U／I。已移除 Debug bypass 與 initializer 放行注入；非草稿 Guest 在所有組態拒絕。已移入資料／安全備份不回復。下方暫時 true／下一版恢復為歷史紀錄，不能當現況。
+- Guest 即使記住其他帳號 Session 仍不可發布；本機帳號無有效相符登入亦禁止。HomeFeatureViews 三個傳送入口接 canPublish 並 disabled；ContentView 預覽／送出、PublicationCoordinator.send 經 WorkspaceCoordinator.requirePublicationAccount；Auth credentials expectedUserID 必填且實際 Session 核對。未擴充本機狀態／寫作操作。
+- 本輪邊界：WorkspaceTransferService／Tests 恢復嚴格；HomeFeatureViews／ContentView、WorkspaceCoordinator／Registry、PublicationExportCoordinator、SailuneAccountAuthService／WorkspaceTests 及文件調整；前輪全部修改與 Localizable 保留，HEAD 0966e7c，未提交。所有新 UI 沿用原生文字 Button／現有 copy；共用 UI 僅值注入，身分規則集中 action。
+- 驗證：xcodebuild 非平行專項 WorkspaceTransferTests／WorkspaceTests／PublicationClientTests／BookTextTransferTests 40 passed／0 failed／0 skipped，Test-Sailune-2026.09.29_20-12-44-+0800.xcresult（/private/tmp/SailuneTransferDerived/Logs/Test）；最後只調齊一行 UI 縮排後 Debug build exit 0，diff check 通過。未重跑完整回歸／Release，本輪不能引用此前 264 pass 當最新完整回歸。
+- GUI：使用複製原隔離 fixture 的 /private/tmp/SailuneGuestPublishGUI/legacy/Sailune-v5.store，registry selected Guest；獨立 bundleID com.MooNest.Sailune.GuestPublicationCheck 的暫存 Debug 副本。AX 發布頁顯示測試草稿的傳送按鈕 disabled；沒有進預覽／登入／傳送，quit session 64792 exit 0。未操作其他已運行的使用者 Sailune。
+- 已驗證：非草稿 ongoing／completed／delisted 來源拒絕且 UUID／tags／兩端不變；Guest service guard 在 credentials 前回 Guest 專用錯誤，未驗證帳號回 identityMismatch、無發布 sidecar／結果；nil workspace account＋非 nil 記住的身分不匹配。真實 OTP／Session 失效／遠端發布與其他人工待辦仍未本輪驗收。
+- 唯一下一步：沿原工作以隔離資料補實體分離視窗／IME 保存驗收；真實登入／發布／清理待辦保留，整體 active。最小閱讀：本檔、work-items/current.md 最新章節、spec-workspaces-v11.5.md 與 implementation-log 本輪結果。
+
+---
+
+# 本版 Debug 已發布 Guest 暫時放行（2026-09-29）
+
+- active；使用者直接要求先讓測試資料移入、下一版改回。已詢問限制範圍，尚無回覆；最小暫時假設只放行來源非草稿，不放寬非空目的地覆寫。
+- WorkspaceTransferService.allowsPublishedGuestInCurrentTestBuild 的 Debug 為 true／Release 為 false，Release init 亦固定 false。本機狀態／標籤保留，未呼叫網路或推論遠端所有權。所有其他資料檢查／備份／journal 保護維持。
+- 本輪僅新增暫時旗標／init 注入與 2 個專項測試，fixture 指定嚴格模式使原限制仍驗證；前輪改动與既有 Localizable.xcstrings 保留，未操作使用者資料移入、未提交。
+- Debug 12 項移入測試通過；首輪新增測試的 Guest 臨時容器提早釋放造成 SIGTRAP，改保留局部 bundle 後通過。Release build 增量重查 exit 0／BUILD SUCCEEDED（首輪 exit 0 訊息矛盾，詳見 implementation-log），diff check 通過；既有完整回歸 264 passed 是此前輪結果，非本輪重跑。
+- 唯一下一步：使用者 Debug Run 手動確認移入；下一版把 Debug 常數改回 false 並恢復預設拒絕測試。不得在恢復政策時回復已移入資料；原多視窗／IME／真實帳號待辦保留。
+
+---
+
+# V11.5 Guest 移入實作檢查點（2026-09-29）
+
+- active；R／U／I approved。使用者「Ｉ」已批准並授權實作；以下為最新狀態，下方 I pending／尚無移入等內容是歷史紀錄。
+- 已決定／完成：整個 Guest 移入空帳號、六 store／作者／UUID／引用／資產／偏好保留；自動雙端備份與 journal，中斷 commit 前復位、commit 後完成 Guest 重置；明確入口／目的地選擇／確認取消／完成／重試。非空目的地、非草稿來源、損毀／未知資料／symlink／pending restore 拒絕；帳號識別／Session、一般跨空間還原限制不改。
+- 工作樹：feat/shiye-publication／HEAD 0966e7c（V11.7）；開始僅四份流程文件修改，舊三空間已在 HEAD。本輪新增 WorkspaceTransferService／WorkspaceTransferTests，修改 Coordinator／SelectionView／App、3 個舊 context 回呼、ItemCopyStore 容器持有、AI cancellation／測試及規格／資料／流程文件。沒有回復其他工作；implementation-log 的景停設計紀錄是其他工作，保留。未提交。
+- 驗證：Debug build 通過；完整 264 passed／1 skipped／0 failed（265 total），xcresult 18-01-12；最後小幅重試狀態補強後專項 25 passed／0 failed，xcresult 18-07-53，均在 /private/tmp/SailuneTransferDerived/Logs/Test。略過既有 opt-in 真實 Keychain，非宣称真實登入通過。
+- GUI：/private/tmp/SailuneTransferGUI/legacy/Sailune-v5.store，兩個本機 fixture 帳號；取消不搬移，移入作品／正文成功、兩個 scene（同視窗 tabs）同步切換、Guest 空書櫃與目的地保留。原 App session 55600 正常退出；最新 Debug 副本改独立測試識別後重開正文「隔離測試正文：移入後仍需保留。」可讀，session 83815 正常退出。重開工具曾對到預設資料副本，只讀觀察、關閉，未在該資料上移入／編輯／刪除／發布。
+- 失敗／修正：早期摘要比較／資產 alias 問題、levelSelection container SIGTRAP 已修正；完整回歸曾復現 AI invalidated URLSession，加入 queued cancellation preflight 及測試後完整通過。詳細命令、xcresult 與工具失敗見 implementation-log，不能把失敗輪當已驗收。
+- 未驗證／暫時假設：真實帳號／网站所有權不由 fixture 推論；實體分離視窗、IME unmark、小視窗、keyboard 確認、本輪空白點擊尚待人工（CUA 座標回 noWindowsAvailable）。磁碟耗盡／程序 kill／實機檔案系統落盤故障未實測，故障注入不等同實機斷電。未新增雲端同步／合併／逐本搬移。
+- 唯一下一步：隔離資料在實體分離視窗及中文 IME 組字中確認移入保存；原三空間 OTP／發布／刪除驗收保留。最小文件：本檔、work-items/current.md 最新章節、spec-workspaces-v11.5.md、implementation-log 本輪紀錄；資料排查再讀 WorkspaceTransferService／Tests。
+
+---
+
+# V11.5 Guest 移入帳號 U approved／I pending（2026-09-29）
+
+- 使用者「Ｕ」批准目的地選擇／確認／取消／進度／重試 UI，R／U approved；I 計畫已寫入 work-items/current.md，待批准開始實作。
+- 已核對：空作者預設為「我的筆名」；六 store 与 sidecar 必須一併判斷空目的地；發布紀錄無遠端作者 UUID，I 提案先拒絕 Guest 非草稿紀錄，避免誤判網站所有權。
+- I 提案：專用 snapshot 移入＋root transfer recovery 備份／journal；完整驗證後置換、Guest 重置、重開階段復原，憑證及一般跨空間還原限制不變。這些技術政策尚未批准。
+- 本輪只更新工作／狀態／交接／implementation-log，保留既有 V11.5 與 Localizable 修改；未改功能／schema／正式資料，未重跑 build／XCTest／GUI。
+- 唯一下一步：批准 I 並開始實作；最小閱讀為最新 work/current 與本檔、spec-workspaces-v11.5、implementation-log 本輪紀錄。原三空間人工驗收待辦保留。
+
+---
+
+# V11.5 Guest 移入帳號檢查點（2026-09-29）
+
+- active；R approved（使用者「可以」接受整體移入空帳號），U／I pending。整體搬移成功後 Guest 清空，來源備份／失敗保護；合併與逐本移入不納入。
+- 本輪只更新文件，保留先前 V11.5 程式與 Localizable.xcstrings 既有新增；未跑 build／XCTest／GUI，未操作真實資料。
+- 現有面板、Coordinator、Factory／Registry 已核對；一般跨空間還原不可直接用於移入。精確空帳號判定與發布紀錄歸屬需 I 核對。
+- 唯一下一步：確認 work-items/current.md 最新 U 提案；原 V11.5 真實帳號／多視窗驗收仍待完成。
+
+---
+
 # V11.5 實作檢查點（2026-09-29）
 
 - 狀態：active，R／U／I approved；功能已實作，人工串接驗收待完成。

@@ -48,6 +48,7 @@ struct StartPublishingView: View {
     private static let availableTags = ["奇幻", "愛情", "冒險"]
 
     let books: [Book]
+    let canPublish: Bool
     let statusForBook: (UUID) -> BookStatus
     let onAdvance: (UUID) -> Void
     let onPublish: (UUID, [String]) -> Void
@@ -94,6 +95,7 @@ struct StartPublishingView: View {
                                             HStack(spacing: SailuneLayout.spacingS) {
                                                 Button("傳送至拾頁") { onSendUpdate(book.id) }
                                                     .accessibilityLabel("傳送《\(book.title)》至拾頁")
+                                                    .disabled(!canPublish)
                                                 Button("恢復連載") { onResume(book.id) }
                                                     .accessibilityLabel("恢復《\(book.title)》連載")
                                                 Button("下架") { onDelist(book.id) }
@@ -105,6 +107,7 @@ struct StartPublishingView: View {
                                                 publishingBookID = book.id
                                             }
                                             .accessibilityLabel("傳送《\(book.title)》至拾頁")
+                                            .disabled(!canPublish)
                                         } else if status == .delisted {
                                             Button("轉為草稿") { onRestoreDraft(book.id) }
                                                 .accessibilityLabel("將《\(book.title)》轉為草稿")
@@ -112,6 +115,7 @@ struct StartPublishingView: View {
                                             HStack(spacing: SailuneLayout.spacingS) {
                                                 Button("傳送至拾頁") { onSendUpdate(book.id) }
                                                     .accessibilityLabel("傳送《\(book.title)》至拾頁")
+                                                    .disabled(!canPublish)
                                                 Button("完結") { onAdvance(book.id) }
                                                     .accessibilityLabel("完結《\(book.title)》")
                                                 Button("下架") { onDelist(book.id) }

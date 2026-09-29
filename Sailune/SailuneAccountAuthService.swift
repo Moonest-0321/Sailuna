@@ -149,7 +149,7 @@ final class SailuneAccountAuthService {
         }
     }
 
-    func publicationCredentials(for bookID: UUID, expectedUserID: UUID? = nil) async throws -> PublicationCredentials {
+    func publicationCredentials(for bookID: UUID, expectedUserID: UUID) async throws -> PublicationCredentials {
         guard let client, let (url, key) = publicationConfiguration else { throw PublicationFailure.configuration }
         let session: Session
         do { session = try await client.auth.session }
@@ -159,7 +159,7 @@ final class SailuneAccountAuthService {
             throw PublicationFailure.login
         }
         guard storage.failure == nil else { await reportStorageFailure(); throw PublicationFailure.login }
-        if let expectedUserID, session.user.id != expectedUserID { throw WorkspaceError.identityMismatch }
+        guard session.user.id == expectedUserID else { throw WorkspaceError.identityMismatch }
         signedInUserID = session.user.id
             signedInEmail = session.user.email
         do {

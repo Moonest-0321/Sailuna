@@ -34,9 +34,13 @@ final class PublicationCoordinator {
     }
     func waitForCompletion() async { await task?.value }
 
-    func send(auth: SailuneAccountAuthService, store: BookPublicationStore, expectedUserID: UUID? = nil) {
+    func send(auth: SailuneAccountAuthService, store: BookPublicationStore, workspace: WorkspaceCoordinator) {
+        guard !isWorking else { return }
+        let account: WorkspaceAccount
+        do { account = try workspace.requirePublicationAccount(auth: auth) }
+        catch { phase = .failure; message = error.localizedDescription; return }
         send(store: store) { attempt, progress, commit in
-            let credentials = try await auth.publicationCredentials(for: attempt.bookID, expectedUserID: expectedUserID)
+            let credentials = try await auth.publicationCredentials(for: attempt.bookID, expectedUserID: account.userID)
             try Task.checkCancellation()
             do { return try await PublicationClient().publish(attempt, credentials: credentials, onProgress: progress, onCommit: commit) }
             catch PublicationFailure.login { auth.requirePublicationLogin(); throw PublicationFailure.login }

@@ -113,3 +113,8 @@ V10.4 發布標籤另存於 `Sailune/Publication Tags.json`，依書籍 UUID 保
 ## V11.5 資料空間
 
 六個 store schema 不變，依 Guest 或 Supabase 環境＋Auth user UUID 放在獨立根目錄。版本 1 workspaces.json 保存最多兩個帳號、顯示資料、selectedID、清理狀態與舊資料遷移完成旗標，不保存 Session。所有同書 UUID 關係限於當前空間；Email 修改不建立新空間。
+
+
+## Guest 移入資料相容性
+
+六 store schema 不變，模型 UUID 與引用整體保留。transfer journal 為獨立 Codable 檔，version 1、交易 UUID、目的 workspaceID、阶段、模型與資產摘要，不存 token。作者資料隨來源移入，但 Auth UUID／環境／Email／Session 保留目的身分；發布 sidecar 無遠端作者 UUID，因此來源非草稿狀態先拒絕，不自動轉移網站歸屬。

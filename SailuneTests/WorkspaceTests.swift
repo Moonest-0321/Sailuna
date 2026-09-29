@@ -184,12 +184,44 @@ final class WorkspaceTests: XCTestCase {
     func testPublicationIdentityRequiresMatchingUserAndEnvironment() {
         let id = UUID()
         var account = WorkspaceAccount(id: "test", userID: id, environment: "test", email: "a@example.com", penName: "")
+        XCTAssertFalse(WorkspaceCoordinator.identityMatches(account: nil, userID: id, environment: "test"), "Guest 不得借用記住的帳號身分發布")
         XCTAssertTrue(WorkspaceCoordinator.identityMatches(account: account, userID: id, environment: "test"))
         XCTAssertFalse(WorkspaceCoordinator.identityMatches(account: account, userID: UUID(), environment: "test"))
         XCTAssertFalse(WorkspaceCoordinator.identityMatches(account: account, userID: id, environment: "another"))
         XCTAssertFalse(WorkspaceCoordinator.identityMatches(account: account, userID: nil, environment: nil))
         account.isDeleting = true
         XCTAssertFalse(WorkspaceCoordinator.identityMatches(account: account, userID: id, environment: "test"))
+    }
+
+    func testPublicationServiceRejectsGuestAndUnverifiedAccountBeforeCredentials() async throws {
+        let root = try temporaryRoot()
+        let workspace = WorkspaceCoordinator(legacyLocations: SailuneDataLocations(mainStore: root.appendingPathComponent("legacy.store")))
+        XCTAssertNil(workspace.errorMessage)
+        let auth = SailuneAccountAuthService()
+        let statusURL = root.appendingPathComponent("publication-status.json")
+        let store = try BookPublicationStore(url: statusURL)
+        let book = Book(title: "不可未登入發布", author: "作者", volumes: [Sailune.Volume(title: "卷")])
+        let publication = PublicationCoordinator()
+        try publication.prepare(book: book, tags: [], status: .draft, sectionUnit: .section)
+        XCTAssertFalse(workspace.canPublish(auth: auth))
+        publication.send(auth: auth, store: store, workspace: workspace)
+        await publication.waitForCompletion()
+        XCTAssertEqual(publication.phase, .failure)
+        XCTAssertEqual(publication.message, WorkspaceError.publicationRequiresAccount.localizedDescription)
+        XCTAssertNil(publication.result)
+        XCTAssertEqual(store.status(for: book.id), .draft)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: statusURL.path))
+
+        workspace.openAccount(userID: UUID(), environment: "fixture", email: "a@example.com")
+        XCTAssertNotNil(workspace.currentAccount)
+        XCTAssertFalse(workspace.canPublish(auth: auth))
+        publication.send(auth: auth, store: store, workspace: workspace)
+        await publication.waitForCompletion()
+        XCTAssertEqual(publication.phase, .failure)
+        XCTAssertEqual(publication.message, WorkspaceError.identityMismatch.localizedDescription)
+        XCTAssertNil(publication.result)
+        XCTAssertEqual(store.status(for: book.id), .draft)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: statusURL.path))
     }
 
     func testWorkspacePreferencesPersistWithoutSharing() throws {

@@ -72,6 +72,8 @@ struct SailuneAIClient {
     }
 
     func chat(_ request: SailuneAIChatRequest) async throws -> SailuneAIChatResponse {
+        // 切換／移入會取消尚未排程的請求；不可再向已結束的 Session 建立 Task。
+        try Task.checkCancellation()
         if case .appleOnDevice = connection {
             return try await Self.chatOnDevice(request)
         }

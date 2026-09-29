@@ -94,3 +94,12 @@ ContentView（書櫃）
 ## V11.5 工作區生命週期
 
 WorkspaceRegistry 保存最多兩個帳號與 Guest／目前空間及清理狀態；WorkspaceFactory 沿用原六 store 建立與修復次序；WorkspaceCoordinator 集中切換前保存、多視窗根環境替換、任務阻擋與帳號清理。非同步 AI／模板服務建立時捕捉資料位置；既有 static 位置呼叫點經 WorkspaceLocationAccess 取得目前工作區，切換時清封面快取。詳見 spec-workspaces-v11.5.md。
+
+
+## Guest 整體移入
+
+WorkspaceTransferService 負責空間判定、唯讀 SQLite 欄位摘要、snapshot／資產驗證及 transfer journal／恢復。WorkspaceCoordinator 負責保存與互斥、卸載根 bundle、確認釋放後置換、重新注入與完成訊息；App 在無 bundle 時顯示移入進度或復原重試。View 只選目的地／確認／發意圖。ItemCopyStore 保留獨立副本等級 container，避免 context 的資料庫生命週期提早結束。
+
+### 未登入發布入口與 action（2026-09-29）
+
+WorkspaceCoordinator.requirePublicationAccount 統一 Guest／當前帳號與 Session 的 user UUID／環境條件；發布頁只接 canPublish 值停用傳送按鈕，ContentView 準備預覽及 PublicationCoordinator.send 都再驗身分。Auth credentials expectedUserID 必填；Guest 在取得憑證／網路操作前拒絕。Debug 移入暫時例外已移除，所有組態恢復嚴格來源政策。

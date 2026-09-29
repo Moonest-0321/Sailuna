@@ -108,3 +108,8 @@ V4.4.8 在主 container 與 StoryPlanning store 都成功開啟後，會以現�
 ## V11.5 工作區備份與舊資料
 
 舊共用 SQLite 用 online snapshot 複製至 Guest 暫存目錄，附屬檔案完整複製，完成後置換 Guest 目錄，開啟六 store 並建立遷移備份後才記錄完成；原始來源保留。新備份 manifest 的可選 workspaceID 限制直接還原到相同工作區；舊無來源備份只允許 Guest。工作區偏好 plist 隨備份保存，Session 不備份。切換時處理的 pending restore／rollback／安全備份都限於該工作區。
+
+
+## Guest 移入與复原
+
+專用移入不使用一般跨空間 restore。Transfer Recovery/<交易 UUID> 保存 Guest.sailunebackup、Destination.sailunebackup 與原始目錄；source archive 的 manifest 仍為 Guest。transfer.json 在 preparing／prepared／installing／committed／completed 邊界落盤；啟動開 container 前復原：commit 前復位目的地，commit 後驗證目的地再重置 Guest。未完成紀錄／復原檔保留，錯誤可重試；操作不吞復位錯誤。歷史 recovery／pending restore 不搬成目的地工作內容。恢復區保留，不在 Guest 重置時刪除。

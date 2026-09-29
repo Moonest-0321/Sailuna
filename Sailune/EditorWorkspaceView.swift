@@ -986,7 +986,7 @@ struct EditorSidebarView: View {
               let volume = book.volumes.first(where: { $0.id == volumeID }) else { return }
 
         DispatchQueue.main.async {
-            guard workspaceCoordinator.bundle?.container === modelContext.container else { return }
+            guard workspaceCoordinator.bundle?.container.mainContext === modelContext else { return }
             var transaction = Transaction()
             transaction.animation = nil
             transaction.disablesAnimations = true
@@ -1030,7 +1030,7 @@ struct EditorSidebarView: View {
         }
         deleteTarget = nil
         DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
-            guard workspaceCoordinator.bundle?.container === modelContext.container else { return }
+            guard workspaceCoordinator.bundle?.container.mainContext === modelContext else { return }
             if undoTarget?.id == target.id {
                 do { try CrossStoreDeletionCoordinator.commitStagedDeletion(in: modelContext); undoTarget = nil }
                 catch { presentPersistenceError(error) }

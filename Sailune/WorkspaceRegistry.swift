@@ -117,7 +117,7 @@ final class WorkspaceRegistry {
 
 enum WorkspaceError: LocalizedError {
     case invalidRegistry, unknownAccount, unsafePath, accountLimit, deletionPending
-    case busy, saveFailed, identityMismatch
+    case busy, saveFailed, identityMismatch, publicationRequiresAccount
     var errorDescription: String? {
         switch self {
         case .invalidRegistry: "資料空間登錄無效，原資料未被覆寫。"
@@ -127,6 +127,7 @@ enum WorkspaceError: LocalizedError {
         case .deletionPending: "此帳號資料清理未完成，請重試刪除。"
         case .busy: "目前操作尚未完成，請稍後再切換資料空間。"
         case .saveFailed: "目前內容尚未成功保存，已停止切換。"
+        case .publicationRequiresAccount: "未登入空間無法發布，請先切換至已登入帳號。"
         case .identityMismatch: "請登入此資料空間的帳號後再發布。"
         }
     }

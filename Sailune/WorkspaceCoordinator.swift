@@ -60,6 +60,12 @@ final class WorkspaceCoordinator {
     private(set) var selectedID = "guest"
     private(set) var isWorking = false
     var errorMessage: String?
+    private(set) var isTransferring = false
+    private(set) var transferCompletionMessage: String?
+    private(set) var transferSourceReason: String?
+    private(set) var transferDestinations: [WorkspaceTransferEligibility] = []
+    private(set) var hasPendingTransfer = false
+    @ObservationIgnored private var transferService: WorkspaceTransferService?
     private var registry: WorkspaceRegistry?
     @ObservationIgnored private var saveParticipants: [UUID: () throws -> Void] = [:]
     @ObservationIgnored private var operations: [UUID: () -> Bool] = [:]
@@ -72,6 +78,11 @@ final class WorkspaceCoordinator {
             let root = original.mainStore.deletingLastPathComponent().appendingPathComponent("Sailune Workspaces", isDirectory: true)
             let registry = try WorkspaceRegistry(root: root)
             self.registry = registry
+            let transfer = WorkspaceTransferService(registry: registry)
+            transferService = transfer
+            hasPendingTransfer = transfer.hasPendingTransfer
+            _ = try transfer.recoverIfNeeded()
+            hasPendingTransfer = transfer.hasPendingTransfer
             try migrateLegacyIfNeeded(original: original, registry: registry)
             let selected = registry.document.accounts.first { $0.id == registry.document.selectedID }
             let id = selected?.isDeleting == true ? "guest" : registry.document.selectedID
@@ -114,7 +125,7 @@ final class WorkspaceCoordinator {
     }
 
     func switchTo(_ id: String) {
-        guard !isWorking, id != selectedID else { return }
+        guard !isWorking, !hasPendingTransfer, id != selectedID else { return }
         isWorking = true; defer { isWorking = false }
         do {
             if accounts.contains(where: { $0.id == id && $0.isDeleting }) { throw WorkspaceError.deletionPending }
@@ -136,7 +147,7 @@ final class WorkspaceCoordinator {
 
     /// 接收 Auth 已驗證的身分；測試可注入固定身分驗證本機生命週期，不宣稱 OTP 成功。
     func openAccount(userID: UUID, environment: String, email: String) {
-        guard !isWorking else { return }
+        guard !isWorking, !hasPendingTransfer else { return }
         isWorking = true; defer { isWorking = false }
         do {
             try prepareToLeave()
@@ -160,16 +171,22 @@ final class WorkspaceCoordinator {
     }
 
     func canPublish(auth: SailuneAccountAuthService) -> Bool {
-        guard let account = currentAccount else { return false }
-        return Self.identityMatches(account: account, userID: auth.signedInUserID, environment: auth.environmentID)
+        Self.identityMatches(account: currentAccount, userID: auth.signedInUserID, environment: auth.environmentID)
     }
 
-    static func identityMatches(account: WorkspaceAccount, userID: UUID?, environment: String?) -> Bool {
-        !account.isDeleting && account.userID == userID && account.environment == environment
+    func requirePublicationAccount(auth: SailuneAccountAuthService) throws -> WorkspaceAccount {
+        guard let account = currentAccount else { throw WorkspaceError.publicationRequiresAccount }
+        guard canPublish(auth: auth) else { throw WorkspaceError.identityMismatch }
+        return account
+    }
+
+    static func identityMatches(account: WorkspaceAccount?, userID: UUID?, environment: String?) -> Bool {
+        guard let account else { return false }
+        return !account.isDeleting && account.userID == userID && account.environment == environment
     }
 
     func signOut(auth: SailuneAccountAuthService) async {
-        guard !isWorking else { return }
+        guard !isWorking, !hasPendingTransfer else { return }
         isWorking = true; defer { isWorking = false }
         do {
             try prepareToLeave()
@@ -182,7 +199,7 @@ final class WorkspaceCoordinator {
     }
 
     func deleteAccount(_ id: String, auth: SailuneAccountAuthService) async {
-        guard !isWorking else { return }
+        guard !isWorking, !hasPendingTransfer else { return }
         isWorking = true; defer { isWorking = false }
         do {
             guard let registry, let account = accounts.first(where: { $0.id == id }) else { throw WorkspaceError.unknownAccount }
@@ -211,6 +228,84 @@ final class WorkspaceCoordinator {
             accounts = registry.document.accounts
             errorMessage = nil
         } catch { errorMessage = "帳號資料清理未完成：\(error.localizedDescription)" }
+    }
+
+    func refreshTransferEligibility() {
+        guard !isWorking, let transferService else { return }
+        hasPendingTransfer = transferService.hasPendingTransfer || bundle == nil
+        transferSourceReason = transferService.sourceReason()
+        transferDestinations = accounts.map { transferService.eligibility(for: $0.id) }
+    }
+
+    func dismissTransferCompletion() { transferCompletionMessage = nil }
+
+    func transferGuest(to destinationID: String) async {
+        guard !isWorking, !hasPendingTransfer, let transferService else { return }
+        isWorking = true
+        isTransferring = true
+        defer { isWorking = false; isTransferring = false; refreshTransferEligibility() }
+        var unloaded = false
+        await Task.yield()
+        do {
+            try prepareToLeave()
+            try transferService.prepare(destinationID: destinationID)
+            weak var departingBundle = bundle
+            bundle = nil
+            generation = UUID()
+            saveParticipants.removeAll()
+            operations.removeAll()
+            unloaded = true
+            for _ in 0..<150 where departingBundle != nil { try await Task.sleep(for: .milliseconds(20)) }
+            guard departingBundle == nil else { throw WorkspaceError.busy }
+            let installed = try transferService.install()
+            // loaded 不在 catch 中持有，復位前須釋放新 contexts。
+            do {
+                let loaded = try WorkspaceBundle(locations: locations(for: destinationID))
+                try loaded.save()
+                try transferService.commit(installed)
+                _ = try transferService.finishCommittedTransfer()
+                try activate(loaded, id: destinationID)
+            }
+            hasPendingTransfer = false
+            errorMessage = nil
+            transferCompletionMessage = "移入完成"
+        } catch {
+            let failure = error.localizedDescription
+            hasPendingTransfer = transferService.hasPendingTransfer
+            // 未卸載時僅可能準備失敗，來源與目的地尚未置換。
+            if !unloaded {
+                errorMessage = "資料尚未移入：\(failure)"
+            } else {
+                do {
+                    let committedID = try transferService.recoverIfNeeded()
+                    hasPendingTransfer = transferService.hasPendingTransfer
+                    let id = committedID ?? registry?.document.selectedID ?? "guest"
+                    let loaded = try WorkspaceBundle(locations: locations(for: id))
+                    try activate(loaded, id: id)
+                    errorMessage = committedID == nil ? "資料尚未移入：\(failure)" : "移入已完成復原：\(failure)"
+                } catch {
+                    hasPendingTransfer = transferService.hasPendingTransfer || bundle == nil
+                    errorMessage = "移入復原未完成：\(failure)\n\(error.localizedDescription)"
+                }
+            }
+        }
+    }
+
+    func retryPendingTransfer() {
+        guard !isWorking, let transferService else { return }
+        isWorking = true
+        defer { isWorking = false; refreshTransferEligibility() }
+        do {
+            // 有正常 bundle 的情況只會是準備階段失敗，沒有正式目錄置換。
+            let completedID = try transferService.recoverIfNeeded()
+            hasPendingTransfer = transferService.hasPendingTransfer
+            if bundle == nil {
+                let id = completedID ?? registry?.document.selectedID ?? "guest"
+                try activate(WorkspaceBundle(locations: locations(for: id)), id: id)
+            }
+            if completedID != nil { transferCompletionMessage = "移入完成" }
+            errorMessage = nil
+        } catch { hasPendingTransfer = transferService.hasPendingTransfer || bundle == nil; errorMessage = "移入復原未完成：\(error.localizedDescription)" }
     }
 
     func backupAccount(_ id: String) throws {

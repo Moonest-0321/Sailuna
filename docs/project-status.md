@@ -1,3 +1,13 @@
+> 2026-09-29 最新：使用者要求關閉測試移入許可，Debug／Release 都恢復非草稿 Guest 拒絕，暫時旗標／放行注入已移除。未登入空間及缺相符 Session 的帳號禁止傳送，發布按鈕停用＋預覽／服務身分防護＋Auth 必填 user UUID 已接線。40 項相關專項、Debug build／diff check 通過；隔離 GUI 確認 Guest 傳送 disabled，未操作正式資料或網站。原人工驗收待辦仍 active；詳見最新 handoff。
+
+> 2026-09-29 測試版例外：依使用者要求，此版 Debug 暫時允许已發布 Guest 移入空帳號，備份／驗證／復原及非空目的地限制維持；Release 仍嚴格。12 個移入專項測試通過，沒有替使用者執行移入。下一版恢復 Debug 限制，恢復點已記於工作／交接；原人工驗收待辦保留。
+
+> 2026-09-29 Guest 移入：R／U／I approved，整個未登入空間移入空帳號已實作，雙端備份／完整驗證／journal 與重開復原接線。完整 XCTest 264 passed／1 skipped／0 failed；最後專項 25 passed，Debug build／diff check 通過。隔離 GUI 確認雙 scene 保存切換、Guest 重置及重開正文保留；實體分離視窗／IME 等驗收及原真實帳號待辦保留，維持 active。未提交；未移動正式作者作品。下一步見 handoffs/current.md。
+
+> 2026-09-29 Guest 移入：使用者「Ｕ」批准 UI，R／U approved、I pending；已提出六 store 完整移入與 journal／復原計畫，未修改功能程式。唯一下一步批准 I，詳見 work-items/current.md。
+
+> 2026-09-29：新增 Guest 整體移入空帳號工作，使用者「可以」確認 R；U 提案已提供、I pending，尚未修改功能程式。原 V11.5 實作與驗收狀態保留。
+
 > 2026-09-29 V11.5：R／U／I approved，三個本機資料空間及切換／清理／備份隔離已實作；Debug build、11 個工作區測試及完整 253 passed／1 skipped 通過。隔離 GUI 確認 Guest 面板與空白取消。真實雙帳號 OTP／發布、多視窗及刪除 GUI 尚待驗收；本工作 active，下一步見 handoffs/current.md。未提交、未操作正式資料。
 
 > 2026-09-29 V11.5 U approved（使用者「U」）；R／U approved、I pending。切換面板、刪除確認及登出／刪目前帳號回未登入已確認。I 已提出：工作區注入、多視窗保存、單一網站 Session 身分核對、Guest 遷移與可重試清理；遷移／啟動／備份政策仍是提案。唯一下一步為批准 I，尚未改功能程式或實際資料。詳見 work-items/current.md。

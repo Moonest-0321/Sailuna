@@ -82,12 +82,8 @@ struct ContentView: View {
     }
 
     private func sendPublication() {
-        guard let account = workspaceCoordinator.currentAccount,
-              workspaceCoordinator.canPublish(auth: accountAuthService) else {
-            showingEmailLoginSheet = true
-            return
-        }
-        publicationCoordinator.send(auth: accountAuthService, store: publicationStore, expectedUserID: account.userID)
+        guard workspaceCoordinator.bundle?.container.mainContext === modelContext else { return }
+        publicationCoordinator.send(auth: accountAuthService, store: publicationStore, workspace: workspaceCoordinator)
     }
 
     private func applySectionUnit(_ unit: BookTextSectionMarker) {
@@ -288,7 +284,7 @@ struct ContentView: View {
                 allowedContentTypes: [UTType(filenameExtension: "txt") ?? .plainText],
                 allowsMultipleSelection: false
             ) { result in
-                guard workspaceCoordinator.bundle?.container === modelContext.container else { return }
+                guard workspaceCoordinator.bundle?.container.mainContext === modelContext else { return }
                 guard case .success(let urls) = result, let url = urls.first else { return }
                 guard url.pathExtension.lowercased() == "txt" else {
                     bookTextImportSource = BookTextImportSource(
@@ -367,6 +363,7 @@ struct ContentView: View {
         case .publish:
             StartPublishingView(
                 books: books,
+                canPublish: workspaceCoordinator.canPublish(auth: accountAuthService),
                 statusForBook: { publicationStore.status(for: $0) },
                 onAdvance: advancePublication,
                 onPublish: publishPublication,
@@ -509,9 +506,10 @@ struct ContentView: View {
     }
 
     private func publishPublication(_ bookID: UUID, tags: [String]) {
-        guard workspaceCoordinator.bundle?.container === modelContext.container else { return }
+        guard workspaceCoordinator.bundle?.container.mainContext === modelContext else { return }
         guard let book = books.first(where: { $0.id == bookID }) else { return }
         do {
+            _ = try workspaceCoordinator.requirePublicationAccount(auth: accountAuthService)
             try publicationCoordinator.prepare(book: book, tags: tags,
                 status: publicationStore.status(for: bookID), sectionUnit: selectedSectionUnit)
         } catch {

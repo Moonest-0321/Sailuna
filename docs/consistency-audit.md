@@ -82,3 +82,12 @@ EPUB 匯出會使用畫面目前顯示的封面：優先直接讀取書籍 UUID 
 ## V11.5 本機隔離（實作中）
 
 刪帳號不等於刪除網站會員／作品。WorkspaceRegistry 清理紀錄在刪除前持久化，部分失敗仍占名額且不可開啟；其他工作區與外部備份保留。主／settings／planning schema 不變，舊資料只複製至 Guest，發布前核對工作區與 Session 身分。驗證結果以 implementation-log.md 為準；尚不宣稱 GUI／真實雙帳號串接完成。
+
+
+## Guest 移入檢查
+
+新增整空間搬移不重建 domain UUID／引用；正式置換前檢查六 store 的全部資料欄位與資產 checksum。保留原 Guest／空目的地及兩端備份，來源重置只在目的地 commit／驗證後進行。另一帳號、憑證與一般跨空間還原政策不變；非草稿紀錄拒絕，避免將本機狀態誤認為遠端所有權。尚需依本輪測試／GUI 結果驗收，不因文件更新視為串接完成。
+
+### 暫時移入例外關閉與發布身分
+
+使用者授權關閉 Debug 非草稿移入例外，恢復來源拒絕；沒有回復已移入資料、改動 UUID／狀態／標籤或移除備份。Guest 不得借用其他帳號 Session 發布；預覽／服務 action 查目前工作區帳號與 Session，Auth credentials 必填 expectedUserID。拒絕時發布 sidecar 與來源內容保持不變。

@@ -22,10 +22,22 @@ struct SailuneApp: App {
                             do { try WorkspacePreferences.save(workspaceCoordinator.preferences, at: bundle.locations.preferencesURL) }
                             catch { workspaceCoordinator.errorMessage = "無法保存資料空間設定：\(error.localizedDescription)" }
                         }
+                } else if workspaceCoordinator.isTransferring {
+                    ProgressView("移入中…").frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else if workspaceCoordinator.hasPendingTransfer {
+                    VStack(spacing: SailuneLayout.spacingL) {
+                        Text(workspaceCoordinator.errorMessage ?? "移入復原未完成")
+                        Button("重試") { workspaceCoordinator.retryPendingTransfer() }
+                    }.padding(SailuneLayout.spacingXL)
                 } else {
                     DatabaseStartupFailureView(message: workspaceCoordinator.errorMessage ?? "正在開啟資料空間")
                 }
             }
+            .alert("資料空間", isPresented: Binding(
+                get: { workspaceCoordinator.transferCompletionMessage != nil },
+                set: { if !$0 { workspaceCoordinator.dismissTransferCompletion() } })) {
+                Button(SailuneActionCopy.acknowledge) { workspaceCoordinator.dismissTransferCompletion() }
+            } message: { Text(workspaceCoordinator.transferCompletionMessage ?? "") }
             .environment(accountAuthService)
             .environment(workspaceCoordinator)
         }

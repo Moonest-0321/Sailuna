@@ -1,3 +1,99 @@
+# V11.5 未登入資料移入帳號
+
+> 狀態：active；階段：implementation；2026-09-29。原三空間實作與未驗收項目保留於下方。
+
+## 暫時許可關閉／未登入發布封鎖（2026-09-29）
+
+- 使用者直接授權「可以關掉許可了，另外，如果是未登入的話禁止發布」。具體修改略過不適用 R／U／I；沒有新增發布操作或其他視覺改版。
+- 已移除 Debug 旗標及允許非草稿移入的 initializer 注入，Debug／Release 都回到拒絕來源非草稿；已移入的資料／備份不回復、不改動。原暫時例外與驗證只作歷史紀錄，見 implementation-log。
+- Guest 即使記住 A／B 的網站 Session，仍不可發布；已加入本機帳號但 Session 缺失／不匹配也不可傳送。發布頁草稿、連載、完結的「傳送至拾頁」停用；可瀏覽發布頁／數據，本機狀態管理與寫作不擴充改動。
+- ContentView 準備預覽／送出，以及 PublicationCoordinator 發送 action 皆檢查 WorkspaceCoordinator.requirePublicationAccount；Auth credentials 必須明確 expectedUserID，不再允許省略身分。共用發布 UI 只接收 canPublish 值，不讀領域 Store。
+- 驗收：所有非草稿 Guest 移入預設拒絕、不改來源／目的地；Guest 服務 action 在取得 credentials 前拒絕、發布 sidecar 不改；本機帳號缺有效 Session 拒絕；原已驗證的身分匹配／不匹配及發布重試契約保留。
+- 40 個移入／工作區／發布／封包專項通過，最後 Debug build／diff check 通過；隔離 Guest 發布頁 AX 確認「傳送至拾頁」disabled，測試 App 正常退出。本輪不執行使用者資料移入、登出或網路發布。
+
+## 批准
+
+R approved：使用者「可以」接受上一則整個未登入空間移入空帳號方案。U approved：使用者「Ｕ」批准上一輪目的地選擇、確認、取消、進度／重試流程。I approved：使用者「Ｉ」批准計畫，開始功能實作。
+
+## 目標與範圍
+
+未登入使用者可將整個 Guest 的作品、正文、作者寫作資料、角色／設定、封面、地圖、對話、模板及相關紀錄移入一個已加入且無使用者資料的帳號。保留作品 UUID、相互引用與資產；成功切換目的帳號後 Guest 重置為可使用的空間。帳號 UUID／Email／Session 仍為目的帳號，不用 Guest 覆寫憑證。
+
+實作前只有空間切換與同空間還原；本輪新增明確移入 action，初次登入仍不會自動搬移。非目標：逐本移入、合併已有內容、帳號對帳號搬移、雲端同步或轉讓網站作品。一般跨空間備份還原限制維持。
+
+## 已批准 U
+
+1. 在原資料空間面板的「未登入」列提供「移入帳號」。尚無帳號時提示先新增帳號；Guest 無可移入資料時停用並說明。
+2. 同一面板顯示目的帳號清單，筆名＋Email；有使用者資料、清理中或不可讀取的帳號不可選，顯示原因。系統自動建立的空作者列／預設值不直接算有資料。
+3. 選定目的帳號後，顯示確認：
+
+```text
+將未登入資料移入帳號
+目的帳號：筆名 / email
+將移入全部作品與相關本機資料。
+完成後切換至此帳號，未登入空間會清空。
+網站登入身分不變；不會發布至網站。
+移入前會自動建立安全備份。
+                         [取消] [確認移入]
+```
+
+4. 確認前可按取消、關閉或點外部空白返回，不穿透。確認後顯示「移入中…」，暫停編輯／切換／刪除與重複點擊；不提供可能造成半完成狀態的中途取消。
+5. 成功切換目的帳號並顯示「移入完成」；失敗說明資料尚未移入或清理未完成，保留可復原來源與安全備份，提供重試，不假裝整體成功。
+
+## 驗收
+
+- 取消不改資料；非空、清理中、損毀目的地不可覆寫。
+- 全部六 store 與資產／UUID／引用完整；目的帳號識別及其他帳號不變。
+- 保存／備份／複製／驗證失敗保留来源；重開可辨識未完成進度，重試不重複移入。
+- 成功後目的帳號可寫作且重開保留；Guest 可重新建立作品。
+- 多視窗／編輯／背景工作遵守既有保存屏障；一般跨空間還原仍拒絕。
+
+## I 已批准計畫
+
+### 空間與資料相容性
+
+- 不改六個 SwiftData schema／migration 版本；新增專用移入服務、eligibility 結果與可持久化進度 journal，登錄增可選進度欄位或獨立 journal，既有登錄相容讀取。一般 backup manifest 與跨空間還原政策保持。
+- 移入六 store、封面／地圖、AI 對話、模板、統計、本機論壇、發布標籤／草稿紀錄、作者寫作資料及工作區偏好。帳號 UUID／環境／Email／網站 Session 與裝置鑰匙圈不改；筆名依移入的 AuthorProfile 更新顯示。目的帳號的空初始作者列可被移入作者資料取代。
+- 安全備份與 journal 保存在 workspace root 的獨立 transfer recovery 區，記錄來源 Guest、目的帳號與交易 UUID；完成後保留 Guest 原始備份（來源仍標 Guest）。歷史 recovery／pending restore 不當成工作內容搬至目的地，避免日後套用來源備份；兩邊 pending restore 未處理前禁止開始。Guest 重置不刪移入安全備份。
+- 精確空間判定：只允許系統初始化資料（單一空白／預設「我的筆名」作者、無簡介／頭像、已知初始偏好／預設項目）；掃描全部六 store 的使用者資料，不只看 Book；自訂作者、模板、論壇、對話、統計、發布／標籤或自訂偏好算已有資料。無法辨識的模型、額外檔案、損毀、符號連結一律拒絕，不推論為空。用已知初始化基線核對預設，不能用檔案大小判斷。
+- 現有 BookPublicationStore 僅有 bookUUID→狀態／標籤，沒有遠端作者 UUID。第一版若 Guest 存在非草稿發布狀態，停止並說明不能直接移入已發布紀錄；不假裝網站所有權轉移、不自動清除紀錄或重新發布。解除此限制需另做所有權核對流程。本項隨使用者「Ｉ」批准。
+
+### 實作順序與中斷復原
+
+1. 沿用 WorkspaceCoordinator 保存 participants、發布 busy、互斥與位置檢查。掃描非目前空間用明確位置，必要 SQLite snapshot 在暫存檢查，不使用會套用 pending restore／清理來源的 Factory 去判斷是否為空。確認當下再次檢查來源與目的地。
+2. 保存所有視窗／組字／contexts、停止 AI；建立來源及空目的地安全備份。任何錯誤在改來源之前停止。
+3. 用 SQLite online snapshot 複製六 store 與資產／sidecar／偏好至 transaction staging；驗證重開、各模型 UUID／數量、引用及資產 checksum，拒絕不完整複本。暫存與 recovery 都限受管理目錄。
+4. 持久化 journal 階段（準備、已驗證、目的地置換、Guest 重置、完成），記原目的地與來源位置；所有視窗暫時卸載持有的 bundle，確認舊 context／task 已釋放才搬目錄。每次 rename 後可由 journal 判定事實，不依記憶體或吞掉錯誤。
+5. 安裝驗證後目的地、開啟所有服務；來源保留至新目的地可用且 commit 記錄落盤。再重置 Guest，切換目的帳號／更新偏好及快取／導覽，完成 journal 才呈現成功。兩個目錄與登錄沒有共同 ACID，因此以復原檔與階段判定保障。
+6. 開啟 App 時，在建立正常工作區前處理未完成 journal：commit 前回復原目的地並保留 Guest；commit 後續完成 Guest 重置，不再重複複製；錯誤留 recovery／journal 並停止相關空間開啟，提供已批准重試。遇到不明階段不刪任何副本。
+7. WorkspaceSelectionView 接既有列、theme／symbols／copy 與 coordinator action，沿用已批准 U。移入狀態跨 root 切換保存於 coordinator，確保完成訊息可見；關閉面板不遺失交易進度。
+
+### 測試與風險
+
+- 專項檔案型 XCTest：來源全部六 store／UUID／正文引用與資產完整，作者／偏好轉移；空帳號基線允許，任一類資料／未知檔／損毀／非草稿／pending restore 拒絕；另一帳號、Session 和一般備份限制不變。
+- 故障注入：保存、备份、複製、驗證、rename、journal／registry 写入、Guest 清理；每一阶段模擬重開／重試，確認無重複移入、無來源遺失，不錯報完成。目的地初始資料可復原，操作期間第二請求被拒絕。
+- 完整非平行 XCTest、Debug build、diff check；隔離 GUI 驗入口、目的地 disabled 原因、取消／空白／keyboard、進度、成功訊息、重開與多視窗未存正文。正式作者資料不作測試，fixture 不算真實網站串接驗收。
+- 主要風險：舊 SwiftData context 持有、跨檔案中斷與發布身分無持久對應。卸載屏障、保留備份、journal 和明確拒絕不支援資料處理；不沿用既有 restore 的 try? rollback 來宣稱成功復原。
+
+## 實作與驗證結果
+
+- R／U／I approved；專用 WorkspaceTransferService、Coordinator action、目的地選擇／確認、完成訊息／進度與重試已接線。六 store schema 不變；來源／目的地備份、完整欄位與資產 SHA256、持久 journal、commit 前 rollback／commit 後 Guest 重置已實作。
+- 10 個實際檔案移入測試覆蓋六 store／正文／UUID／關係／作者／偏好／資產、另一帳號與重開、各落盤邊界中斷／冪等復原，以及非空作者／偏好／孤立設定、未知檔案、損毀偏好、非草稿、pending restore、symlink／commit 後資產損毀拒絕。
+- 完整非平行 XCTest：264 passed／1 skipped／0 failed（265 total，略過既有 opt-in 真實 Keychain）；最後重試顯示補強後，WorkspaceTransferTests＋SailuneAITests 25 passed／0 failed。Debug build／test build 與 diff check 通過。詳見 implementation-log。
+- 隔離 GUI：目的地選擇／確認取消、成功訊息、雙 scene（macOS 分頁）同步切換、另一 scene 正文保存、Guest 清空且可建立作品、切回目的帳號、正常退出與最新產物重開正文保留。fixture 身分不算 OTP／網站串接成功；實體分離視窗、中文 IME 組字、狹窄視窗、keyboard 確認及本輪空白點擊尚待人工驗收。
+- 必要修正：ItemCopyStore 保留 level selection container，防止實際第六 store 寫入失去 container；舊 UI 回呼比較 mainContext 本身，避免卸載後存取 destroyed context.container；AI chat 先檢查 Task cancellation，阻止已取消排隊任務使用已失效 URLSession。各有實際資料／回歸驗證。
+
+## 共用資源／呼叫點
+
+- WorkspaceSelectionView 的入口、目的地／確認／重試沿用原面板、SailuneLayout／Theme／Symbol／ActionCopy；原生文字 Button 同既有工作區列，沒有另造通用樣式。完成訊息用既有系統 alert，暫停 root 用原生 ProgressView。
+- ContentView、BookOverviewView、EditorWorkspaceView 的非同步／延遲工作所有權核對改比對主 context；完整測試確認原功能結果。搬移由 Coordinator／Service 執行，View 不直接操作 stores／檔案。
+
+## 唯一下一步
+
+使用隔離資料完成實體分離視窗與中文 IME 的移入保存驗收；原三空間真實 OTP／Keychain／發布與刪除驗收保留，整體工作維持 active。
+
+---
+
 # V11.5 三個本機資料空間
 
 > 狀態：active；階段：implementation；日期：2026-09-29
