@@ -20,7 +20,7 @@ nonisolated enum PublicationFailure: LocalizedError {
         switch self {
         case .configuration: "發布服務尚未設定。"
         case .login: "登入已失效，請重新登入後重試。"
-        case .authorUnbound: "此帳號尚未綁定作者，請聯絡拾頁管理者。"
+        case .authorUnbound: "無法確認此帳號的作者資料，請稍後重試。"
         case .notOwner: "此帳號沒有這本作品的發布權限。"
         case .invalidPackage(let message): message
         case .connection: "無法確認發布結果，請使用相同傳送重試。"

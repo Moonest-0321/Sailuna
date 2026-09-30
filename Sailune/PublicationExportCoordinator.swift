@@ -39,8 +39,10 @@ final class PublicationCoordinator {
         let account: WorkspaceAccount
         do { account = try workspace.requirePublicationAccount(auth: auth) }
         catch { phase = .failure; message = error.localizedDescription; return }
+        let penName = package?.manifest.book.author ?? ""
         send(store: store) { attempt, progress, commit in
-            let credentials = try await auth.publicationCredentials(for: attempt.bookID, expectedUserID: account.userID)
+            let credentials = try await auth.publicationCredentials(for: attempt.bookID,
+                penName: penName, expectedUserID: account.userID)
             try Task.checkCancellation()
             do { return try await PublicationClient().publish(attempt, credentials: credentials, onProgress: progress, onCommit: commit) }
             catch PublicationFailure.login { auth.requirePublicationLogin(); throw PublicationFailure.login }

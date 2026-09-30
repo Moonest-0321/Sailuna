@@ -149,7 +149,7 @@ final class SailuneAccountAuthService {
         }
     }
 
-    func publicationCredentials(for bookID: UUID, expectedUserID: UUID) async throws -> PublicationCredentials {
+    func publicationCredentials(for bookID: UUID, penName: String, expectedUserID: UUID) async throws -> PublicationCredentials {
         guard let client, let (url, key) = publicationConfiguration else { throw PublicationFailure.configuration }
         let session: Session
         do { session = try await client.auth.session }
@@ -163,10 +163,13 @@ final class SailuneAccountAuthService {
         signedInUserID = session.user.id
             signedInEmail = session.user.email
         do {
-            let _: UUID = try await client.rpc("publication_author_v1", params: ["p_book_id": bookID.uuidString]).execute().value
+            let _: UUID = try await client.rpc("ensure_publication_author_v1", params: [
+                "p_book_id": bookID.uuidString, "p_pen_name": penName
+            ]).execute().value
         } catch let error as PostgrestError {
             if error.message.contains("publication_author_unbound") { throw PublicationFailure.authorUnbound }
             if error.message.contains("publication_not_owner") { throw PublicationFailure.notOwner }
+            if error.message.contains("publication_invalid_pen_name") { throw PublicationFailure.invalidPackage("請填寫有效的筆名後重試。") }
             if error.code == "42501" || error.code == "PGRST301" {
                 signedInEmail = nil; signedInUserID = nil; throw PublicationFailure.login
             }

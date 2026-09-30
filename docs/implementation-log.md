@@ -1,5 +1,15 @@
 # 帆夢／拾頁實作紀錄
 
+## 2026-09-30：首次發布自動建立作者綁定（開始）
+
+- 目標：任何已登入帳號首次上傳時，依該書筆名建立自己的作者紀錄；既有書仍依原作者歸屬檢查。暫不處理同帳號多筆名。
+- 授權：使用者明確要求先讓其他帳號不需管理者手動填寫即可上傳；沿用現有上傳畫面。這是具體流程變更，略過不適用的 R／U／I 關卡。
+- 起始工作樹：Pagelet 乾淨；Sailune 的 docs/handoffs/current.md、docs/implementation-log.md、docs/project-status.md、docs/work-items/current.md 已有修改，保留原內容。
+- 變更：Pagelet 新增 `20260930000000_self_service_author.sql`，由登入者在首次傳送前建立作者，既有書以作者 ID 阻擋認領；資料庫測試新增匿名拒絕、新帳號首次傳送、重用綁定與舊書拒絕。Sailune 將書籍封包筆名傳給新 RPC；同步更新發布與資料模型文件。
+- 驗證：Pagelet `npm test` 52 項通過、`npm run typecheck`、`npm run lint`、`git diff --check` 通過；補匿名案例後資料庫專項 9 項通過。Swift 兩個改檔 `swiftc -frontend -parse` 通過。Xcode 專項測試未完成：本機套件快取缺失，sandbox 無法解析 GitHub 網域下載 Supabase Swift 等依賴；測試留下的暫存衍生檔已清除／還原。
+- 未完成：未套用正式 Supabase migration、未建置新版 App、未以第二帳號真實發布驗收。下一步：在目標 Supabase 套用 migration，建置新版 App，使用獨立新帳號和新書驗收首次與再次傳送。
+- 追加驗證（2026-09-30）：從本機既有 DerivedData 複製 Swift 套件快取到 `/private/tmp`，以 Xcode 專項命令執行 `PublicationClientTests`，exit 0。新版 App 與測試目標已成功編譯；只有既有 Swift 警告。先前「Xcode 專項未完成」由此結果取代。仍未安裝／發布新版 App，也未套用正式 migration。
+
 這是兩個專案共用的實作紀錄正本。使用者於 2026-09-28 明確要求每次實作記在同一份文件；開始工作先讀本檔，結束或暫停前追加紀錄並更新下方目前狀態。工作單保留需求與批准，規格保留契約，本檔集中保存實際操作與證據。
 
 ## 記錄規則
@@ -530,3 +540,71 @@
 - 最後將一行 .disabled 縮排對齊後，以同 build 參數（無 only-testing／改 build）Debug 建置，/private/tmp/sailune-guest-publication-guard-build.log exit 0；git diff --check 通過，rg 未找到任何舊放行符號。除縮排以外測試後未改程式。
 - 隔離 GUI：複製前輪 /private/tmp/SailuneTransferGUI/legacy 到 /private/tmp/SailuneGuestPublishGUI/legacy，從備份的 original-guest 複本建立測試 Guest，registry selectedID=guest；全是已知 fixture，不讀取使用者資料作測試。從最新 Debug 複製 /private/tmp/SailuneGuestPublishCheck.app，仅暫存 bundleID 改 com.MooNest.Sailune.GuestPublicationCheck 並 ad-hoc sign，SAILUNE_TEST_STORE_URL 指該隔離 mainStore。CUA 首頁→發布，AX 顯示「傳送《移入測試作品》至拾頁」disabled；沒有預覽／登入／網路傳送。正常 quit session 64792 exit 0；使用者的另一 Sailune 未操作。
 - 文件：工作／spec／architecture／consistency audit 更新現況，狀態／交接頂部標明暫時許可已關閉；舊許可／測試紀錄保留為歷史，不宣稱其仍開啟或使用者已完成實際資料移入。本輪沒有提交／正式資料修改／外部發布。限制：僅隔離草稿按鈕實際 GUI，連載／完結共用 canPublish 路徑已編譯；真實 Session 過期／重登／多視窗／IME／網站仍待原人工驗收。唯一下一步隔離實體分離視窗與 IME 保存驗收，維持整體 active。
+
+
+## 2026-09-29 V11.9 前置閱讀與盤點
+
+- 使用者要求「先閱讀完整專案」。本輪工作單元為建立全專案脈絡與核對目前基線；完成條件為盤點目錄、主要模組／責任、規格／資料邊界、測試及 active 待辦。非目標：功能實作、版本欄更改、資料操作、提交／部署或既有人工驗收。唯讀調查與必要紀錄略過不適用 R／U／I；V11.9 具體需求尚未提供。
+- 起始直接核對：feat/shiye-publication、HEAD 88b5049（V11.8），git status --short 與 git diff --stat 均無輸出，工作樹乾淨。舊 handoff 的 0966e7c／未提交敘述是歷史快照，本輪不沿用為即時狀態。
+- 閱讀／盤點涵蓋協作規則、共用實作紀錄與 current 最新章節、專案狀態、架構／資料模型／備份、主要產品規格、程式規則／UX／開發流程、App 與各 Swift 檔型別責任、登入／發布／工作區／移入核心實作與相關測試入口、Xcode 設定及保留 AI backend。採全專案結構盤點加關鍵路徑閱讀，未宣稱每行原始碼或所有歷史工作單均已逐行審查；過長文件按最新章節與相關範圍讀取。
+- 目前直接計數：112 個 App Swift 檔（含 SharedUI）、14 個 XCTest 檔、268 個 test 方法。數量來自原始碼，不是本輪執行成功數。已核對 Guest 非草稿移入無條件拒絕；Guest／缺相符身分在預覽及發布 action 拒絕，Auth expectedUserID 必填。六 store schema 與工作區登錄版本分開。
+- 既有驗證沿用歷史證據：最近相關專項 40 passed／Debug build，前輪完整 264 passed／1 skipped；未在目前 HEAD 重跑。未執行 build、XCTest、GUI、真實 OTP／Keychain、網站或正式資料驗收。部分功能盤點／測試數量及舊組織描述為較早快照，不由此推翻目前程式。
+- 本輪只追加紀錄及前置閱讀狀態；原工作批准與 active 人工驗收保留。下一步：由使用者提供 V11.9 具體需求，整理 R；既有隔離實體分離視窗／中文 IME 保存、真實帳號／發布／清理待辦保留。
+
+
+## 2026-09-29 V11.9 自動作者綁定需求調查
+
+- 使用者要求上傳時主動綁定作者帳號與筆名；目前整理 R 草案，未改功能。起始為 88b5049／feat/shiye-publication，已有本對話前置閱讀四份文件修改；本輪延續而不覆寫其他工作。
+- 直接讀取 Auth／PublicationCoordinator／BookJSONExporter、auth-contract 及 Pagelet RPC／API／storage policy 呼叫點：未綁定在上傳前拒絕；封包筆名來源 Book.author；網站以 authors.user_id 檢查，包含 staging 權限。Pagelet git status --short 無輸出，本輪唯讀。
+- 已詢問筆名以帳號頁或書籍欄位為準；提出首次按 Session UID 建立作者，後續沿用、不以筆名認領別人。筆名同步及既有未綁定作品政策仍待確認，未標成已批准。
+- 只更新工作／交接／狀態／本紀錄；未執行 build／tests／GUI／網路／正式資料寫入。下一步確認筆名來源及 R，接續必要 U／I 與拾頁端契約調整。
+
+## 2026-09-29：景停獨立符號單款草稿
+
+- 使用者要求建立一款，依已核對拾頁紅色方塊／宋體的差異方向，使用內建 imagegen 製作白底黑色抽象景字＋無襯線全名，附小尺寸符號／組合。保存 Innisfree-site/design/logo-symbol-v2.png，提示記於 logo-directions.md。
+- 已檢視輸出；符號與文字以開放筆畫呈現，無印章／紅色／宋體。仍為方向草稿，景字點畫及符號小尺寸比例需正式向量精修，不宣稱 final logo。網站、拾頁及帆夢均未替換或修改。下一步使用者評估此單款方向。
+
+## 2026-09-29：樓宇輪廓 logo 草稿
+
+- 使用者提供樓宇／燈圖參考，指定不用文字、參考配色、簡化樓宇輪廓。內建 imagegen 生成並修正首張雜色／填色問題，完成深青底／暖金樓宇線條草稿。
+- 保存 Innisfree-site/design/logo-building-v1.png，提示記於 logo-directions.md；視覺核對無文字、燈籠、屋瓦格線，中央樓宇及側簷輪廓完整。仍為點陣草稿，非正式向量／32px 驗收成品。未改網站或既有產品。下一步由使用者檢視此方向。
+
+## 2026-09-29：楼閣形態校正
+
+- 使用者指定樓閣而非廟宇；內建 imagegen 編輯改單棟上下兩層、陽臺欄杆、矩形窗，移除側翼與拱門。首圖雜色經一次純配色修正完成，保存 Innisfree-site/design/logo-building-v2.png。
+- 已目視確認兩層樓閣、無文字、保留深青／暖金。點陣探索稿，未替換網站、未聲稱正式向量或小尺寸驗收完成。下一步使用者檢視。
+
+## 2026-09-29：樓閣縮減為二樓與少量一樓
+
+- 使用者要求只保留二樓與一樓的一點點。內建 imagegen 編輯 v2，保留屋頂／二樓欄杆／下簷，一樓僅短柱；已目視確認無窗與底座，色彩／無文字維持。保存 Innisfree-site/design/logo-building-v3.png，未替換網站。下一步使用者評估。
+
+## 2026-09-30：江南樓閣兩版草稿
+
+- 使用者要求更像江南風格，並額外做一版字在底下。內建 imagegen 編輯 v3：低緩屋頂／較小翹角／三格纖細欄杆；仍只二樓與少量一樓短柱。另依新圖加下方繁體「景停」，不加英文或題句。
+- 已目視核對兩版樓閣構圖、無文字版與下方字標版；保存 Innisfree-site/design/logo-jiangnan-v1.png、logo-jiangnan-wordmark-v1.png，提示記於 logo-directions.md。保留深青暖金，未替換網站。點陣草稿，尚未向量化或小尺寸驗收。下一步使用者檢視。
+
+## 2026-09-30：江南樓閣 Logo 融入景停網站
+
+- 使用者確認將字標版整合網站並調整整體風格與配色。獨立 Innisfree-site 採用江南樓閣／下方景停 Logo，更新頁首、主視覺、頁尾及簡化 favicon。SVG 顯示濾鏡移除底色並統一暖金，原始點陣檔保留。
+- 重整樣式為深青、暖金、細線邊框與留白，統一導覽、品牌卡片、按鈕與彈窗；維持繁體題句、敘述留空、不增加情境圖片。未調整拾頁或帆夢產品程式。
+- 本機瀏覽器核對 1280px 桌面與 390px 手機、品牌錨點與拾頁彈窗開關。保留本機預覽，未部署；Logo 尚未向量化。
+
+## 2026-09-30：江南夜色配色調整
+
+- 依使用者要求試做新配色：首頁墨青與暖銅金；關於、品牌區米紙白，作品區淡青灰；品牌卡片暖白與灰米區分。深色文字與線條隨淺色區塊切換，彈窗改米紙白。Logo 與既有繁體題句維持。
+- 加上資源版本參數避免舊快取；本機瀏覽器核對桌面與 390px 手機畫面，保留預覽於 ?v=20260930-3。
+
+## 2026-09-30：降低景停內容區亮度
+
+- 使用者同意改為深色層次。關於景停區改深灰青 #29454A，作品區霧青灰 #405A5A，品牌區灰褐 #645B50；卡片限定灰米 #B9AD99 與灰綠 #A9AEA2，文字依底色切換。彈窗同步改深灰青。
+- 靜態資源版本更新至 ?v=20260930-4。已目視核對桌面區塊與品牌卡片、390px 手機首頁；保留本機預覽，未部署。
+
+## 2026-09-30：統一景停青灰色域
+
+- 依使用者回饋移除跳出的灰褐色與由暗到亮的漸變排列。關於區 #314B4C、作品區 #213F44、品牌區 #29474A，品牌卡片 #49615F／#3B5557；各區維持相近色相與明度，以銅金作少量點綴。
+- 靜態資源版本更新至 ?v=20260930-5；本機桌面與 390px 手機核對顏色、卡片與頁面導覽。
+
+## 2026-09-30：景停網站試作煙紫點綴
+
+- 依使用者同意，在品牌區卡片後方加入局部煙紫 #756170 色塊，並將少量連結／按鈕互動態套用該色；保留青灰主背景與暖金 Logo。更新靜態資源版本至 ?v=20260930-6。
+- 本機預覽服務重新啟動，HTTP 200；瀏覽器目視核對桌面與 390px 手機卡片交疊及色塊呈現。
