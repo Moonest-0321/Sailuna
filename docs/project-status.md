@@ -1,3 +1,5 @@
+> 2026-10-02 V12：R／U／I approved；角色詳情就地新建並連接能力、物品＋持有副本、勢力、一般關係與血緣已接線。Debug build、完整 XCTest 268 passed／1 skipped（最後排序小修前）、最終 V12 專項 3 passed（含雙 store 重開）、Swift parse／diff check 通過。隔離 GUI 已進新角色詳情但 CUA 中斷，五入口互動與跨 store 故障注入待驗，工作維持 active。詳見 current 工作單。
+
 > 2026-09-29 V11.9：上傳時自動綁定作者帳號／筆名需求已整理為 R 草案。App 及網站現有預檢／staging 依既有綁定，需兩端調整；筆名來源與既有作者同步政策待確認。未實作或操作正式資料，詳見 current 工作單。
 
 > 2026-09-29 V11.9 前置閱讀：已完成全專案結構盤點與主要文件／關鍵路徑閱讀；直接核對 feat/shiye-publication／88b5049（V11.8），起始工作樹乾淨，112 個 App Swift 檔／14 個 XCTest 檔／268 個 test 方法。非逐行完整稽核，未重跑 build／測試／GUI。V11.9 具體需求待提供；既有批准與 active 人工驗收保留。詳見 implementation-log.md。

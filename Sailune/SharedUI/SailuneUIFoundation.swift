@@ -21,6 +21,7 @@ enum SailuneTheme {
     static let panelSurface = Color.workspacePanelBackground
     static let subtleSurface = Color.secondary.opacity(0.06)
     static let controlSurface = Color(nsColor: .controlBackgroundColor)
+    static let errorText = Color.red
     static let windowSurface = Color(nsColor: .windowBackgroundColor)
     static let insetRowSurface = Color.secondary.opacity(0.05)
     static let faintCardSurface = Color.secondary.opacity(0.04)

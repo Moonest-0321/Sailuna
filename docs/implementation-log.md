@@ -1,5 +1,25 @@
 # 帆夢／拾頁實作紀錄
 
+## 2026-10-02：V12 角色連接就地建立需求盤點
+
+- 目標：盤點每個角色連接入口，整理「選既有角色或直接建立」的 V12 需求；完成條件是可供使用者確認範圍與驗收，非目標是本輪功能實作、schema／資料操作或 GUI 驗收。
+- 起始：`feat/shiye-publication`／`6ffe70a`；只有本紀錄既存 51 行景停歷史紀錄未提交，保留不覆蓋。V11.9 作者自動綁定文件頂部落後目前程式與本紀錄，未在本輪推定正式串接完成。
+- 查證：角色關係、血緣、勢力、能力、物品／歷史、時間軸參與者等入口散在多個 View；正文反白選單已有建立角色 action。AI 分析角色 Picker 屬選取對象，是否納入「每個連接」待確認。
+- 變更：只新增 V12 current／handoff 草案和本紀錄；未修改功能程式或正式資料。驗證：`git status --short`、相關 `rg` 搜尋；build／XCTest／GUI 未執行。下一步確認 R 範圍，再進 U／I。
+- 使用者隨後校正：需求是角色詳情連接物品等其他資料時就地新建對應資料，不是在其他入口新建角色。已修正 current／handoff；查到能力、物品／副本與勢力目前限既有項目，關係／血緣範圍及物品副本流程待確認。未改功能程式。
+- 使用者「是的」確認關係／血緣可就地新建另一角色，物品須同時新建副本並直接設為目前角色持有。已於 current 記 R approved 與 U 草案；實際功能仍未動。核對既有物品列表新建時原已建立副本，角色物品區持有操作經 `ItemCopyStore.setHolder`，能力與勢力分別涉及獨立 store。UI／實作批准、build／tests／GUI 均待後續。
+- 使用者回覆「U」批准 UI，並要求實作時依守則。已讀 `coding-standards.md`、`testing.md`、開發流程 4a、架構／資料模型相關章節；核對血緣 sheet、現有物品／能力／勢力建立與跨 store API，將風險與驗證寫入 I 提案。R／U approved、I pending；功能程式未動，建置／測試／GUI 未執行。下一步為使用者明確批准開始實作。
+- 使用者回覆「I」授權實作。修改前 `git status --short`：V12 四份文件修改（current／handoff／status／本紀錄），本紀錄另含起始既有景停 51 行修改；`feat/shiye-publication`／`6ffe70a`。目標為五類角色詳情就地建立並連接；完成條件含功能與適用驗證，非目標為其他模組入口／schema／正式資料。補查關係網另有 `AddGeneralRelationshipSheet`，屬同一角色詳情操作，接線時一併處理。尚未改功能程式。
+
+## 2026-10-02：V12 角色詳情就地新建並連接（進度）
+
+- 變更：新增 `CharacterLinkedCreation.swift` 集中能力／物品／勢力／一般關係／血緣的新建連接與錯誤補償；共用名稱 popover 只呈現及回呼。角色區塊、關係網兩個新增關係 sheet 均接線；新角色依每書現有 `sortOrder` 排序。物品產生一個持有副本。`AbilityProgressStore` 與 `ItemCopyStore` 新增可拋錯保存 action；設定 store 儲存後刷新 revision。SharedUI 加錯誤語意 token，未改 schema／遷移。
+- 驗證：主機 Debug `xcodebuild ... build` exit 0；初次在 filesystem sandbox 內因 Xcode 寫入使用者 cache 被拒，改經核准的主機 Xcode 執行通過。新增專項 `CharacterLinkedCreationTests` 2 passed／0 failed；完整非平行 XCTest 268 passed／1 skipped／0 failed（269 total，xcresult `/private/tmp/SailuneV12Derived/Logs/Test`）。完整回歸後僅加入新角色排序與兩項斷言，最終專項重跑 2 passed／0 failed。`swiftc -frontend -parse` 八個受影響 Swift 檔、`git diff --check` 通過。使用者資料／網站／正式資料未操作。
+- 未驗證：隔離 GUI（空候選、Enter、空白取消、命中、淺深色／小視窗）、跨 store 保存故障注入及實際重新開啟。CUA 盤點見多個已運行 Sailune，為避免誤用使用者資料未直接操作；沒有把 XCTest／build 視為 GUI 驗收。下一步以獨立資料位置啟動最新產物，再做故障注入及必要修正。
+- 補充：新增新角色按同書最大 `sortOrder` 後排序及斷言，另補檔案型物品主 store＋副本 store 寫入／重開／持有人 UUID 驗證。最終 V12 專項 3 passed／0 failed，xcresult `/private/tmp/SailuneV12Derived/Logs/Test`；受影響 Swift parse 與 diff check 通過。完整 268 passed 是此小修前結果。
+- GUI 嘗試：複製最新 Debug 產物為 `/private/tmp/SailuneV12GUI/SailuneV12Check.app`，只改暫存副本 bundle ID、以 ad-hoc 簽章並設定 `LSEnvironment` 指 `/private/tmp/SailuneV12GUI/fixture/Sailune-v5.store`。CUA 見空書櫃，建立「V12 隔離測試書」與新角色，進入角色詳情；點物品區時 `Sky Computer Use native pipe closed before response`，再次讀取與重設後仍同樣失敗。唯讀進程檢查顯示暫存 App 仍運行，未見當次 crash report。尚未驗五入口的彈窗或成功連接；未觸及另一個已執行的使用者 Sailune。下一步待 CUA 恢復再續 GUI 與故障注入，不將此輪視為完整人工驗收。
+- 收尾只對已核對路徑的暫存測試程序 PID 56990 發 SIGTERM，後續 `ps` 無該 PID；使用者既有 Sailune 程序未操作。隔離 fixture 留在 `/private/tmp/SailuneV12GUI` 供後續重試。
+
 ## 2026-09-30：首次發布自動建立作者綁定（開始）
 
 - 目標：任何已登入帳號首次上傳時，依該書筆名建立自己的作者紀錄；既有書仍依原作者歸屬檢查。暫不處理同帳號多筆名。
@@ -608,3 +628,54 @@
 
 - 依使用者同意，在品牌區卡片後方加入局部煙紫 #756170 色塊，並將少量連結／按鈕互動態套用該色；保留青灰主背景與暖金 Logo。更新靜態資源版本至 ?v=20260930-6。
 - 本機預覽服務重新啟動，HTTP 200；瀏覽器目視核對桌面與 390px 手機卡片交疊及色塊呈現。
+
+## 2026-09-30：依手繪筆記重排景停 Hero
+
+- 閱讀使用者 PDF 手繪筆記（1 頁），採用題句橫框、延伸線、大型內容留白框與右下重疊「景停 Innisfree」名牌的構圖。移除 Hero 重複放大的 Logo 與原 CTA；頁首 Logo／導覽維持。藍字標示的內容位置先留空，遵守先前不自行添加敘述的要求。
+- 靜態資源版本更新至 ?v=20260930-7；本機預覽核對 1280px 桌面與 390px 手機，無明顯溢出，名牌及框線均完整。
+
+## 2026-09-30：依使用者校正手繪頁面分界
+
+- 使用者澄清首頁 Hero 包含 HERO 字樣、題句橫框及跑馬燈列，並截止於跑馬燈下線；大框與右下重疊名牌才屬「關於景停」。已按此拆分 HTML section。
+- 導覽文字／順序改為手繪稿的「關於景停、拾頁、作品、帆夢」，內容使用稿上「優秀作品、最新消息、節錄跑馬燈、文字敘述、景停 Innisfree」原字；框體比例與重疊位置依稿調整。
+- 靜態資源版本至 ?v=20260930-10；目視檢查 1280px 桌面與 390px 手機，手機 document scrollWidth=390 無橫向溢出。
+
+## 2026-09-30：景停屋簷式首頁 v11
+
+- 依新 Wireframe 改為墨綠屋簷導覽及懸掛 Logo、近黑 Hero、中央景停題字、灰紫題匾與右下摘句；保留確認題句「張燈樓結綵 留風盼景停」。
+- 加入手動詩詞切換與淡出入、手機折疊導覽；無自動輪播或點陣背景。
+- 瀏覽器核對桌面及 390px 手機，摘句與選單正常，scrollWidth=390；截圖保存 Innisfree-site/design/hero-v11.jpg。
+
+## 2026-09-30：景停首頁依草圖比例還原 v12
+
+- 依使用者要求移除自行重構的中央題字與留白構圖，還原全幅 HERO 佔位、左上 Logo、橫向導覽、45% 題匾與右下 35% 摘句。保留配色調整及原題句。
+- 瀏覽器核對桌面區塊及底部分界位置。
+
+## 2026-09-30：景停首頁退回 v11
+
+- 依使用者回饋撤回 v12 的草圖比例排版，恢復 v11 的中央景停題字、留白與雙區塊構圖。
+
+## 2026-09-30：景停恢復手稿前版型
+
+- 依使用者澄清退回手稿介入前的網站構圖與 v6 配色：普通導覽、主視覺 Logo／題句、關於景停留白、青灰內容區與煙紫品牌色塊。移除手稿後加入的屋簷、題匾、摘句輪播與交疊框。
+
+## 2026-09-30：景停題句縮小並移至入口上方
+
+- 將首頁大幅題句縮小，靠近「關於景停＋」入口上方；改用楷書優先的字體堆疊與較疏字距，保留原句與既有版型。
+
+## 2026-09-30：景停題句改行書單行
+
+- 首頁題句改為單行，採行書字體 Ma Shan Zheng 優先顯示；移除「關於景停＋」入口，頂部導覽仍可前往關於景停。
+
+## 2026-09-30：景停題句字體比較
+
+- 製作獨立字體對照頁 Innisfree-site/design/font-options.html，以同句同色比較正風毛筆細筆、正風毛筆常規、莫大毛筆常規；首頁字體暫未替換。
+- 字體取自 max32002/masafont 與 max32002/bakudaifont，依 SIL OFL 1.1；僅擷取題句所需字形，完整授權文字保存於 assets/fonts/OFL-LICENSE.txt。
+- 核對三款字體載入、繁體題句字形完整與桌面預覽，截圖保存 design/font-options.jpg。
+- 先將正風毛筆細筆套用首頁題句，保留另外兩款在對照頁；核對桌面與 390px 手機無橫向溢出，截圖 design/hero-zhengfeng-light.jpg。
+
+## 2026-09-30：景停 v16 獨立保存
+
+- 依使用者要求保留目前正風細筆版，複製首頁 HTML、CSS、JavaScript、全部 assets 至 Innisfree-site/versions/v16/；後續試驗只修改根目錄工作版。
+- SHA-256 比對 10 個快照檔案均與工作版一致。獨立路徑為 /versions/v16/。
+- 依使用者要求，另將保留版複製到專案根目錄「景停保留版-2026-09-30」，附獨立啟動說明與首頁預覽圖；10 個網站檔案雜湊比對一致。

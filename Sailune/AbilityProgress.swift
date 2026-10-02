@@ -116,6 +116,35 @@ enum AbilityProgressSchemaV1: VersionedSchema {
     func addLevel(abilityID: UUID) { let level = AbilityLevel(abilityID: abilityID, sortOrder: (levels.filter { $0.abilityID == abilityID }.map(\.sortOrder).max() ?? -1) + 1, name: "新等級"); context.insert(level); levels.append(level); save() }
     func deleteAbilityLevel(_ level: AbilityLevel) { connections.filter { $0.currentLevelID == level.id }.forEach { $0.currentLevelID = nil }; context.delete(level); levels.removeAll { $0.id == level.id }; save() }
     func connect(characterID: UUID, abilityID: UUID) { guard !connections.contains(where: { $0.characterID == characterID && $0.abilityID == abilityID }) else { return }; let connection = CharacterAbilityConnection(characterID: characterID, abilityID: abilityID); context.insert(connection); connections.append(connection); save() }
+    func connectAndSave(characterID: UUID, abilityID: UUID) throws {
+        guard !connections.contains(where: { $0.characterID == characterID && $0.abilityID == abilityID }) else { return }
+        let connection = CharacterAbilityConnection(characterID: characterID, abilityID: abilityID)
+        context.insert(connection)
+        do {
+            try context.save()
+            connections.append(connection)
+            persistenceErrorMessage = nil
+        } catch {
+            context.rollback()
+            try? reload()
+            throw error
+        }
+    }
+    func removeNewAbilityLinks(_ abilityID: UUID) throws {
+        let removedConnections = try context.fetch(FetchDescriptor<CharacterAbilityConnection>()).filter { $0.abilityID == abilityID }
+        let removedLinks = try context.fetch(FetchDescriptor<AbilityBookLink>()).filter { $0.abilityID == abilityID }
+        removedConnections.forEach(context.delete)
+        removedLinks.forEach(context.delete)
+        do {
+            try context.save()
+            connections.removeAll { $0.abilityID == abilityID }
+            bookLinks.removeAll { $0.abilityID == abilityID }
+        } catch {
+            context.rollback()
+            try? reload()
+            throw error
+        }
+    }
     func deleteConnection(_ connection: CharacterAbilityConnection) { histories.filter { $0.connectionID == connection.id }.forEach(context.delete); histories.removeAll { $0.connectionID == connection.id }; context.delete(connection); connections.removeAll { $0.id == connection.id }; save() }
     func addHistory(connectionID: UUID) { let history = CharacterAbilityHistory(connectionID: connectionID, sortOrder: (histories.filter { $0.connectionID == connectionID }.map(\.sortOrder).max() ?? -1) + 1); context.insert(history); histories.append(history); save() }
     func deleteHistory(_ history: CharacterAbilityHistory) { context.delete(history); histories.removeAll { $0.id == history.id }; save() }

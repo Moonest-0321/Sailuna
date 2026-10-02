@@ -292,6 +292,7 @@ struct AddGeneralRelationshipSheet: View {
     @State private var note = ""
     @State private var node: Node?
     @State private var historyID = UUID()
+    @State private var showingNewCharacter = false
 
     @Query private var allRelationships: [CharacterRelationship]
 
@@ -316,6 +317,8 @@ struct AddGeneralRelationshipSheet: View {
                     }
                 }
                 .disabled(bookIsReadOnly)
+                Button("新增角色", systemImage: SailuneSymbol.add.systemName) { showingNewCharacter = true }
+                    .disabled(bookIsReadOnly || relationshipName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 TextField("關係", text: $relationshipName).disabled(bookIsReadOnly)
                 Toggle("反向", isOn: $reverseDirection).disabled(bookIsReadOnly)
                 Text(directionLabel)
@@ -342,6 +345,14 @@ struct AddGeneralRelationshipSheet: View {
         .padding(20)
         .frame(width: 410, height: 370)
         .onChange(of: reverseDirection) { targetID = nil }
+        .popover(isPresented: $showingNewCharacter) {
+            CharacterLinkedNameSheet(title: "新增並連接角色", fieldTitle: "角色真名") { name in
+                try CharacterLinkedCreation.relatedCharacter(named: name, for: center, book: book,
+                    readOnly: bookIsReadOnly, main: modelContext, relationshipType: relationshipName,
+                    reverse: reverseDirection, note: note, node: node)
+                dismiss()
+            }
+        }
     }
 
     private func create() {

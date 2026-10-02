@@ -12,6 +12,7 @@
 - V5.0「不連接角色、物品、能力等」是第一版歷史邊界；V5.2～V5.6 的成員、資產、生命週期與結構化關係是後續增量能力。長期文件不得把 V5.0 邊界誤寫成目前產品限制。
 - 勢力 WorldTerm 連接由欄位語意限制：宗教只能連「信仰」、政體只能連「制度」；核心／範圍目前不連 WorldTerm，既有欄位只作相容保留，後續改接地點／地圖。
 - 角色正文引用使用穩定 URL；已連結名稱可同步，未連結文字只列候選。
+- V12 角色詳情就地新建只新增既有關係種類：能力的書籍／角色 UUID 連接、物品副本持有人、勢力成員、一般關係與雙向血緣；不改 schema、刪除規則、正文引用或匯出。跨 store 新建須先保存主資料，後續失敗補償；補償失敗提示先重新開啟確認，不能回報成功。
 - 正文大綱來源和伏筆／修改標籤均可重新定位；來源消失時分別採大綱降級與標籤刪除。
 - 世界時間軸使用主 store Timeline／Era／Node／Event；既有敘事大綱可建立 Event 並以 metadata 關聯。
 - V6.4 紀元刪除由 `CrossStoreDeletionCoordinator.deleteEra` 限定目前 Book 的所有 Timeline 找出仍連結的 Node；主 store 同次保存刪除 Era／Node，Node cascade 刪除 Event，歷史來源保留但解除定位，StoryPlanning／ItemCopy／AbilityProgress／V5 settings 的 Node references 隨後清理。每本書的 Era／設定獨立，不存在跨書共享；`Book.currentEra` 使用既有 nullify；不改 schema。

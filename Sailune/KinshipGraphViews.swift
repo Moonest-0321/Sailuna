@@ -3,6 +3,7 @@ import SwiftData
 
 // MARK: - 4. 關係圖頁
 struct KinshipGraphView: View {
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     let character: Character
     let book: Book
     let onBack: () -> Void
@@ -85,6 +86,7 @@ struct KinshipGraphView: View {
                     Image(systemName: SailuneSymbol.addCircleFilled.systemName).font(.title3)
                 }
                 .menuStyle(.borderlessButton)
+                .disabled(bookIsReadOnly)
             }
             .padding(.horizontal).padding(.vertical, 8)
             .background(SailuneTheme.controlSurface)
@@ -225,6 +227,7 @@ struct KinshipGraphView: View {
 
 // MARK: - 5. 新增關係彈出視窗
 struct AddKinshipSheet: View {
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     let sourceCharacter: Character
     let book: Book
     let allCharacters: [Character]
@@ -235,6 +238,7 @@ struct AddKinshipSheet: View {
     // 【修正】使用新版 Enum case
     @State private var selectedRole: KinshipRole = .fatherToChild
     @State private var selectedTargetIDString: String = ""
+    @State private var showingNewCharacter = false
 
     var body: some View {
         VStack(spacing: 20) {
@@ -254,6 +258,8 @@ struct AddKinshipSheet: View {
                         Text(char.realName.isEmpty ? "未命名" : char.realName).tag(char.id.uuidString)
                     }
                 }
+                Button("新增角色", systemImage: SailuneSymbol.add.systemName) { showingNewCharacter = true }
+                    .disabled(bookIsReadOnly)
             }
             .frame(minHeight: 150)
 
@@ -269,6 +275,13 @@ struct AddKinshipSheet: View {
             }
         }
         .padding(20).frame(width: 400, height: 250)
+        .popover(isPresented: $showingNewCharacter) {
+            CharacterLinkedNameSheet(title: "新增並連接角色", fieldTitle: "角色真名") { name in
+                try CharacterLinkedCreation.kinshipCharacter(named: name, for: sourceCharacter,
+                    book: book, readOnly: bookIsReadOnly, role: selectedRole, main: modelContext)
+                dismiss()
+            }
+        }
     }
 
     private func createRelation() {

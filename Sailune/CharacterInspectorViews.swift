@@ -708,6 +708,8 @@ private struct CharacterPowerMembershipSection: View {
     let book: Book
     @Environment(V5SettingsStore.self) private var settingsStore
     @State private var errorMessage: String?
+    @State private var showingNewPower = false
+    @Environment(\.bookIsReadOnly) private var bookIsReadOnly
 
     private var powers: [PowerUnit] {
         settingsStore.powers(for: book.id).sorted {
@@ -740,17 +742,28 @@ private struct CharacterPowerMembershipSection: View {
                     .buttonStyle(.plain)
                 }
             }
-            Menu {
-                ForEach(availablePowers) { power in
-                    Button(power.name.isEmpty ? "未命名勢力" : power.name) {
-                        addMembership(to: power)
+            if !bookIsReadOnly {
+                HStack {
+                    Menu {
+                        ForEach(availablePowers) { power in
+                            Button(power.name.isEmpty ? "未命名勢力" : power.name) {
+                                addMembership(to: power)
+                            }
+                        }
+                    } label: {
+                        Label("新增所屬勢力", systemImage: SailuneSymbol.add.systemName)
                     }
+                    .menuStyle(.borderlessButton)
+                    Button("新增勢力", systemImage: SailuneSymbol.add.systemName) { showingNewPower = true }
+                        .buttonStyle(.borderless)
                 }
-            } label: {
-                Label("新增所屬勢力", systemImage: SailuneSymbol.add.systemName)
             }
-            .menuStyle(.borderlessButton)
-            .disabled(availablePowers.isEmpty)
+        }
+        .popover(isPresented: $showingNewPower) {
+            CharacterLinkedNameSheet(title: "新增勢力", fieldTitle: "勢力名稱") { name in
+                try CharacterLinkedCreation.power(named: name, for: character, book: book,
+                    readOnly: bookIsReadOnly, settings: settingsStore)
+            }
         }
         .alert("無法更新所屬勢力", isPresented: Binding(
             get: { errorMessage != nil },

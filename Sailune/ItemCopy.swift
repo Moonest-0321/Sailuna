@@ -284,6 +284,26 @@ final class ItemCopyStore {
         return copy
     }
 
+    @discardableResult
+    func createHeldCopyAndSave(itemID: UUID, characterID: UUID) throws -> ItemCopy {
+        let order = (copies.filter { $0.itemID == itemID }.map(\.sortOrder).max() ?? -1) + 1
+        let copy = ItemCopy(itemID: itemID, sortOrder: order)
+        let holding = ItemCopyHolding(copyID: copy.id, characterID: characterID)
+        context.insert(copy)
+        context.insert(holding)
+        do {
+            try context.save()
+            copies.append(copy)
+            holdings.append(holding)
+            persistenceErrorMessage = nil
+            return copy
+        } catch {
+            context.rollback()
+            try? refresh()
+            throw error
+        }
+    }
+
     func deleteCopy(_ copy: ItemCopy) {
         for holding in holdings where holding.copyID == copy.id { context.delete(holding) }
         for history in histories where history.copyID == copy.id { context.delete(history) }

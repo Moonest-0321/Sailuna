@@ -259,6 +259,7 @@ struct CharacterAbilitySectionView: View {
     @Environment(\.bookIsReadOnly) private var bookIsReadOnly
     @Query(sort: \CharacterAbility.createdAt) private var allAbilities: [CharacterAbility]
     @Environment(AbilityProgressStore.self) private var abilityStore
+    @State private var showingNewAbility = false
 
     private var abilities: [CharacterAbility] { allAbilities.filter { ability in
         abilityStore.bookLinks.contains { $0.abilityID == ability.id && $0.bookID == book.id }
@@ -275,18 +276,28 @@ struct CharacterAbilitySectionView: View {
                     CharacterAbilityConnectionRow(connection: connection, book: book, onOpenAbility: onOpenAbility, onDelete: { abilityStore.deleteConnection(connection) })
                 }
             }
-            if !bookIsReadOnly { Menu {
-                let connectedIDs = Set(connections.map(\.abilityID))
-                ForEach(abilities.filter { !connectedIDs.contains($0.id) }) { ability in
-                    Button(ability.name.isEmpty ? "未命名能力" : ability.name) {
-                        abilityStore.connect(characterID: character.id, abilityID: ability.id)
+            if !bookIsReadOnly {
+                HStack {
+                    Menu {
+                        let connectedIDs = Set(connections.map(\.abilityID))
+                        ForEach(abilities.filter { !connectedIDs.contains($0.id) }) { ability in
+                            Button(ability.name.isEmpty ? "未命名能力" : ability.name) {
+                                abilityStore.connect(characterID: character.id, abilityID: ability.id)
+                            }
+                        }
+                    } label: {
+                        Label("連接能力", systemImage: "link.badge.plus")
                     }
+                    .buttonStyle(.borderless)
+                    Button("新增能力", systemImage: SailuneSymbol.add.systemName) { showingNewAbility = true }
+                        .buttonStyle(.borderless)
                 }
-            } label: {
-                Label("連接能力", systemImage: "link.badge.plus")
             }
-            .buttonStyle(.borderless)
-            .disabled(abilities.isEmpty)
+        }
+        .popover(isPresented: $showingNewAbility) {
+            CharacterLinkedNameSheet(title: "新增能力", fieldTitle: "能力名稱") { name in
+                try CharacterLinkedCreation.ability(named: name, for: character, book: book,
+                    readOnly: bookIsReadOnly, main: modelContext, progress: abilityStore)
             }
         }
     }
@@ -471,6 +482,7 @@ struct CharacterItemSectionView: View {
     @Environment(ItemCopyStore.self) private var copyStore
     @Query(sort: \Item.name) private var allItems: [Item]
     @State private var selectedItemID: UUID?
+    @State private var showingNewItem = false
     private var holdings: [ItemCopyHolding] {
         copyStore.holdings.filter { $0.characterID == character.id }
     }
@@ -504,7 +516,7 @@ struct CharacterItemSectionView: View {
                     }
                 }
             }
-            GroupBox("連接既有物品") {
+            GroupBox("連接物品") {
                 VStack(alignment: .leading, spacing: 8) {
                     Picker("物品名稱", selection: $selectedItemID) {
                         Text("選擇物品").tag(Optional<UUID>.none)
@@ -522,9 +534,17 @@ struct CharacterItemSectionView: View {
                         }
                         .disabled(bookIsReadOnly)
                     }
-                    Text("只能連接既有物品與既有副本；建立、命名與改名請到物品設定。")
-                        .font(.caption).foregroundStyle(.secondary)
+                    if !bookIsReadOnly {
+                        Button("新增物品", systemImage: SailuneSymbol.add.systemName) { showingNewItem = true }
+                            .buttonStyle(.borderless)
+                    }
                 }
+            }
+        }
+        .popover(isPresented: $showingNewItem) {
+            CharacterLinkedNameSheet(title: "新增物品", fieldTitle: "物品名稱") { name in
+                try CharacterLinkedCreation.item(named: name, for: character, book: book,
+                    readOnly: bookIsReadOnly, main: modelContext, copies: copyStore)
             }
         }
     }
@@ -583,6 +603,7 @@ struct CharacterRelationshipSectionView: View {
     @Query private var allRelationships: [CharacterRelationship]
     @Query(sort: \Character.sortOrder) private var allCharacters: [Character]
     @State private var selectedTargetID: UUID?
+    @State private var showingNewTarget = false
 
     private var relationships: [CharacterRelationship] { allRelationships.filter { $0.sourceCharacter?.id == character.id } }
     private var targets: [Character] { allCharacters.filter { $0.book?.id == book.id && $0.id != character.id } }
@@ -600,9 +621,18 @@ struct CharacterRelationshipSectionView: View {
                     ForEach(targets) { Text($0.realName.isEmpty ? "未命名" : $0.realName).tag(Optional($0.id)) }
                 }
                 if !bookIsReadOnly { Button(SailuneActionCopy.addRelationship, action: addRelationship).disabled(selectedTargetID == nil) }
+                if !bookIsReadOnly {
+                    Button("新增角色", systemImage: SailuneSymbol.add.systemName) { showingNewTarget = true }
+                }
             }
         }
         .disabledWhenBookIsCompleted()
+        .popover(isPresented: $showingNewTarget) {
+            CharacterLinkedNameSheet(title: "新增並連接角色", fieldTitle: "角色真名") { name in
+                try CharacterLinkedCreation.relatedCharacter(named: name, for: character, book: book,
+                    readOnly: bookIsReadOnly, main: modelContext)
+            }
+        }
     }
 
     private func addRelationship() {

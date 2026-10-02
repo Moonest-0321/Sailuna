@@ -1,3 +1,15 @@
+# V12 角色詳情連接時直接建立對應資料（2026-10-02）
+
+- 狀態 active；R／U／I approved。V12 五類角色詳情就地建立／連接已接線，自動驗證通過；隔離 GUI 與故障注入待完成。
+- 起始工作樹 `feat/shiye-publication`／`6ffe70a`，原有未提交修改只有 `docs/implementation-log.md` 景停紀錄；本輪新增 current／handoff 文件章節，不覆蓋原修改。
+- 已決定：使用者校正為「角色建立之後，在角色詳情連接其他項目時就地新建該類資料」，例如物品；前輪反向理解為新建角色已否決。已核對能力／物品／勢力入口目前只提供既有資料；別名、外觀、心理、事件已有直接新增。
+- 已完成：關係／血緣另一角色、能力、勢力與物品＋持有副本；角色關係區及關係網一般關係皆接線。主 store 模型先保存，附屬 store 使用可拋錯 action；失敗補償不宣稱共同 ACID。既有選擇入口與 schema 保留。
+- 驗證：Debug build exit 0；完整非平行 XCTest 268 passed／1 skipped／0 failed（最後排序小修之前）；最終 V12 專項 3 passed／0 failed，含雙 store 檔案型重開；Swift parse／diff check 通過。隔離 GUI 只完成空書櫃→測試書→新角色詳情，點物品區時 CUA pipe 中斷，重設仍失敗；隔離 App 程序未崩潰。未做故障注入、未操作使用者 App 或正式資料。
+- 工作樹：`feat/shiye-publication`／`6ffe70a`，起始既有景停 log 修改保留。本輪新增 CharacterLinkedCreation／Tests，修改六個入口／兩個 Store 保存 action／SharedUI token，及 current／handoff／status／spec／audit／本紀錄。未提交。
+- 唯一下一步：恢復 CUA 後接續 `/private/tmp/SailuneV12GUI` 隔離 App 的五入口驗收，再做跨 store 故障注入。最小閱讀：本檔頂部、work-items/current.md 頂部、spec-character.md V12、CharacterLinkedCreation／Tests、implementation-log V12。
+
+---
+
 # V11.9 自動作者綁定需求草案（2026-09-29）
 
 - active；R draft，U／I pending。需求是上傳時直接綁定登入作者帳號及筆名；筆名來源已透過問題詢問，尚未收到選擇。
