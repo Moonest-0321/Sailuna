@@ -1,5 +1,320 @@
 # 帆夢／拾頁實作紀錄
 
+## 2026-10-06：拾頁離線閱讀：正式站查證（第二次回報）
+
+- 目標：使用者回報「無網路的時候 webapp 無法開啟」。沒有改程式。
+- 起始：Pagelet `main`／`691166d`（V7.3）；未提交的有 `public/sw.js`（上一則的修正）與 `docs/work-items/current.md`。
+- 查證（正式站，內建瀏覽器）：V7.3 已上線、service worker 已啟用；`pagelet-static-1` 裡沒有離線畫面的程式檔（只有一個執行時順手存的檔）——和上一則找到的 `sw.js` 比對規則錯誤一致，該修正尚未提交部署。
+- 正式站上實際通過：`/offline` 顯示正常且所需 JS／CSS 全在 HTML 裡；自動存（真正的 Supabase，範例書三節進 IndexedDB）；離線閱讀頁讀 IndexedDB 顯示正文；「下一節」只換「#」不重新載入（真正的 `next/link`）。
+- 未驗證：修正後的 `sw.js` 在真正斷網時的行為；iPhone 主畫面版本；登入的讀者；整本下載。
+- 變更：`docs/work-items/current.md` 加查證紀錄、本紀錄。
+- 下一步：使用者提交並推送 `public/sw.js`；確認正式站換成新的 `sw.js` 後再請使用者實測。
+
+## 2026-10-06：拾頁離線閱讀：使用者回報沒有生效，查證與 sw.js 修正
+
+- 目標：使用者部署後回報「沒有下載按鈕、關閉後無法在飛航模式開啟」，查原因。
+- 起始：Pagelet `main`／`691166d`（V7.3，含離線閱讀），`origin/main` 相同；工作樹乾淨。
+- 查證（正式站 https://pagelet-nu.vercel.app ，內建瀏覽器同源 `fetch`）：`/sw.js` 404、`/offline` 404、頁面載入的 11 個程式檔裡沒有離線閱讀的文字（有 V7.2 的「加到主畫面」）、沒有註冊 service worker。結論：正式站仍是 V7.2，V7.3 未上線。Vercel 後台未登入、GitHub 私有，建置紀錄讀不到；原因未確認。
+- 變更（未提交）：`public/sw.js` 的 `shellAssetUrls` 改為比對所有 `/_next/static/…`。原因：正式站的程式檔在 `/_next/static/immutable/chunks/`，原本的規則比對不到，離線畫面的程式檔不會被預先存下。這是先前「替身伺服器的 HTML 是自己寫的」那個未驗證項目實際出的錯。`docs/work-items/current.md` 加查證紀錄。
+- 驗證：`node --check`；替身伺服器改成正式站同樣的路徑後 Chromium 45 項全過。
+- 未驗證：`next build` 是否通過（V7.3 沒上線的原因）；修正後的 `sw.js` 在正式站的實際行為。
+- 下一步：使用者提供 Vercel 建置錯誤或本機 `npm run build` 的輸出。
+
+## 2026-10-06：拾頁離線閱讀（web app 階段 3）：實作
+
+- 目標：依使用者批准的 R／U／I（兩種存法、接下來 3 節、下載按鈕「乙」、離線畫面照試用頁、登出不清、一次全做）完成離線閱讀。非目標：資料庫變更、新增套件、追更通知。
+- 起始：Pagelet `feat/shiye-publication`／`3a06c8e`；`git --no-optional-locks status --short` 有 `docs/auth-contract.md`（別的工作階段，未碰）與 `docs/work-items/current.md`（上一則的工作單）。
+- 變更（Pagelet，未提交）：新增 `public/sw.js`、`src/app/offline/page.tsx`、`src/components/offline/`（`OfflineApp.tsx`、`OfflineBoot.tsx`、`OfflineSaver.tsx`、`DownloadButton.tsx`、`downloadStore.ts`、`offlineLibrary.ts`、`pendingProgress.ts`）、`src/lib/local/offlineStore.ts`、`src/lib/db/offline.ts`、`src/lib/format/offlinePlan.ts`、`offlineRoute.ts` 與兩個測試檔；修改 `ShelfView.tsx`、`ReaderView.tsx`（一行）、閱讀頁 `page.tsx`、`app/layout.tsx`、`proxy.ts`、`copy.ts`、`docs/ui-guidelines.md`、`docs/coding-standards.md`、`docs/work-items/current.md`。
+- 原因摘要：存節的資料（IndexedDB）而不是整頁 HTML——整本下載只要分批查詢，不必對每一節打一次伺服器算圖。離線畫面是獨立的靜態頁 `/offline`，要顯示什麼放在「#」後面：不經伺服器、換節不必重新載入；`sw.js` 連不上時回一個只做 `location.replace` 的小網頁，不依賴重新導向帶「#」的行為。離線畫面的連結由 `OfflineApp` 攔下點擊自己改「#」，因為 `next/link` 換「#」不會發出 `hashchange`。`sw.js` 只在正式版註冊，開發模式的程式檔網址不帶雜湊，被留住會看到舊程式。下載的狀態放模組層，離開書架下載不中斷。
+- 驗證：VM `node_modules/.bin/tsc --noEmit --incremental false` exit 0；`node_modules/.bin/eslint`（新增與修改的檔案）exit 0；行尾空白檢查無結果；寫回後 SHA-256 與雲端工作區一致。雲端工作區：純函式測試以替身執行器 16/16；實際原始碼＋真正的 `sw.js` 在本機伺服器與 Chromium 跑 45 項行為檢查全過（項目列在工作單）。過程中修掉一個錯：取消下載時，沒有任何節的書沒被一起刪掉。
+- 未驗證：`next build` 與真正的 Next.js（`/offline` 是否靜態、`sw.js` 從真正的 HTML 找到的程式檔是否足夠）；真正的 Supabase；登入的讀者；實機；`npm test`（VM 的 vitest 因 rollup 缺原生模組跑不起來）。替身測試不等於真實串接成功。
+- 測試替身的限制：Playwright 的離線模式不會擋 service worker 的請求，所以離線是用「關掉本機伺服器＋頁面設成離線」模擬的。
+- 下一步：使用者本機 `npm test`、`npm run build`，提交、部署，手機實測。
+
+## 2026-10-06：論壇反覆要求登入修正（帳號切換修正完成）
+
+### 兩個有效帳號的真實切換／重開完成
+
+- 使用者回覆「以登入」（依上下文為已完成登入），讀新版 GUI 確認管理員筆名恢復、Email sheet 已關閉。管理員進論壇可讀正式既有公告並有「新增文章」；切 B 後同一公告可讀、無公告新增入口，沒有登入提示／OTP；再切 A，管理員身分與論壇均恢復。這驗證新 OTP 不覆蓋已保存的 B Session，A／B 各自恢復。
+- 接著在 A 下正常 Cmd-Q 退出、精確重開原 Xcode DerivedData App：A 的筆名與論壇可讀；重開後切 B，其筆名及論壇可讀，無 OTP；最後切回 A 並把 App 留在管理員的已登入論壇畫面。加上先前 B 的頁面往返及重開，兩個帳號有效登入均通過真實鑰匙圈持續保存與帳號往返。本次問題修復完成；不把同一安裝兩帳號讀取推論成兩套安裝、模板寫入或完整 RLS 驗收。
+- 本輪只做 GUI 驗收與文件更新，沒有改功能程式、擷取憑證、代填 OTP、發布／修改／隱藏文章，沒有再執行已通過的替身測試。原 33 passed／1 skipped、簽章 build 與相關 Swift parse 結果仍適用；最終 diff check 通過。登入錯誤失效／長時間服務端續期、實際帳號清理仍只保留既有替身／專項結果，不宣稱此次 GUI 全部驗過。
+- 文件差異另記：Email 登入成功後目前重建工作區根而回首頁；既有社群規格寫「返回原目標頁」，這部分仍待產品確認，不因本次修復自行附加 UI 調整。本次只確認切換帳號不重登，既有 V12.1 其餘 active 驗收保留。下一步為 V12.1 另一安裝的共用論壇／模板驗收；本登入修復不再留待使用者 OTP。
+
+### 主視窗已開：有效帳號的真實往返／重開通過
+
+- 使用者回覆「已開」後，CUA 精確 App 路徑成功讀到新版主視窗，先前工具逾時阻礙解除。本輪不改功能程式、不重跑已通過的替身測試；工作樹仍保留原 V12.1 與本次 Session 修正，無提交／推送。
+- 起始所選管理員帳號顯示論壇登入閘門且無鑰匙圈錯誤。由既有資料空間面板切換第二帳號，切換完成後帳號卡片恢復筆名，論壇直接讀到正式既有公告，不需 OTP；官方公告區沒有新增入口，僅驗普通帳號 UI 與讀取，不能推論所有 RLS 寫入限制已驗。未操作文章內容。
+- 真實操作：第二帳號從首頁返回論壇、模板返回論壇均直接讀同一正式列表；切至缺 Session 的管理員帳號後再切回第二帳號，論壇仍可讀且無 OTP。接著正常 Cmd-Q 退出，精確重開同一 Xcode DerivedData App，第二帳號筆名及論壇列表恢復，同樣無 OTP。再切 Guest，論壇仍顯示登入閘門，本機創作入口可用；沒有借用保存帳號登入解鎖 Guest。
+- 已切回管理員帳號並從論壇「登入」打開既有 Email sheet，交由使用者自行補 OTP 一次。沒有填 Email／驗證碼、提取憑證或發布／修改／隱藏任何遠端內容。已透過問題工具請使用者完成後回覆「已登入」，在等待期間不碰登入視窗。
+- 結果／唯一下一步：第二帳號的真實論壇讀取、進出頁面、帳號往返及 App 重開保留登入通過；管理員舊 Session 缺失，兩個有效帳號同時保留尚未驗。收到「已登入」後立即測 A／B 往返及重開，確認新登入沒有覆蓋 B，再判斷能否完成本次故障修正。其餘 V12.1 跨安裝與模板寫入驗收仍保留。
+
+### 解鎖後接續實機驗收
+
+- 使用者回覆「解鎖」，接續既有修復與驗收。`git status --short` 核對原 V12.1／帳號 Session 修正仍未提交，無回復任何既有修改；本次尚未改功能程式。唯讀 ps 確認只有原 Xcode DerivedData 的修正版帆夢在執行。
+- CUA 以精確 App 路徑多次讀取均逾時；bundle ID 仍因磁碟上多份同 ID App 無法唯一識別，已回到精確路徑。重設 CUA 連線後仍逾時。唯讀 sample（`/private/tmp/sailune-session-fix-app-sample.txt`）見主執行緒在正常 AppKit event loop 等待事件，無這次取樣可見的 deadlock；不能由此推論 Session 已恢復。限定 `Sailune`／`AuthStorage` 的 `/usr/bin/log show --last 20m` 沒有紀錄；初次呼叫 `log` 撞到 zsh 同名函式，已改絕對路徑，未讀憑證。
+- 已請使用者將帆夢主視窗顯示在畫面後回覆「視窗已開」，再驗帳號往返／論壇／重開。解鎖問題已解除，當前阻礙是操作工具無法取得 App 視窗；新版真實登入仍未驗，前輪 33 passed／1 skipped 的替身測試結果不變。下一步接收視窗回覆後讀 GUI，確實缺的舊 Session 才由持有人補 OTP。
+
+### 切換帳號仍失效：接續修正開始
+
+- 目標：依使用者具體回報修正「切換帳號後點論壇被登出」，兩個已驗證帳號各自保留 Session 並隨資料空間恢復；不放寬 Guest／跨帳號權限，不變更遠端 schema 或論壇 UI。
+- 工作樹：`feat/shiye-publication`／`227992a`；原有 V12.1 及前輪 Auth 修正全部保留，Pagelet 不碰。本輪改動前已核對 status、Auth／Coordinator／選擇面板／社群 service 及 SDK SessionStorage；目前是單 Session 覆蓋，且 `switchTo` 只切本機資料，與使用者要求往返保留登入不符。工作單記錄此具體授權取代舊單 Session 限制；UI 沿用。
+- 計畫與風險：前向移入既有鑰匙圈 Session，按環境／UUID 分開 SDK client 與 key；OTP 暫存不覆蓋其他帳號；新 key 成功保存才清舊 key。防過期 Auth 回呼改寫已切換身分，清理只作用指定帳號。使用 SDK＋隔離 storage／HTTP 測試，並做真實 GUI；不得從替身推論正式登入通過。
+
+### 切換修正實作與檢查點
+
+- 變更：新增 `SailuneAccountSessionStore.swift`，鑰匙圈按工作區環境 SHA256／UUID 分 key，舊單 Session 由真實 user UUID 前向移入，保存成功才清舊 key、已存在新版不覆蓋；無法解析原件保留並允許重新 OTP。`SailuneScopedAuthStorage` 讓 SDK 各 client 固定只存取自己的 key，重新登入停用舊 client 的儲存回呼；OTP 暫存於記憶體，成功後才寫該 UUID。`SailuneAccountAuthService` 保留兩帳號 client，切換 active 身分，暫時斷線不清身分，確定失效才重登；selection generation 防舊回呼清新帳號。`WorkspaceCoordinator.switchTo(_:auth:)` 集中本機切換／登入恢復，選擇面板只送 action，啟動按目前工作區恢復，刪除一律清指定帳號 key。`WorkspaceRegistry.accountID` 純函式標為 nonisolated；XCTest host 的預設 Auth 停用，專項注入隔離 storage／HTTP；原 Workspace 刪除測試也改隔離儲存。未改遠端 schema、Auth 專案、備份／領域資料格式或論壇造型。
+- 初輪回歸 exit 65（27 passed／1 skipped／2 failed）：一項延遲回呼 fixture 使用不同 storage cache，未真的觸發續期；另一項錯誤 fixture 缺 SDK 要求的 API version header／舊 `error_code` 欄位。修正替身後第二輪剩 1 fail：確定失效 Session 被 SDK 清成 `sessionMissing`，App 沒提示失效。已保存呼叫前 Session 是否存在，區分首次未登入與登入失效；未把失敗輪記為通過。
+- 最終相關回歸：`xcodebuild -quiet -project Sailune.xcodeproj -scheme Sailune -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath /private/tmp/SailuneAccountSessionFixDerived -clonedSourcePackagesDirPath /private/tmp/SailuneCommunityDerived/SourcePackages -disableAutomaticPackageResolution -parallel-testing-enabled NO -only-testing:SailuneTests/AccountSessionTests -only-testing:SailuneTests/SailuneAuthStorageTests -only-testing:SailuneTests/WorkspaceTests -only-testing:SailuneTests/CommunityContractTests test` exit 0；xcresult 32 passed／1 skipped／0 failed（33 total）。再新增本機保存失敗保留原工作區與登入測試，單項 `-only-testing:SailuneTests/AccountSessionTests/testFailedWorkspaceSaveKeepsOriginalAccountAndItsLogin` exit 0、1 passed；合計 33 passed／1 skipped／0 failed，skip 仍是真實 Keychain opt-in。涵蓋 SDK OTP 回應保存、兩帳號往返及論壇 JWT、重開、有效續期只更新該 key、登出／移除保留另一帳號、Guest／錯 UUID 拒絕、失效與斷線、舊 Session 遷移及寫入／清理重試、無法解碼舊件與延遲回呼。這些是替身 HTTP／儲存，不等於正式 OTP／鑰匙圈互通。
+- 建置：隔離 `/private/tmp/SailuneAccountSessionFixDerived` 簽章 Debug build exit 0；另用相同 build 配置及 `-derivedDataPath /Users/hsuchengyu/Library/Developer/Xcode/DerivedData/Sailune-enkjfgwzzvvzqgduotdmwyjudtsw` 更新使用者平常由 Xcode 執行的 App，exit 0。受影響 Swift parse／diff check 通過；既有 weak var／測試 `try` 警告不影響本次結果。日誌分別為 `/private/tmp/sailune-account-session-fix-build.log`、`sailune-account-session-fix-tests-verified.log`、`sailune-account-session-save-failure-test.log`、`sailune-account-session-xcode-build.log`。
+- 實機現況：原 Xcode App 的論壇確實顯示登入閘門，選擇面板列兩帳號、目前選指定管理員；另一份前輪測試 App 同時執行。已用 CUA 正常退出兩份舊 App，唯讀 ps 確認沒有帆夢程序，再連接更新後的 Xcode App。首次尚無視窗，第二次工具回 Mac locked，已向使用者請求解鎖。沒有讀取 token／OTP，沒有發文或改正式社群內容。此次未取得新版已登入 GUI；唯一下一步：解鎖後讀新版狀態、測帳號往返與論壇／重開，缺的舊 Session 由持有人補 OTP 一次。更新工作單、規格、architecture、backup／consistency、project-status 與 handoff，保留原所有工作修改及 V12.1 未驗收項目；無提交／推送。
+
+### 實作與中途驗證
+
+- `ContentView.presentLogin` 對已選本機帳號直接打開原 Email OTP sheet；Guest 且本機兩帳號已滿仍進資料空間選擇。帳號選單的「登入」啟用依 `canUseSignedInFeatures`，不再以本機帳號 Email 誤判已登入。沒有新增文案、圖標或表單元件；沿用 `EmailLoginView`。
+- `SailuneAccountAuthService` 將確定缺 Session／失效 refresh token 與暫時連線錯誤分開；後者保留既有使用者身分，論壇服務顯示網路錯誤／重試，不因一次失敗要求 OTP。啟動恢復時若有已存 Session 但暫時續期失敗，保留其 UUID 作為暫時 UI 身分；任何遠端操作仍由 SDK `auth.session` 取得有效 Session 並由工作區驗 UUID。Keychain 本身錯誤仍封鎖並明確重試。`CommunityFailure.message` 把連線錯誤顯示成社群語意，不顯示書籍發布文案。
+- 簽章 Debug build：`xcodebuild -quiet -project Sailune.xcodeproj -scheme Sailune -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath /private/tmp/SailuneForumAuthFixDerived -clonedSourcePackagesDirPath /private/tmp/SailuneCommunityDerived/SourcePackages -disableAutomaticPackageResolution build` exit 0，Team `BL56JJR493`；只有既有 WorkspaceCoordinator weak var 警告。相關 `SailuneAuthStorageTests`＋`CommunityContractTests` test 命令同配置、`-parallel-testing-enabled NO` 與兩個 `-only-testing`，exit 0；xcresult Passed／9 passed／1 skipped／0 failed。略過的是真實 Keychain opt-in，不能當實際 OTP 通過。
+- 實際 GUI：先退出 Xcode 舊 App，單獨開修正版；已選本機帳號而無遠端 Session 時，論壇「登入」直接顯示 Email 表單，不再出現帳號切換面板；取消可返回論壇登入閘門；帳號選單「登入」現在可按，並可開同一表單。真實 OTP 待帳號持有人自行完成；反覆進出論壇、重開後 Session 保留尚未驗。
+- 暫停檢查點：使用者表示會在目前修正版 App 視窗自行完成 OTP，回覆「已登入」。已將本次現況寫入工作單、規格、狀態與交接；`git diff --check` exit 0。未再操作登入表單、未擷取 Email／驗證碼，未改正式遠端資料。唯一下一步是收到使用者回覆後，在同一修正版 App 實測論壇反覆進出及重開保留 Session；若仍失敗，取得實際錯誤路徑再修，不能將本次建置／單元測試宣稱為持續登入驗收通過。
+
+- 目標／完成條件：修正已選帳號進論壇反覆遇到登入閘門；缺 Session 時可直接走原 OTP／鑰匙圈重試，暫時 Auth 失敗不誤清身分，正常登入進出論壇不重驗。非目標：擴大 Guest 權限、變更 Auth 後端、Keychain 格式或既有作品資料。
+- 修改前工作樹：Sailune `feat/shiye-publication`／`227992a`，已有 V12.1 Swift、規格／工作單／交接與 `Localizable.xcstrings` 未提交修改，全部保留；本輪尚未改功能程式。Pagelet 未觸碰。
+- 實機基線：使用者 Xcode Debug App 路徑已簽同一 Team、選中既有帳號但論壇顯示登入閘門；兩本機帳號時「登入」進入選擇面板，當前帳號無可用 OTP 入口；帳號選單「登入」因使用本機 account email 而停用。另一份本輪測試 App 曾同時執行，已結束；單獨重開 Xcode App 仍顯示登入閘門。沒有讀鑰匙圈憑證、OTP 或私人書籍內容。程式另有 `communityClient` 任意 session 錯誤清空身分的路徑；當次實際 Auth 錯誤類型未取得，暫不宣稱單一根因。
+- 使用者直接授權具體修正，依協作規則略過新增功能批准點；保留原 UI 造型及既有 Keychain 安全策略。下一步修正登入入口及暫時 Auth 失敗處理，驗證後續記命令、結果與剩餘限制。
+
+## 2026-10-06：V12.1 正式 App 唯讀冒煙與跨帳號前置
+
+### 使用者具體同意後的正式公告寫入驗收
+
+- 使用者回覆「同意」前一輪列出的測試公告標題、內文、發布後隱藏流程；此授權只涵蓋該則公告，不推定同意公開現有書籍或模板。以已簽章新版 App 和指定管理員現有 Session，在正式「官方公告」發表原列測試內容。App 回到列表並顯示新文章；切到「寫作交流」再返回後仍顯示同一標題、作者與內文，證實正式寫入與重新讀取。
+- 開啟文章按「刪除」時，確認提示的 AX 狀態稍後才出現；明確按「刪除文章」後列表改為「目前沒有文章」。再次切換分類、重讀官方公告仍為空，符合 `hidden` 軟隱藏流程。這次未直接刪資料表列，也未操作使用者其他文章。操作過程有一次 ScreenCaptureKit 擷取失敗，但重連後取得確認提示並完成；未將該錯誤誤記為服務失敗。
+- 本工作樹未修改功能程式或 SQL；只更新實作／狀態／交接／工作單。尚未驗：第二帳號沒有遠端 Session，因此跨帳號／跨安裝讀取、非管理員無公告權、一般作者發文及模板公開／套用／取消公開仍待驗。下一步由第二帳號持有人在帆夢完成 OTP 登入，再以兩安裝驗收；不得由單帳號成功推定整體完成。
+
+- 目標：接續已批准的 V12.1 整合，取得新版 App 實際畫面，確認正式登入帳號能讀取帆夢社群，並準備兩帳號跨安裝驗收。非目標：修改使用者既有書籍、擷取鑰匙圈憑證或未經具體同意發布公告。
+- 開始前工作樹：Sailune `feat/shiye-publication`／`227992a`；既有 V12.1 Swift、規格、部署文件及 `Localizable.xcstrings` 未提交修改全部保留。Pagelet 現有文件修改不動。本輪功能程式及資料庫 SQL 均未修改。
+- 先前無簽章 Debug App 其實有視窗；以 `/tmp/SailuneCommunityDerived/Build/Products/Debug/Sailune.app` 精確選取後，CUA 確認 Guest 進模板顯示登入閘門。多份同 bundle ID 讓以名稱／ID 選取失敗；同一份無簽章 App 的登入表單顯示鑰匙圈授權錯誤，沒有寄碼。較早 02:08 的 crash report 指向當時 `SailuneApp.sharedModelContainer`，不是這次正在執行的視窗或目前原始碼。
+- 以專案既有 Apple Development Team 建立另一份 Debug App：`xcodebuild -quiet -project Sailune.xcodeproj -scheme Sailune -configuration Debug -destination 'platform=macOS,arch=arm64' -derivedDataPath /private/tmp/SailuneCommunitySignedDerived -clonedSourcePackagesDirPath /private/tmp/SailuneCommunityDerived/SourcePackages -disableAutomaticPackageResolution build` exit 0。日誌有 SwiftCompile exit 0 的矛盾訊息及既有 weak var 警告；產物存在，`codesign -dv` 顯示 `com.MooNest.Sailune`、Team `BL56JJR493`、非 adhoc。首次 CUA 連接逾時後，以精確路徑重試取得視窗。
+- 已簽章 App 讀到使用者指定的現有公告管理員帳號，帳號頁 Email 一致；模板「搜尋模板」顯示無公開項目，論壇「官方公告」「寫作交流」均顯示空列表且無載入錯誤；公告區顯示「新增文章」，符合管理員 UI 權限。這證實一個現有登入 Session 的正式 App 讀取冒煙，不證實寫入、跨作者或跨安裝互通。
+- 第二個已加入本機的帳號可切換，但切換後論壇顯示登入閘門，表示目前無有效遠端 Session；已切回原帳號。沒有代填 Email 驗證碼或讀取第二帳號資料。曾準備明確標示的測試公告，按「發表文章」時自動審核拒絕：正式公告會短暫公開，使用者尚未具體授權該內容及副作用。已按「取消」，未發布任何文章；不以 API 或其他管道繞過拒絕，已向使用者請求具體同意。
+- 未驗證／下一步：待使用者對具體測試公告授權及第二帳號完成 OTP 登入；再驗證正式寫入、另一帳號讀取與作者／管理員權限、模板公開／取消公開、兩安裝互通。若使用者不批准正式公告，改以受控非正式環境驗證其寫入；不得稱正式公告寫入已過。V12.1 保持 active。
+
+## 2026-10-06：拾頁離線閱讀（web app 階段 3）：需求與試用頁（只改文件）
+
+- 目標：使用者決定做階段 3。本輪只到需求（R）與畫面試用頁（U 待批准）；不改程式。非目標：實作、資料庫、追更通知。
+- 起始：Pagelet `feat/shiye-publication`／`3a06c8e`（V7.2）；`git --no-optional-locks status --short` 只有 `docs/work-items/current.md`（上一輪的驗收紀錄，未提交）。
+- 失誤紀錄：本次對話一開始、讀到 `AGENTS.md` 之前，agent 執行過一次 `git status --short`（規則禁止）。事後檢查 `.git/index.lock` 不存在，只有索引檔被重新整理；已告知使用者。
+- 已決定（使用者以選項回覆）：兩種存法都要（自動存＋書架「下載這本書」）；自動存＝打開的這一節＋接下來 3 節。
+- 變更：`docs/work-items/current.md` 新增「2026-10-06 離線閱讀」一則（插在 web app 那一則之前）、本紀錄。Pagelet 未提交。
+- 驗證：無程式變更，未執行測試。
+- 未驗證：全部實作事項；iPhone 清除網站資料的實際規則。
+- 下一步：使用者看 Artifact 試用頁決定畫面（U），之後才提實作計畫（I）。
+
+## 2026-10-06：拾頁 web app 階段 1、2 部署與 iPhone 驗收（只改文件）
+
+- 目標：記錄部署結果與使用者的實機回報。沒有改程式。
+- 起始：Pagelet `feat/shiye-publication`／`3a06c8e`（V7.2）；`main`、`origin/main`、`origin/feat/shiye-publication` 都在同一個提交；`git --no-optional-locks status --short` 乾淨。
+- 經過：使用者一度以為推送不了——實際是 V7.2 只推到功能分支、還沒合併到 `main`；改由使用者在 VS Code 合併並推送。之後使用者回報「網站沒有更新」——實際已更新，但兩個階段的改動在電腦上都看不到。
+- 驗證（正式站 https://pagelet-nu.vercel.app ，內建瀏覽器同源 `fetch`）：`/manifest.webmanifest` 200、`/icons/icon-192.png` 200、首頁有 manifest 連結與 `viewport-fit=cover`、前端程式包含「加到主畫面」而伺服器 HTML 不含。使用者 iPhone Safari 實機回報：主畫面開啟無網址列、翻頁底部列未被橫條壓到、主畫面開啟時頁尾入口消失，三項都正常。
+- 未驗證：Android 全部項目；iPhone 橫放、iPad、iPhone Chrome；上方色條顏色。
+- 變更：`docs/work-items/current.md`（web app 工作單標題與結尾）、本紀錄。Pagelet 這一處修改未提交。
+- 下一步：使用者決定是否做階段 3（離線閱讀）。
+
+## 2026-10-06：拾頁可安裝的網站（web app）階段 2：頁尾「加到主畫面」
+
+- 目標：iPhone 不會自己提醒讀者可以把網站加到主畫面，要在網站上留一個做法。做了三種放法的試用頁（Artifact「拾頁安裝提示試用」），使用者選「丙」：不主動提示，只在頁尾多一個「加到主畫面」，點了才展開。非目標：首頁或書架的主動提示（甲、乙）、離線、通知、資料庫。
+- 起始：Pagelet `feat/shiye-publication`／`dccb2e4`（使用者已把階段 1 提交為「test」）；`git --no-optional-locks status --short` 顯示別的工作階段未提交的修改（`AGENTS.md`、`docs/auth-contract.md`、`docs/work-items/current.md`、`src/lib/db/community-schema.database.test.ts`、`supabase/migrations/20261005000000_sailune_community.sql`），本次未碰。`AGENTS.md` 新增的 Git 規則已讀：只用 `git --no-optional-locks status --short`、`git log`、`git show`。
+- 變更（Pagelet，未提交）：新增 `src/components/ui/InstallHint.tsx`、`src/components/ui/installPromptStore.ts`、`src/lib/format/installPlatform.ts`、`src/lib/format/installPlatform.test.ts`；修改 `src/components/ui/SiteFooter.tsx`（加入 `InstallHint`）、`src/lib/copy.ts`（`install.*`，插在 `legal` 前）、`docs/ui-guidelines.md`、`docs/work-items/current.md`（web app 工作單內就地更新）。Sailune 只改本紀錄。
+- 原因摘要：裝置判斷抽成純函式方便測試；Android 的 `beforeinstallprompt` 可能早於頁尾掛載、且進出閱讀頁時頁尾會重新掛載，所以事件留在模組層的 store；不呼叫 `preventDefault`，瀏覽器自己的安裝提示照常。伺服器端一律不輸出，避免 hydration 不一致。
+- 驗證：VM `node_modules/.bin/tsc --noEmit` exit 0、`node_modules/.bin/eslint src tools tests` exit 0、新檔行尾空白檢查無結果。雲端工作區以 esbuild 打包實際原始碼＋Tailwind 4 `compile()`＋Playwright Chromium，iPhone／Android／Mac 的 User-Agent 共 28 項檢查全過；`installPlatform.test.ts` 以 vitest 替身 4/4。
+- 未驗證：`npm test`、`next build`、e2e、真正的 Next.js；實機（iPhone Safari／Chrome、Android Chrome 是否送出 `beforeinstallprompt`）。階段 1 的實機項目同樣仍未驗證。
+- 與另一份待寫回工作的關係：「書庫」差異檔（專案文件）也會改 `copy.ts`；本次在 `legal` 前插入一段，套用差異時 `copy.ts` 的雜湊已不是它記的基準值。
+- 下一步：使用者本機 `npm test`、`npm run build`，提交、部署、手機實測。
+
+## 2026-10-05～06：V12.1 專用 schema 實作（正式整合待完成）
+
+- 目標：依使用者「I」批准的修訂計畫，將帆夢論壇／公開模板／公告權限改接帆夢專用 schema，保留共用登入及舊資料，完成可執行的遷移與驗證。完成條件：新契約、App 接線、權限測試及可用環境的端到端驗收；非目標：新增 UI、變更本機創作／備份、自動公開舊本機文章。
+- 起始工作樹：Sailune `feat/shiye-publication`，已有 V12.1 未提交 Swift／文件與 `Localizable.xcstrings` 修改；Pagelet `feat/shiye-publication`，已有 PWA／閱讀器與文件修改。兩邊現有修改均保留，依同一 Supabase 專案的 migration 序列管理新 SQL。
+- 變更：`SailuneCommunityService` 的社群查詢／`is_admin` RPC 改經 `client.schema("sailune_community")`，同一個 SDK Auth Session；`PGRST106` 提示 schema 未啟用。新帆夢 SQL 原稿 `supabase/migrations/20261005000000_sailune_community.sql`，相同 SHA-256 的部署副本在 Pagelet `supabase/migrations/`；新增獨立 `admins`、權限函式、兩張表及 RLS。舊 `public` 社群表若存在，先複製所有欄位與 UUID／時間戳、核對筆數、撤銷 authenticated 寫入，舊表暫留唯讀。新增 Pagelet `community-schema.database.test.ts`。拾頁 auth-contract 正本升 v0.4，帆夢複本整份同步；更新兩邊工作單、帆夢規格／架構／備份／一致性與部署檢查文件。
+- 決策原因：直接 `ALTER TABLE ... SET SCHEMA` 會使已安裝舊 App 立即無法讀取，故改為先複製並封住舊寫入、待新版驗收後另行退役舊表。共用 Supabase 專案只有一套 migration 紀錄，因此 SQL 原稿在帆夢 repo，部署副本併入拾頁目前唯一序列；正式環境不由兩邊各自推送。`public.site_admins` 與帆夢 `admins` 不互相授權。
+- 資料庫驗證：PGlite 用舊 `20261003010000_community.sql` 建表及樣本資料後，套用新 migration，驗舊資料／UUID 保留、舊表不能再寫、拾頁站長不能發帆夢公告或自授權、帆夢管理員可發、作者與匿名 RLS、模板負載與每小時上限；新測試 4/4、舊社群 4/4。另以沒有舊 community migration 的全新替身資料庫套新 migration，兩張表均成功建立。第一輪新測試因模板 CHECK 函式缺 authenticated EXECUTE 而失敗，補最小權限後重跑通過；TypeScript 第一輪因 PGlite 查詢回傳 unknown 報錯，補結果型別後重跑通過。
+- 自動驗證：Pagelet `npm test` 23 檔／135 passed；`./node_modules/.bin/tsc --noEmit --incremental false` exit 0；新測試 ESLint exit 0。Sailune 無簽章 Debug build `BUILD SUCCEEDED`，最終 `CommunityContractTests` 3/3 passed；`swiftc -frontend -parse` 與 `git diff --check` exit 0。沙盒內第一次 Xcode build 因網路／SwiftPM cache 權限失敗，改用既有 Xcode 套件快取並經核准建置成功，不能把第一次失敗當程式錯誤。
+- 遠端唯讀 API：使用既有 publishable key 呼叫已設定的 Supabase 專案 `select=id&limit=0`，不讀取作者內容；`public.community_templates` 與 `public.community_forum_posts` 均 HTTP 404 `PGRST205`，`sailune_community` 兩表均 HTTP 406 `PGRST106`。當時尚未取得資料庫 `to_regclass` 或 migration 表結果，因此不能只靠 API 聲稱舊表／資料必定不存在。無 Supabase CLI／psql，正式 SQL 尚未套用，Exposed schemas 未設定，未做真實兩帳號／跨安裝／管理員驗收。
+- 2026-10-06 正式 SQL Editor 唯讀預檢：專案 ref 與拾頁 `.env.local` Supabase URL 相符；`public.community_templates`、`public.community_forum_posts`、`sailune_community` 兩表的 `to_regclass` 皆 `NULL`。`supabase_migrations.schema_migrations` 不存在，然而拾頁 books／authors／site_admins 表及 admin_site_daily_views 函式存在，顯示既有正式 SQL 由無 CLI ledger 的方式安裝。本次不執行 `db push`，規劃在 SQL Editor 單獨套用已驗證的帆夢 schema SQL；若執行須明記手動部署且 ledger 尚待整理。這些都是唯讀查詢，未授權或寫入任何新權限；兩份新 SQL 的 SHA-256 核對相同。
+- 使用者已同意正式部署、Data API schema 與首位公告管理員指派。執行前 Safari 前景切到無關私人分頁；電腦操作自動審核拒絕重新選取 Safari，原因是會讀到該分頁完整內容，並明示不得間接繞過。嘗試以目標 SQL Editor URL 選取分頁，但 Safari 不在可選瀏覽器介面；僅列出應用／瀏覽器清單的窄查詢成功，未讀私人分頁內容。已請使用者手動切回既有 SQL Editor 分頁。至本檢查點未套用 SQL、未設定 Exposed schemas、未寫公告管理員，真實兩帳號驗收未做；下一步待目標分頁在前景時繼續，不再重問相同部署授權。
+- 使用者已提供首位帆夢公告管理員的現有登入 Email；使用拾頁後端既有 service role 設定呼叫 Supabase Auth Admin `listUsers` 作唯讀核對，找到唯一匹配 UUID。為避免個資落 repo，本紀錄不保存 Email、UUID 或金鑰，也未指派管理員；已請使用者開啟已登入 Supabase SQL Editor，以便唯讀查資料庫目錄和 migration 紀錄。
+- 阻礙：獨立 in-app browser 的 Supabase Dashboard 要求重新登入；目前沒有可操作的已登入 SQL Editor，且 `.env.local` 沒有資料庫連線資訊／Management API 憑證。沒有使用 service role 執行任意 SQL，也沒有套用 migration。已請使用者在已登入的 Dashboard 開啟共用專案 SQL Editor；未收到頁面就緒回覆。
+- 下一步：完成直接 SQL 唯讀查證與待部署 migration 清單審查，然後按 `docs/community-deployment-v12.1.md` 套用、開放 schema、指派管理員並以兩帳號跨安裝驗收。遠端步驟未完成，V12.1 保持 active。
+- **2026-10-06 正式部署續記（取代本節前述「未套用」狀態）**：使用者切回 Supabase SQL Editor 後，唯讀再查帆夢 schema／`admins`／`is_admin` 均不存在；以 `begin`／`commit` 包住 SHA 已核對的帆夢 migration 原稿，SQL Editor 回 `Success. No rows returned`。新兩內容表及 `admins` 均存在，三表 RLS true；兩內容表各 3 條 policy，初始模板／論壇 0 筆。未改既有拾頁資料；因正式專案無 CLI ledger，此為手動 SQL 部署，未標記任何 migration version。
+- **Data API 與權限稽核**：Data API Settings 儲存 `sailune_community` schema、只開兩內容表與 `is_admin` RPC，不選 `admins`，畫面結果 3/3 schemas、6/14 tables、11/42 functions。匿名 PostgREST 對兩表與 RPC 均 HTTP 401／42501。發現 UI 開關額外授予 `anon` 表 SELECT、`authenticated` 表 DELETE；這超出契約，已立即在 SQL Editor 以交易收回兩內容表及 RPC 的額外 GRANT，重新授予只有 authenticated SELECT、指定欄位 INSERT／UPDATE、`is_admin` EXECUTE。唯讀重查匿名 schema／兩表表級與欄位級 SELECT／RPC EXECUTE 全 false，authenticated 兩表 DELETE、`admins` SELECT／INSERT／UPDATE 全 false；authenticated 兩表 SELECT、模板 payload／論壇 body INSERT 與 `is_admin` EXECUTE 全 true。正式驗證只代表目前權限狀態，後續若改 Data API 開關須再稽核。
+- **公告管理員與 GUI**：以 Auth Admin 唯讀核對的唯一 UUID 插入帆夢 `admins`，SQL Editor 回傳 1 筆；再與 `auth.users` 的使用者指定 Email 關聯核對為 true，名單總數 1。不把 Email／UUID 存 repo。嘗試開啟 `/private/tmp/SailuneCommunityDerived/Build/Products/Debug/Sailune.app` 做新版 App GUI 驗收，電腦操作工具逾時；進程顯示已啟動，但工具仍無法取得視窗，因此沒有確認 App 能載入內容。兩帳號跨安裝、作者互通／隱藏、公告分權與 Guest GUI 均未驗收，不把 SQL／API 拒絕或本機替身等同完整產品結果。下一步取得可操作的新版 App 與第二個真實帳號做實測；V12.1 維持 active。
+
+## 2026-10-05：V12.1 帆夢社群資料與管理權限獨立，規劃檢查點
+
+- 目標：依使用者確認的邊界，保留共用 Supabase Auth，改由帆夢專用 schema 與帆夢管理員名單管理論壇、公開模板與公告；先核對舊契約及遷移狀態，整理可驗證的遷移計畫。完成條件為工作單、規格、交接與下一個批准點一致。非目標：本輪直接改正式資料庫、變更畫面或宣稱跨安裝已成功。
+- 起始工作樹：Sailune `feat/shiye-publication`；`git status --short` 有既有 V12.1 程式／文件修改及 `Localizable.xcstrings`，均保留。Pagelet 有其他 PWA／閱讀器未提交修改，本輪唯讀；其 `20261003010000_community.sql` 已在工作樹中且不屬於本輪修改。
+- 已核對：帆夢 `SailuneCommunityService` 目前直接查 `public.community_*` 並呼叫 `public.is_admin()`；拾頁舊 migration 建表於 `public`，RLS 也使用網站 `is_admin()`。與新決策不一致，故舊 migration 不可作為最終部署契約。尚未查得遠端兩張表是否存在，不推論未部署。
+- 本輪先修改文件與 I 計畫；新 schema／管理員權限／資料搬移是跨產品與遷移契約變更，依協作規則在修訂 I 明確批准前不改功能程式。
+- 變更：更新 `work-items/current.md` 的修訂 R、U 不適用、I 分步及驗收；在 `spec-community-v12.1.md`、`architecture.md`、`pagelet-auth-contract.md` 標明現行 `public` 契約已不符合新決策；更新 `project-status.md` 與 `handoffs/current.md`。未修改帆夢 Swift、拾頁 SQL 或正式環境。保留原已批准功能與本機資料契約。
+- 驗證：唯讀檢視帆夢 service、Auth Session 接線與拾頁 migration／RLS；`git diff --check` exit 0。工作區沒有可用的 Supabase CLI／psql 或資料庫連線設定，因此遠端 `to_regclass` 與 migration 紀錄未查；沒有執行建置、XCTest、GUI 或兩帳號驗收。
+- 唯一下一步：請使用者明確批准 `work-items/current.md` 的 2026-10-05 修訂 I；之後先唯讀查遠端現況，再選安全前向遷移與 App 接線路徑。資料庫是否已有舊表、首位帆夢管理員帳號及統一部署入口需在實作／部署前核實。
+
+## 2026-10-05：拾頁可安裝的網站（web app）階段 1
+
+- 目標：使用者希望把拾頁做成 app。比較三種做法後決定先做「可安裝的網站」（PWA），資料夾結構不搬動；分四階段（可以安裝 → iPhone 安裝提示 → 離線閱讀 → 追更通知），這次只做階段 1。使用者回覆「go」批准。非目標：service worker、安裝提示畫面、通知、任何資料庫變更。
+- 起始：Pagelet `feat/shiye-publication`／`292ea6f`（V7.1）；`git status --short` 只有 `docs/work-items/current.md`（本工作的工作單）。另一個工作階段的「書庫」修改尚未寫回本機（會動 `SiteHeader.tsx`、`copy.ts`、`ui-guidelines.md` 等），本次避開 `SiteHeader.tsx` 與 `copy.ts`；`ui-guidelines.md` 有改（兩處各加一、兩行），書庫寫回時雜湊會和它記的基準不同。
+- 變更（Pagelet，未提交）：新增 `src/app/manifest.ts`、`src/app/manifest.test.ts`、`src/lib/local/themeColor.ts`、`public/icons/icon-192.png`／`icon-512.png`／`icon-maskable-512.png`；修改 `src/app/layout.tsx`（`appleWebApp`、`viewport-fit=cover`）、`src/components/ui/ThemeToggle.tsx` 與 `src/components/reader/ReaderView.tsx`（上方色條跟著頂欄／閱讀背景）、`ReaderView.tsx` 兩種底部列與 `src/components/ui/SiteFooter.tsx`（iPhone 底部安全區）、`src/styles/globals.css`（body 左右安全區）、`src/proxy.ts`（matcher 排除 manifest）、`docs/ui-guidelines.md`、`docs/work-items/current.md`。Sailune 只改本紀錄。
+- 原因摘要：全站深淺色是讀者按鈕選的（`<html data-theme>`），不是跟系統，所以 `theme-color` 不能用 metadata 加 media query，改由前端讀 token 設定，且自己建立標籤不交給 React。讀 CSS 變數而非算出的背景色，因為閱讀頁外層換色有過渡。圖示以雲端 Chromium 算圖（圖形與既有 `apple-icon.png` 相同，量過是 `Logo` 的 medium 版），再寫回本機。
+- 驗證：VM `node_modules/.bin/tsc --noEmit` exit 0、`node_modules/.bin/eslint src tools tests` exit 0、`git diff --check` exit 0。雲端工作區自寫檢查 33/33：esbuild 打包後實際執行 `manifest.ts` 並核對圖示尺寸；Tailwind 4 `compile()` 編譯 `globals.css` 確認新 class 的 CSS 與 `md:pb-0` 的先後；`themeColor.ts` 在 Chromium 的讀取與設定；安全區為 0 時底部列高度不變。maskable 圖形最遠像素半徑 0.361（安全區 0.40）。
+- 未驗證：`npm test`（新的 `manifest.test.ts` 未用真正的 vitest 跑過）、`next build`、e2e、真正 Next.js 的輸出（manifest 連結、viewport 標籤）、所有實機行為（Android 安裝、iPhone 加入主畫面、底部橫條、橫放、色條顏色）。
+- 下一步：使用者本機 `npm test`、`npm run build`，部署後手機實測並提交；之後才進階段 2（iPhone 安裝提示，需 U 批准）。
+
+## 2026-10-05：拾頁後台換分頁遲鈍（伺服器地區與等待回饋）
+
+- 目標：使用者回報後台「點擊轉換項目的時候明顯遲鈍」。找出原因並修正。
+- 起始：Pagelet `feat/shiye-publication`／`75f10e9`（V7，已合併到 main 並部署），`git status --short` 乾淨。
+- 量測（內建瀏覽器在正式站同源 `fetch`，未登入）：首頁 3 次 TTFB 1433／1435／1767 ms，`x-vercel-id: hkg1::iad1::…`（邊緣節點香港、函式在美東 iad1）；`/admin`（未登入回 404）311–433 ms；靜態 `/privacy` 102 ms（首次 605 ms）。Supabase 專案在東京（v1 工作單記載）。結論：函式與資料庫不在同一地區，每次資料庫呼叫跨太平洋；後台每次換分頁有身分檢查＋資料讀取數趟，且等待時沒有畫面回饋。使用者電腦 VM 的 `curl` 被網路代理擋下（403），未繞過。
+- 變更（Pagelet，未提交）：新增 `vercel.json`（`"regions": ["hnd1"]`，全站生效）；新增 `src/components/admin/AdminNav.tsx`（`AdminShell` 用 `useTransition`＋`router.push`，等待時分頁立刻切換、內容變淡；`AdminLink`）、`adminRoutes.ts`；`admin/page.tsx` 身分檢查與資料讀取並行、同分頁資料並行；`DataFilters`、`BookTable`、`RankingTable`、`AuthorTable` 的後台內連結改用 `AdminLink`；`docs/work-items/current.md` 於後台改版工作單追加一段。
+- 驗證：VM `tsc --noEmit` exit 0、`eslint src tools tests` exit 0、`git diff --check` 通過；雲端工作區後台元件 45 項行為檢查全過、`tableLogic.test.ts` 10/10。寫回 8 個檔後以 SHA-256 核對一致。
+- 未驗證：部署後的實際回應時間；`AdminShell` 在真正 Next.js 的等待回饋；Vercel 是否接受 `vercel.json` 指定的地區。
+- 下一步：使用者提交、部署；之後重量首頁 TTFB 與 `x-vercel-id`。
+
+## 2026-10-04：拾頁後台改版（作品很多時也好用；含資料庫擴充）
+
+- 目標：後台改成一本一行的表格、可搜尋排序分頁；推薦順序獨立分頁；閱讀數據改「全站總覽 → 單本」；新增作者分頁（停用發布）與站長預覽已下架作品。使用者看過兩版試用頁（Artifact「拾頁後台試用」）後回覆「看起來很不錯，全做吧」，明確包含資料庫變更。使用者定的原則：後台不用特別考慮手機、以書變多時好用為準、不一定要好看。非目標：批次下架、作品超過 1000 本時由資料庫搜尋分頁。
+- 起始：Pagelet `feat/shiye-publication`／`c2b14af`（V6.2），`git status --short` 乾淨。Sailune 只改本紀錄。
+- 變更（Pagelet，未提交）：新 migration `supabase/migrations/20261004000000_admin_scale.sql`（`authors.publishing_disabled`；`current_author_id`／`publication_author_v1`／`ensure_publication_author_v1` 拒絕被停用的作者；`admin_list_books` 加欄位；新增 `admin_site_daily_views`、`admin_book_stats`、`admin_list_authors`、`admin_set_author_publishing`、`admin_preview_book`、`admin_preview_chapter`；`admin_chapter_views` 加卷名；`admin_daily_views` 改為只算可見的節；既有 admin 函式補收回 anon 執行權）。`src/lib/db/admin.ts`（新讀取函式；多列回傳改分頁讀完）。`src/components/admin/`：`BookManager.tsx` 以 `mv -n` 改名 `BookTable.tsx` 並重寫，新增 `FeaturedOrder`、`RankingTable`、`AuthorTable`、`tableParts`、`useAdminAction`、`tableLogic`（＋測試），重寫 `ChapterViewsList`、`DataFilters`，`DailyViewsChart` 改用 `niceMax`。`src/app/(site)/admin/page.tsx` 重寫、`actions.ts` 加 `updateAuthorPublishing`、新增 `admin/preview/[bookId]` 與 `[chapterId]` 兩頁。`src/lib/db/publications.ts` 加 403 `author_disabled`。`src/lib/copy.ts`。測試：新增 `admin.database.test.ts`、`tableLogic.test.ts`；`database.test.ts`、`publications.test.ts`、`reader.e2e.ts` 各加案例。文件：`docs/work-items/current.md`（新工作單）、`ui-guidelines.md`（後台表格）、`data-model.md`、`publication-api.md`。
+- 跨專案影響（帆夢）：發布 API 多一個錯誤 403 `author_disabled`；預檢 RPC `ensure_publication_author_v1` 對被停用的作者丟 `publication_author_disabled`（errcode 42501）；被停用時暫存封包上傳會被 Storage policy 拒絕。帆夢端未改，遇到時顯示什麼訊息未驗證。
+- 工作方式：雲端工作區連不到 npm（registry 403），無法 `npm ci`；改為把 138 個原始檔 stage 到雲端工作區開發，再用 `device_commit_files` 寫回（27 個檔，寫回後以 SHA-256 核對兩邊一致）。
+- 驗證：雲端工作區 PostgreSQL 16 套用 11 份 migration，以「PGlite 替身（常駐 psql 連線）＋ vitest 替身＋ esbuild」執行實際測試檔：`admin.database.test.ts` 6/6、`database.test.ts` 13/13、`recommendations.test.ts` 5/5、`community.database.test.ts` 4/4、`tableLogic.test.ts` 10/10、`publications.test.ts` 新案例通過（該檔其餘案例用到替身不支援的 mock 比對，未以此方式驗證）。使用者電腦 VM：`node node_modules/typescript/bin/tsc --noEmit` exit 0；`eslint src tools tests` exit 0；`git diff --check` 通過。後台元件實際原始碼以 esbuild 打包（React 19.2、Tailwind 4.3 編譯同一份 `globals.css`；`next/link`、`next/image`、Server Action 用替身；240 本假資料、一本 1200 節），Chromium 1280px 共 45 項行為檢查全過，420px 各分頁不撐寬頁面，嚴格模式下無主控台錯誤。
+- 過程中的失敗：(1) 第一次資料庫測試 1 項失敗——既有 `admin_daily_views` 等函式匿名仍有執行權（被 `assert_admin` 擋下，回 admin only 而非 permission denied）；在 migration 補 revoke 後通過。(2) eslint `react-hooks/purity` 不允許在元件內直接呼叫 `Date.now()`，改成模組層的 `requestTime()`。(3) 我把「複製檔案」與「寫回」放在同一批平行呼叫，第一次寫回的是舊檔，重做一次並以雜湊核對。(4) 元件檢查第一次 1 項失敗是假資料隨機把推薦書設成下架，改假資料後通過，程式未改。(5) 試用頁階段發現：表格裡給輔助工具用的絕對定位隱藏文字會讓整頁變寬，外層需 `position: relative`，已寫進守則。
+- 未驗證：`npm test`（真正的 vitest／PGlite）、`npm run test:e2e`、`next build`、真正的 Next.js 環境（伺服器元件 `admin/page.tsx` 與兩個預覽頁未實際算圖）、正式 Supabase 套用、Supabase 以 `.range()` 分頁呼叫 RPC 的實際行為、帆夢對新錯誤的顯示、霞鶩文楷實際載入後的版面。
+- 部署順序：先套用 migration 再部署網站（新版網站搭配舊資料庫，後台會顯示錯誤頁）。
+- 下一步：使用者本機 `npm test` → Supabase SQL Editor 套用 `20261004000000_admin_scale.sql`（更早未套用的先依序套用）→ `npm run dev` 以站長帳號走一遍四個分頁 → 提交。
+
+## 2026-10-04：拾頁閱讀頁換頁方式（滾動／翻頁、翻頁動畫開關）
+
+- 目標：閱讀設定新增「換頁方式」（滾動｜翻頁）與「翻頁動畫」（開｜關）。使用者提出需求，看過可操作的試用頁（Artifact「拾頁翻頁閱讀試用」）後回覆「great」。非目標：記住節內頁碼、擬真翻書效果、直排。不動資料庫。
+- 起始：Pagelet `feat/shiye-publication`／`f5590ef`；`git status --short` 有閱讀頁箭頭、書架按鈕、分享卡片、方向鍵換節四批未提交修改與未追蹤的 `Claude outputs/`。Sailune 只改本紀錄。
+- 變更（Pagelet）：`src/lib/local/readerSettings.ts`（`pageMode`、`hasPageAnimation`、`parseReaderSettings`）與新測試；新增 `src/lib/local/readerPosition.ts`（sessionStorage 記「上一節從最後一頁開始」）；新增 `src/components/reader/paging.ts` 與測試；`chapterKeys.ts`／`.test.ts` 以 `mv -n` 改名為 `readerKeys.ts`／`.test.ts` 並擴充（兩個檔都還沒提交過）；`ReaderView.tsx`（CSS 多欄分頁、橫向位移、點按區、觸控滑動、頁碼列；鍵盤監聽改用 `useEffectEvent`）；`ReaderSettingsPanel.tsx`（兩列新選項、面板最大高度）；閱讀頁 `page.tsx`（`ReaderView` 加 `key`）；`copy.ts`；`docs/ui-guidelines.md` §6；`docs/work-items/current.md` 新增工作單。
+- 設計取捨：頁寬不另外量，位移寫成 `translateX(calc(-n * (100% + 40px)))`，只需由 `scrollWidth` 算頁數；分頁狀態用 reducer，重新分頁時照比例保留位置。全站未分層的 `:focus-visible` 規則優先於 Tailwind 工具類別，點按區的內縮外框需加 `!`。開發模式（嚴格模式）下掛載用的 effect 會跑兩次，「從最後一頁開始」的記號只設成 true、不被第二次覆寫。
+- 驗證：VM 內 `npx tsc --noEmit` exit 0；`npx eslint src` exit 0；`git diff --check` 通過。雲端工作區以 esbuild 打包實際原始碼（React 19.2.8、Tailwind 4.3.3 編譯同一份 `globals.css`、`next/link` 用替身），Chromium 於 1280×800 與 390×844（觸控）共 68 項行為檢查全過；以替代執行器跑六個測試檔 35 項全過（含先前未曾執行的 `coverColor`、`metaDescription`、方向鍵測試）。
+- 過程中的失敗：第一次行為檢查有 1 項失敗（電腦寬度下字級加 2px 頁數沒有增加），是檢查本身的假設太強，改為加 5px 後通過；程式未改。替代執行器起初缺 `toBeDefined`，補上後通過。
+- 未驗證：真正的 Next.js 環境（dev／build）、Safari 與實體手機、霞鶩文楷載入後的分頁、`npm test`（vitest 本身）、`npm run test:e2e`。未提交、未部署。
+- 下一步：使用者本機（含手機 Safari）實際翻頁確認後，與前四批一起提交。
+
+## 2026-10-04：拾頁閱讀頁方向鍵換節
+
+- 目標：閱讀頁按 → 到下一節、← 到上一節（使用者回覆「方向鍵」）。非目標：畫面提示、其他快捷鍵。不動資料庫。
+- 起始：Pagelet `feat/shiye-publication`／`f5590ef`；`git status --short` 有閱讀頁箭頭、書架按鈕、分享卡片三批未提交修改與未追蹤的 `Claude outputs/`。Sailune 只改本紀錄。
+- 變更（Pagelet）：新增 `src/components/reader/chapterKeys.ts` 與測試；`src/components/reader/ReaderView.tsx` 加 `keydown` 監聽，以 `ref` 觸發既有連結的 `click()`（不用 `useRouter`，因為現有的 `ReaderView.test.ts` 以 `renderToStaticMarkup` 在沒有 App Router 的環境下算圖）；`docs/work-items/current.md` 新增工作單。
+- 驗證：`npx tsc --noEmit` exit 0；`npx eslint src/components/reader` exit 0；`git diff --check` 通過。
+- 未驗證：瀏覽器實際按鍵、`npm test`、`npm run test:e2e`。未提交、未部署。
+- 下一步：使用者本機確認後與前三批一起提交。
+
+## 2026-10-04：拾頁分享卡片（說明文字與預覽圖）
+
+- 目標：連結被貼到通訊軟體或社群時有預覽圖與說明；不動資料庫。使用者選定全站說明「拾頁｜線上閱讀連載小說」。
+- 起始：Pagelet `feat/shiye-publication`／`f5590ef`，`git status --short` 有 `docs/ui-guidelines.md`、`docs/work-items/current.md`、`ReaderView.tsx`、`ShelfView.tsx`（前兩項工作尚未提交）。Sailune 只改本紀錄。
+- 變更（Pagelet）：新增 `src/app/opengraph-image.png`、`opengraph-image.alt.txt`、`src/lib/siteMetadata.ts`、`src/lib/format/metaDescription.ts` 與測試；修改 `src/app/layout.tsx`（description、openGraph、twitter）、`src/lib/copy.ts`（siteDescription）、`src/app/(site)/book/[bookId]/page.tsx`（generateMetadata 帶書名與簡介）；`current.md` 新增工作單。未新增資料庫查詢、未改 migration。
+- 過程：第一版把 `SITE_OPEN_GRAPH` 從 layout 匯出，`tsc` 報錯（layout 不能有額外匯出），改放 `lib/siteMetadata.ts`。根層 openGraph 不寫 title／description，避免子頁面的卡片標題都變成站名。
+- 驗證：`npx tsc --noEmit` exit 0；`npx eslint src` exit 0；`git diff --check` 通過；Python 等效實作核對截斷邏輯；預覽圖尺寸 1200×630。
+- 未驗證：`npm test`、`next build`、實際 `<meta>` 輸出、各平台卡片。未提交、未部署。
+- 下一步：使用者提交部署後貼連結實測。
+- 追加（同日）：使用者看過卡片示意後指出預覽圖太空。經使用者同意，透過內建瀏覽器從 Google Fonts（fonts.gstatic.com）取得霞鶩文楷 TC 粗體子集（「拾頁線上閱讀連載小說Pagelet」，woff2 5,272 bytes，以 SHA-256 核對傳輸無誤），僅用於產圖，未放進任何專案。畫三個排法供選，使用者選「3 米色底・橫排」；定稿縮窄為整組 520px 寬（方形安全範圍 630px）。覆寫 `src/app/opengraph-image.png`；`opengraph-image.alt.txt` 改為「拾頁 Pagelet：線上閱讀連載小說」；`copy.siteDescription` 改為「線上閱讀連載小說」；`docs/ui-guidelines.md`「標誌」補一條。驗證：`npx tsc --noEmit`、`npx eslint src` exit 0，`git diff --check` 通過；Chromium 以該字體算圖並檢視橫圖與方形裁切。未驗證：`npm test`、`next build`、部署後各平台實際卡片。
+- 備註：Pagelet 內未追蹤的 `Claude outputs/` 是 Claude 桌面 App 存放本對話傳給使用者的預覽圖的資料夾，不屬於專案，不要提交。
+
+## 2026-10-03：拾頁書架列內按鈕改次要樣式（設計改版收尾）
+
+- 目標：書架「已加入書架」每列的「繼續閱讀」由朱紅主要按鈕改為次要按鈕，「移出書架」字色轉灰；整頁只剩上方卡片一個朱紅按鈕。使用者看過對照頁後回覆「可」。
+- 起始：Pagelet `feat/shiye-publication`／`f5590ef`，`git status --short` 為 `docs/work-items/current.md`、`src/components/reader/ReaderView.tsx`（步驟 6 尚未提交）。Sailune 只改本紀錄。
+- 變更（Pagelet）：`src/components/shelf/ShelfView.tsx`、`docs/ui-guidelines.md` §5、`docs/work-items/current.md`。
+- 驗證：`npx tsc --noEmit` exit 0；`npx eslint src/components/shelf` exit 0；`git diff --check` 通過。
+- 未驗證：本機登入後書架實際畫面、`npm run test:e2e`。未提交、未部署。
+- 下一步：使用者驗收後與步驟 6 一起提交；剩整體驗收與是否做分享預覽圖。
+
+## 2026-10-03：拾頁閱讀頁箭頭改線條圖示（設計改版步驟 6）
+
+- 目標：閱讀頁「上一節」「下一節」的文字箭頭改為線條圖示。非目標：閱讀設定字體選項（使用者決定不做）、「Aa」按鈕。
+- 起始：Pagelet `feat/shiye-publication`／`f5590ef`，`git status --short` 無輸出（步驟 4、5 已隨 V6.1 提交）。Sailune 只改本紀錄。
+- 變更（Pagelet）：`src/components/reader/ReaderView.tsx` 新增檔內元件 `Chevron`，回目錄、上一節、下一節共用；`navLink` 加 `gap-1.5`；`docs/work-items/current.md` 新增工作單。
+- 驗證：`npx tsc --noEmit` exit 0；`npx eslint src/components/reader` exit 0；`git diff --check` 通過。
+- 未驗證：本機 dev 實際畫面、`npm run test:e2e`。未提交、未部署。
+- 下一步：使用者驗收後提交；設計改版剩步驟 7 收尾。
+
+## 2026-10-03：拾頁作品頁與書架去框（設計改版步驟 5）
+
+- 目標：作品頁目錄與書架「已加入書架」去掉白色圓角框，與首頁列表一致；「繼續閱讀」卡片與登入表單保留（使用者回覆「使用提案」）。
+- 起始：Pagelet `feat/shiye-publication`／`80cf504`，工作樹有步驟 4 尚未提交的修改（`BookCover.tsx`、`listStyles.ts`、`globals.css`、`coverColor.ts` 與測試、兩份文件）及未追蹤的 `Claude outputs/`（未觸碰）。Sailune 只改本紀錄。
+- 變更（Pagelet）：`src/app/(site)/book/[bookId]/page.tsx` 目錄 `<section>` 去框、列分隔線改 `line`；`src/components/shelf/ShelfView.tsx`「已加入書架」改分隔線列表；`docs/ui-guidelines.md` §4 新增「外框的使用」；`current.md` 新增工作單。
+- 驗證：`npx tsc --noEmit` exit 0；`npx eslint src` exit 0；`git diff --check` 通過；重建的對照頁（Artifact）在 Chromium 1240／400px 算圖檢查。
+- 未驗證：本機 dev 實際畫面（含登入後書架、390px）、`npm test`、`npm run test:e2e`、`next build`。未提交、未部署。
+- 下一步：使用者驗收後與步驟 4 一起提交；設計改版接著步驟 6「閱讀頁」。
+
+## 2026-10-03：拾頁首頁列表去框與替代封面變色（設計改版步驟 4）
+
+- 目標：替代封面依書名變色、首頁列表去掉外框、封面圓角 4px。使用者看過對照頁後決定：書名留在原位、不要題簽白塊。非目標：區塊順序、作品頁與書架版面。
+- 起始：Pagelet `feat/shiye-publication`／`80cf504`，`git status --short` 為 `docs/work-items/current.md` 修改（步驟 3 定案「強調色維持朱紅」的一行紀錄）與未追蹤的 `Claude outputs/`（非本工作建立，未觸碰）。Sailune 只改本紀錄。
+- 變更（Pagelet）：新增 `src/lib/format/coverColor.ts`、`coverColor.test.ts`；`src/components/book/BookCover.tsx` 底色改 `bg-cover-1…5`、圓角改 `rounded-sm`；`src/styles/globals.css` 以 `--color-cover-1…5` 取代 `--color-cover`；`src/components/home/listStyles.ts` 去框並把列分隔線改 `line`；`docs/ui-guidelines.md` §4、§8 更新；`current.md` 新增工作單。
+- 驗證：`npx tsc --noEmit` exit 0；`npx eslint src` exit 0；`git diff --check` 通過；Python 等效實作核對雜湊分布；`cover-ink` 對五色對比 6.98–8.07。以重建的首頁對照頁（Artifact）在 Chromium 1240／400px 算圖檢查。
+- 未驗證：本機 dev 實際畫面、`npm test`（新測試未執行）、`npm run test:e2e`、`next build`。內建瀏覽器窗格本輪停止重繪，未取得正式站模擬截圖。未提交、未部署。
+- 下一步：使用者驗收後提交；設計改版接著步驟 5「作品頁、書架」。
+
+## 2026-10-03：拾頁顏色收斂（設計改版步驟 3）
+
+- 目標：收窄朱紅用途、區分連載中／已完結標籤；底色與強調色色相不動（使用者回覆「可以」）。非目標：底色、替代封面顏色、深色色票重調。
+- 起始：Pagelet `feat/shiye-publication`／`5150124`，`git status --short` 無輸出（字體改版已隨 V5.2a 提交）。Sailune 只改本紀錄。
+- 變更（Pagelet）：書名／章名 hover 改底線（`(site)/page.tsx`、`book/[bookId]/page.tsx`、`NewBooksList`、`RecommendedGrid`、`RecentUpdatesList`、`ShelfView`）；排行前三名數字改 `ink`；`AccountMenu` 頭像改中性色；`globals.css` 焦點外框改 `ink` 並移除 `tag-bg`／`tag-ink`；`LoginForm` 焦點邊框、`BookManager` 勾選框、`ReaderSettingsPanel` 選取框改墨色；`StatusTag` 連載中實心、已完結空心；`docs/ui-guidelines.md` §2、§5 更新；`current.md` 新增工作單。
+- 驗證：`npx tsc --noEmit` exit 0；`npx eslint src` exit 0；`git diff --check` 通過；以 WCAG 公式計算新舊文字組合對比度皆 ≥ 5.15。正式站首頁 1280px 以等效樣式模擬淺色／深色。
+- 未驗證：本機 dev 實際畫面（hover、焦點、登入後頭像、390px）、`npm test`、`npm run test:e2e`、`next build`。未提交、未部署。
+- 下一步：使用者驗收後提交，決定是否試藏青強調色；之後步驟 4「首頁版面與封面替代圖」。
+
+## 2026-10-03：拾頁字體系統（設計改版步驟 2）
+
+- 目標：標題字體由 Noto Serif TC 粗體改為霞鶩文楷，字級收回守則七級（13／15／16／18／22／28／36）。非目標：閱讀頁字體選項、顏色、版面。使用者選定霞鶩文楷並回覆「那你先改好了」。
+- 起始：Pagelet `feat/shiye-publication`／`828f7e7`，`git status --short` 無輸出（步驟 0 已隨 V5.2 提交）。Sailune 只改本紀錄。
+- 變更（Pagelet，23 個檔）：`src/app/layout.tsx` 載入 `LXGW_WenKai_TC` 700、Noto Serif TC 減為 400／600；`src/styles/globals.css` 新增 `--font-display`；各頁與元件的標題 `font-serif`→`font-display`、`font-semibold`→`font-bold`，閱讀頁正文與 Aa 按鈕保留明體；守則外字級逐一改回七級（細目見 Pagelet `docs/work-items/current.md`）；`StatusTag` 小尺寸 11→13px 並固定行高；登入驗證碼輸入框改黑體；`docs/ui-guidelines.md` §3 改寫。
+- 驗證：VM 內 `npx tsc --noEmit` exit 0；`npx eslint src` exit 0；`git diff --check` 通過；grep 確認無守則外字級、`font-serif` 只剩閱讀頁正文與 Aa 按鈕。正式站（已是 V5.2）1280px 注入 Google Fonts 的 LXGW WenKai TC 700 模擬首頁／作品頁／閱讀頁，`document.fonts.check` 為 true，畫面正常。
+- 未驗證：本機 dev 實際畫面、390px 頂欄、深色模式、`npm test`、`npm run test:e2e`、`next build`（建置時需能下載霞鶩文楷）。未提交、未部署。
+- 下一步：使用者驗收後提交；設計改版接著步驟 3「顏色」。
+
+## 2026-10-03：拾頁首頁版面錯誤修正（設計改版步驟 0）
+
+- 目標：修正檢視正式站時發現的兩個版面錯誤（小封面被撐大、簡介長字串被裁）。非目標：推薦卡片書名縮放規則（使用者 2026-09-27 的既有要求，保留並標記待確認）、任何風格變更。
+- 起始：Pagelet `feat/shiye-publication`／`563070d`，`git status --short` 只有 `docs/security-review-2026-10-02.md` 修改，保留不觸碰。前一筆標誌更新已由使用者隨 V5.1 提交。Sailune 只改本紀錄。
+- 變更（Pagelet）：`src/components/book/BookCover.tsx` 替代封面的內距由外層 `p-[8%]` 改為書名上的 `p-[8cqw]`，小封面不輸出空書名元素；`src/app/(site)/page.tsx` 與 `src/app/(site)/book/[bookId]/page.tsx` 的簡介加 `wrap-anywhere`；`docs/work-items/current.md` 新增工作單。原因：百分比內距依父容器寬度計算，36px 封面被撐成 83×83。
+- 查證並撤回：《範例之書》封面看不見是截圖時 lazy 圖片未載入，封面圖（Supabase 公開 bucket 與 `/_next/image`）回應正常。
+- 驗證：VM 內 `npx tsc --noEmit` exit 0；`npx eslint` 三個改動檔 exit 0；`git diff --check` 通過。正式站首頁 1280px 以等效行內樣式模擬：小封面 36×50、推薦封面 100×140、熱門五列皆 79px、簡介 scrollWidth 不超過 clientWidth。
+- 未驗證：本機 dev 畫面與 390px、書架／後台／作品頁的替代封面、`npm test`、`npm run test:e2e`、`next build`。未提交、未部署。正式站目前仍是舊標誌，V5.1 是否已推送部署未確認。
+- 下一步：使用者驗收後提交；設計改版接著步驟 2「字體系統」。
+- 追加（同日）：使用者授權「推薦書目的比例不對也可以改」。修改前 `git status --short` 另有他人進行中的 `docs/auth-contract.md`、`docs/security-review-2026-10-02.md`、`src/lib/db/community.database.test.ts`、`supabase/migrations/20261003010000_community.sql`，未觸碰。變更：`src/app/(site)/page.tsx` 推薦卡片書名改固定 16px、最多 2 行，簡介固定 2 行，文字區間距 6→4px、標籤列改 flex，欄數 1／2／3／4 → 1／2／4；刪除 `src/lib/format/labels.ts` 的 `featuredCardLayout` 與 `CARD_*` 常數（取代 2026-09-27 的四字寬縮字規則）；`docs/ui-guidelines.md` §8 新增「推薦書目卡片」。驗證：`npx tsc --noEmit`、`npx eslint`（page.tsx、labels.ts）exit 0，`git diff --check` 通過；正式站以等效行內樣式模擬 390／768／1024／1280px，欄數 1／2／2／4、卡片高度皆 140px、無水平捲動。未驗證：本機 dev 實際畫面、`npm test`、e2e、build。
+
+## 2026-10-03：拾頁標誌更新（設計改版步驟 1）
+
+- 目標：把拾頁標誌由朱紅底「拾」字換成使用者選定的圖形「抽書」（草稿 B2-2），並補上分頁圖示與 App 圖示（G1 朱紅底）。完成條件：頂欄、分頁、主畫面三處都用新標誌。非目標：字體、顏色 token、其他版面。
+- 起始：Pagelet `feat/shiye-publication`／`f2b14cb`，工作樹已有其他未提交修改（頁尾與條款頁、閱讀數記錄、文件等），僅保留不觸碰。Sailune 只改本紀錄。
+- 變更（Pagelet）：新增 `src/components/ui/Logo.tsx`（large／medium 兩種線寬）、`src/app/icon.svg`（16px 實心版，依 prefers-color-scheme 換色）、`src/app/favicon.ico`（16／32／48）、`src/app/apple-icon.png`（180×180）；`SiteHeader.tsx` 以 `Logo` 取代紅底「拾」；`docs/ui-guidelines.md` 新增「標誌」；`docs/work-items/current.md` 新增工作單。原因：使用者認為原字體過於 AI，且正式站沒有任何分頁圖示。
+- 驗證：VM 內 `npx tsc --noEmit` exit 0；`npx eslint src/components/ui/Logo.tsx src/components/ui/SiteHeader.tsx` exit 0；`git diff --check` 通過。將同一段 SVG 注入正式站 https://pagelet-nu.vercel.app 頂欄模擬，1280px 淺色與深色顯示正常（36×36，顏色 rgb(168,54,42)／rgb(224,122,103)）。圖檔以 Chromium 算圖、目視確認。
+- 未驗證：本機 dev server 實際畫面與 390px、真實瀏覽器的分頁圖示與主畫面圖示、`npm test`、`npm run test:e2e`、`next build`。未提交、未部署。
+- 下一步：使用者在 Mac `npm run dev` 驗收後提交；設計改版接著討論步驟 2「字體系統」。
+
+## 2026-10-02：V12.1 模板與論壇聯網需求盤點
+
+- 2026-10-03 截圖故障追查開始：使用者提供「無法載入公開模板：共享服務無法完成操作」畫面。目標為辨識真實錯誤、修正可在 App 端處理的誤導訊息；完成條件是對服務未啟用給出準確提示並通過相關測試，非目標是未經確認套用正式 migration 或改動使用者作品。修改前 Sailune `227992a` 工作樹保留 V12.1 大量未提交修改及 `Localizable.xcstrings` 新修改；Pagelet `80cf504` 另有 `docs/work-items/current.md` 修改與 `Claude outputs/` 未追蹤，均不覆蓋。核對 App 與開啟的 Pagelet Supabase SQL Editor 屬同一專案；既有交接明列 migration 尚未正式套用。從執行環境唯讀連線因 DNS 無法解析，尚未取得實際 PostgREST 錯誤碼，因此「缺資料表」目前是高可信推論，不當作已證實結果。
+- 追查結果：截圖文字來自 `PostgrestError` 的通用分支，表示伺服器回了資料庫 API 錯誤，而非 App 的無網路分支。依 Supabase 官方錯誤碼文件，`PGRST205` 表示 API 找不到資料表。App 對此碼改顯示「共享功能尚未啟用，請聯絡管理員。」；`CommunityContractTests` 新增對應測試。`xcodebuild ... -only-testing:SailuneTests/CommunityContractTests test` 3 passed／0 failed；Sailune／Pagelet `git diff --check` 均通過。未改動 Pagelet 或正式資料。嘗試以現有 Safari SQL Editor 做唯讀表存在查詢，但使用者同時切換分頁，故停止 UI 操作；沒有執行任何 SQL。未驗證這次實際錯誤碼、migration 套用狀態及跨帳號串接。唯一下一步：取得資料庫唯讀表存在結果；若缺表，再經授權套用 migration 並驗收。
+- 2026-10-03 開始實作：使用者回覆「I」，V12.1 R／U／I 均已批准。本輪修改前 Sailune `feat/shiye-publication`／`227992a`，`git status --short` 只有 current／handoff／status／本紀錄四份既有 V12.1 文件修改；Pagelet `09be389` 有 `.env.example`、文件、DB 程式、測試及新 migration 等其他工作未提交，僅唯讀保留。目標是按已批准流程完成跨安裝共享及全 App 登入界線；本階段先做可獨立驗證的帆夢端工作。完成條件仍包含拾頁服務端權限及兩帳號真實串接；非目標為舊本機文自動公開或其他社群功能。拾頁 auth-contract 限制帆夢 agent 不修改其 schema／migration，且 Pagelet 不在本工作樹可寫根內；需保留跨專案工作交接與未驗證標記。
+- 第一段變更：`WorkspaceCoordinator.canUseSignedInFeatures` 集中工作區／Session 比對，`ContentView` 側欄六個受限頁顯示登入提示並保留目標；首頁建立／匯入可用，隱藏搜尋欄禁用並從 AX 樹隱藏。新增 `spec-community-v12.1.md` 與 `work-items/v12.1-pagelet-handoff.md`；補 V11.5 工作區規格與架構註明新舊畫面政策差異。未改本機模板／論壇檔、備份、SwiftData、Pagelet 程式或正式資料。
+- 驗證：`swiftc -frontend -parse Sailune/ContentView.swift Sailune/WorkspaceCoordinator.swift` exit 0；初次 sandbox `xcodebuild ... build` exit 74，因 Xcode cache 權限及無法解析 GitHub 套件主機；改用核准主機 Xcode 既有套件快取後同 Debug build exit 0。最終搜尋欄小修後 `xcodebuild ... -only-testing:SailuneTests/WorkspaceTests ... test` exit 0，xcresult 顯示 12 passed／0 failed／0 skipped。隔離副本 `/private/tmp/SailuneV121GUI/SailuneV121Check.app` 使用獨立 bundle ID、簽章與 `/private/tmp/SailuneV121GUI/fixture`；CUA 見空 Guest 書櫃、論壇「登入後可使用」、登入 Email sheet、取消返回論壇及回首頁新建／匯入入口。隔離 Keychain 顯示授權錯誤，沒有寄碼或真實登入。GUI 是搜尋欄 AX 小修前產物，該小修僅經最終 test 編譯，尚未再跑 GUI。
+- 未驗證／下一步：拾頁端 auth-contract 正本、migration／RLS／API、帆夢遠端 client 與 UI、兩帳號跨安裝、管理員權限、離線重試、完整 XCTest 與其餘 GUI。原使用者 Sailune 程序及作品未操作；隔離測試 App 視窗已關閉，程序是否退出未驗。下一步先由拾頁端依交接檔凍結並實作服務端契約，然後完成帆夢接線與真實串接；不得把此段視為 V12.1 完成。
+- 目標：把「所有安裝帆夢者可使用共同模板與論壇」整理成可驗收的 R 草案；本輪完成條件為核對現況與必要產品決策。非目標：功能／後端實作、正式資料上傳、部署或既有本機資料轉換。
+- 起始：Sailune `feat/shiye-publication`／`227992a`，`git status --short` 無輸出；Pagelet `09be389` 已有其他未提交文件、程式與 migration，本輪只讀保留。V12 角色連接 GUI／故障注入待辦不改。
+- 查證：模板是 `BookTemplateStore` 的每工作區本機快照，搜尋分頁空白；論壇是 `LocalForumPostsStore` 的每工作區 JSON，五分類純文字文章，不帶遠端作者。拾頁 auth-contract 已有共用 Supabase Auth 與管理員身分，但無模板／論壇 API、表或 RPC。模板快照包含角色／設定／地圖等內容，不可自動公開。
+- 變更：僅在 Sailune 的 current／handoff／status／本紀錄新增 V12.1 草案；Pagelet 未修改。驗證：`git status --short`、相關 `rg`／程式與文件唯讀；build／XCTest／GUI／網路串接未執行（純需求文件）。下一步確認公開與身分政策，再進 U／I。
+- 使用者補充：模板由作者丟上去後大家可看；除「編輯」外其他功能需登入；官方公告限管理員。已將前後兩項記為已決定。「除編輯外」是否作用於整個 App，與本機論壇舊文是否逐篇上傳，已另提兩個範圍問題；尚未把 Guest 既有權限改寫為新政策。只更新需求／交接／狀態文件，無功能、後端、正式資料操作；文件 `git diff --check` 待收尾核對。
+- 追加答覆：登入規則適用整個帆夢；Guest 的「編輯」保留建立書籍、寫正文、角色及設定等整套本機創作。使用者指出論壇文章本來就是手打；已說明提問源於既有本機文章並非共享內容。暫按「新文章手寫後直接發表至共用論壇、舊本機文不自動公開」整理提案，未把舊文遷移視為批准。同步修正四份需求／狀態文件；R 整體、U、I 仍待批准，故未改功能程式、後端或正式資料。未執行 build／XCTest／GUI／網路串接；下一步提出 R／U 提案供審視。
+- 2026-10-03 使用者回覆「Ｒ」，批准前述需求範圍；本輪開始 `git status --short` 僅四份 V12.1 文件修改，`git diff` 已核對並保留。讀取現有 `BookTemplatesView`、`ForumView`、`ContentView` 導覽以提出 U：訪客保留本機創作，其餘入口提示登入；模板手動確認公開／搜尋與套用；論壇新文共用，公告管理員限定，舊本機文不自動公開。變更僅此四份文件的批准與 U 提案；功能、後端、正式資料未動。build／XCTest／GUI／網路串接未執行（純文件），下一步取得 U 回覆後提出 I。
+- 2026-10-03 使用者回覆「Ｕ」，批准上述流程。核對 `development-workflow.md` 階段 3／4a、`coding-standards.md` 責任／錯誤／測試章、`testing.md`、本機資料與備份架構、拾頁 auth-contract 及現有 Session／工作區檢查。發現拾頁正本 §4 舊離線政策與本次全 App 登入規則衝突；I 提案列明由拾頁端更新正本／服務端權限，帆夢端同步契約、接入遠端服務與 UI，舊本機檔及備份保留。Pagelet 工作樹未寫入。變更僅四份 V12.1 文件；I 待批准。未執行 build／XCTest／GUI／網路串接（純文件）；下一步取得 I 回覆。
+
+- 2026-10-03 續作：使用者要求完成未完 V12.1。修改前 Sailune 工作樹已有 V12.1 程式／文件修改，Pagelet 工作樹同時有其他首頁設計變更；只沿用／修改本任務檔案，未回復他人工作。拾頁新增 community migration、RLS、欄位授權、寫作結構及每小時新增上限；資料庫專項 4 passed、`npm test` 77 passed、lint／typecheck exit 0，正式 migration 未套用。帆夢新增遠端 service、模板公開／搜尋／套用、共享論壇 CRUD；舊本機文章／模板和備份保留。修正論壇詳情到編輯器的 sheet 次序，並在總覽／編輯器 TXT／EPUB 匯出入口檢查登入。此前完整非平行 XCTest 271 passed／1 skipped；最後小修後 Debug build exit 0，完整非平行 XCTest 最終 272 項執行、271 passed／1 skipped／0 failed。未驗：真實 Supabase 雙帳號／管理員、正式部署、登入後 GUI、故障重試；不能據此宣稱已聯網。拾頁模板檢查再補拒絕 events 無時間節點的公開負載，首次專項測試 2/4 失敗（空 events 欄位相容），修正後專項 4/4 通過；未把失敗記成成功。再修正「取消公開後重新公開」重試錯誤：App 對同作者、同負載的隱藏列明確解除隱藏；拾頁專項加入恢復可讀，4/4 通過；帆夢最後 Debug build exit 0，這項修正後完整非平行 XCTest 272 項（271 passed／1 skipped／0 failed）通過。下一步取得可操作服務後套 migration 並實測。
+
 ## 2026-10-02：V12 角色連接就地建立需求盤點
 
 - 目標：盤點每個角色連接入口，整理「選既有角色或直接建立」的 V12 需求；完成條件是可供使用者確認範圍與驗收，非目標是本輪功能實作、schema／資料操作或 GUI 驗收。

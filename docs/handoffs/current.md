@@ -1,3 +1,50 @@
+# V12.1 帆夢社群獨立權限實作檢查點（2026-10-06）
+
+> 2026-10-06 登入故障修復 completed：使用者自行補管理員 OTP 後，實機 A→B→A 均直接讀正式既有公告且無登入提示；在 A 下 Cmd-Q／精確重開原 Xcode App，A 身分／論壇恢復，再切 B 也恢復，最後切回 A 的論壇，均無 OTP。這證實兩個帳號各有真實持久 Session，新 OTP 不覆蓋另一帳號；先前 B 頁面往返、重開與 Guest 閘門亦通過。App 留在管理員論壇，無遠端內容寫入、無本輪程式追加變更，未提取憑證／代填驗證碼。原 33 passed／1 skipped、簽章 build／parse 保留，最終 diff check 通過。此登入工作單元完成；V12.1 整體仍 active，唯一下一步在另一安裝驗共用論壇／模板，再驗取消公開與違規直接寫入，不能推論已全串接。另記 Email 登入後回首頁與規格「返回原目標頁」差異為待確認，不自行附加 UI 修改。最小閱讀：本段、work/current 頂部、implementation-log 完成段、community 規格／部署文件；排查 Session 再讀 Auth／AccountSessionStore／Coordinator。下方等待 OTP／視窗／解鎖皆為歷史檢查點。
+
+> 2026-10-06 GUI 最新：使用者「已開」後取得原 Xcode DerivedData 修正版主視窗。第二帳號直接讀正式既有公告；首頁／模板往返論壇、切到缺 Session 的管理員後再切回、Cmd-Q／精確重開同一 App，均保留第二帳號登入且論壇可讀，不需 OTP。Guest 仍鎖論壇，本機創作可用。管理員原 Session 缺失，已切回該帳號並打開 Email sheet，請帳號持有人自行補 OTP 一次，等待回覆「已登入」；此時不得再碰表單或驗證碼。沒有發文／改文／刪文，沒有讀憑證，無功能修改／新測試。第二帳號持續登入通過，兩個有效帳號同時保留仍待驗；唯一下一步收到「已登入」後在同一 App 往返 A／B、讀論壇及重開，再更新本次修復驗收。其餘 V12.1 跨安裝／模板寫入仍保留；下方視窗逾時與 Mac locked 為歷史狀態。
+
+> 2026-10-06 解鎖後續：使用者已解鎖；只有原 Xcode DerivedData 修正版帆夢執行。CUA 精確路徑、重新連線仍逾時，App sample 主執行緒正常等待 AppKit 事件，AuthStorage 限定診斷無紀錄，不能推論登入已恢復。已請使用者點開帆夢顯示主視窗並回覆「視窗已開」。本次只加驗收紀錄，無功能修改／新測試／遠端內容操作；原 33 passed／1 skipped 結果保留，真實兩帳號往返及重開仍未驗。唯一下一步讀使用者顯示的修正版 GUI，再驗論壇與 Session；確實缺的舊 Session 才補 OTP。下方 Mac locked 為先前歷史狀態。
+
+> 2026-10-06 最新：使用者回報前輪仍「切換帳號後點論壇被登出」，已查到架構原因：Coordinator 原只切本機資料，Auth 只保留單一 Session，另帳號登入覆蓋前帳號。依具體修復授權改為環境／UUID 分鑰匙圈 key 與固定 SDK client，舊 Session 先保存再清舊 key，Guest 不借用保存 Session，切換／啟動恢復所選帳號，過期 Auth 回呼不清新身分，登出／移除只清指定帳號。舊版已覆蓋的其他 Session 不能重建，須補 OTP 一次。改動與測試詳細見 implementation-log 最新段；本輪新增 session store／tests，改 Auth／Coordinator／WorkspaceSelection／ContentView 啟動與 Registry 純函式及相關文件，原 V12.1／Localizable 修改保留、Pagelet 不動、未提交。最終相關 XCTest 32 passed／1 skipped／0 failed，另保存失敗分支 1 passed；兩個簽章 build（隔離與原 Xcode DerivedData）、parse／diff check 通過。原兩份舊 App 已正常退出，更新了使用者平常由 Xcode 執行的產物。CUA 連接新版時 Mac locked，已請使用者解鎖；新版實際帳號往返論壇／重開仍未驗，不宣稱已解決真實登入。唯一下一步：收到「已解鎖」後，連接 `/Users/hsuchengyu/Library/Developer/Xcode/DerivedData/Sailune-enkjfgwzzvvzqgduotdmwyjudtsw/Build/Products/Debug/Sailune.app` 讀狀態，驗所選帳號的登入及切換；確實缺舊 Session 才讓帳號持有人自行補 OTP，禁止提取 Keychain token。新聊天最小閱讀：本段、work/current 最新修訂、implementation-log 本輪結果、Auth／SessionStore／Coordinator、spec-workspaces 的登入段。
+
+> 2026-10-06 論壇反覆登入修正檢查點：使用者直接授權修正已選本機帳號仍每次進論壇被要求登入。原因路徑已核對：原論壇登入按鈕在已有兩個本機帳號時只開資料空間選擇，帳號選單又因本機 email 而停用登入；`communityClient` 對所有 Session 取得錯誤都清身分。這不是已證實的鑰匙圈根因，實際錯誤類型仍未知。修正版對已有本機帳號直接開 Email OTP、按有效 Session 啟用帳號選單登入，只在確定 Session 失效時清身分，暫時網路錯誤顯示重試。工作樹仍為 `feat/shiye-publication`／`227992a`，原 V12.1 未提交修改及 `Localizable.xcstrings` 保留；本次新增修改限 `ContentView.swift`、`SailuneAccountAuthService.swift`、`SailuneCommunityService.swift` 和本工作單／規格／紀錄／狀態／交接文件。已簽章 Debug build exit 0，相關 XCTest 9 passed／1 skipped／0 failed，Swift parse 與 diff check 通過；GUI 已驗缺 Session 時論壇及帳號選單都能直接進 Email 表單。使用者正在修正版 App 自行完成 OTP，不擷取憑證；尚未驗反覆進出論壇與重開 App 持續登入，不能宣稱故障已解決。唯一下一步：收到使用者「已登入」後，在單一修正版 App 反覆切論壇與重開驗 Session；若失敗，追查實際錯誤後再修。最小閱讀：本段、`work-items/current.md` 頂部、`implementation-log.md` 本輪段、三個受影響 Swift 檔。
+
+> 2026-10-06 公告實測續記：使用者回覆「同意」具體測試公告及驗收後隱藏。已簽章 App 以指定管理員的正式 Session 發文；切換分類再讀仍顯示同一篇。詳情頁按刪除後稍候出現確認提示，按「刪除文章」完成軟隱藏；重讀公告列表為空。未修改功能程式／SQL，未操作其他文章。第二本機帳號尚無有效 Session，非管理員權限與兩帳號／兩安裝、模板公開及套用仍未驗。下方「送出遭拒／尚無寫入」是取得新授權前的歷史狀態；唯一下一步：第二帳號持有人完成 OTP 登入，再做跨帳號與模板互通驗收。
+
+> 2026-10-06 GUI 續記：精確指定 App 路徑後找到無簽章 Debug 視窗，Guest 模板登入閘門正常；該 App 登入被鑰匙圈授權錯誤擋住。使用既有 Apple Development Team 另建已簽章 Debug App，exit 0、Team 與 bundle ID 核對，實際視窗讀到指定管理員帳號。正式模板搜尋、公告及寫作交流顯示空列表且無錯誤，公告「新增文章」可見。第二個本機帳號無有效 Session，已切回原帳號。測試公告送出遭自動審核拒絕（會在正式環境公開且缺少具體授權），草稿已取消，未發文；已向使用者請求具體批准。不繞過拒絕。原兩帳號／兩安裝、寫入與取消公開仍待驗；下文「無 GUI 證據」是先前歷史狀態。唯一下一步：取得測試公告具體同意與第二帳號登入，完成真實互通；若不批准正式公告，該項只在非正式環境驗證。
+
+- **已決定**：R／I 修訂 approved，U not_applicable；共用 Auth、帆夢專用 `sailune_community` 與獨立管理員，保留原論壇／模板 UI 和 Guest 本機創作。否決沿用拾頁 `public.is_admin()` 管公告；也不改成兩套獨立帳號。
+- **已接線**：帆夢 `SailuneCommunityService` 改查專用 schema；SQL 原稿在帆夢 repo、相同內容部署副本在拾頁唯一 migration 序列；舊 `public` 社群表如存在則複製並封寫，保留唯讀。拾頁 auth-contract v0.4 正本及帆夢複本已同步，部署步驟見 `community-deployment-v12.1.md`。
+- **遠端實況**：部署前 `to_regclass` 證實舊／新社群四表不存在；拾頁核心表／後台函式存在，但無 `supabase_migrations.schema_migrations`，專案 ref 與 `.env.local` 對上。使用者操作當下同意後，SQL Editor 已手動套用帆夢 SQL；Data API 已暴露專用 schema、兩內容表及 `is_admin`，指派指定公告管理員。UI 額外授予的匿名表 SELECT／登入者 DELETE 已立即收回，正式權限重查符合最小授權。匿名 REST 對兩表及 RPC 回 401／42501。雙帳號未驗收；不得直接 `db push`。
+- **驗證**：PGlite 帆夢新 migration 4/4、舊社群 4/4、全新 schema 建立通過；拾頁 `npm test` 135/135、`tsc --noEmit --incremental false`、新測試 ESLint 通過。帆夢 Debug build 與最終社群 XCTest 3/3 通過。正式三表 RLS true、兩內容表各 3 條 policy、初始模板／論壇 0 筆；管理員名單 1 筆且與指定 Email 關聯成立。SQL 權限與匿名 Data API 拒絕已查；嘗試開啟無簽章 Debug App 時電腦操作工具逾時，無 GUI 證據。
+- **工作樹邊界**：Sailune 原有 V12.1 未提交修改及 `Localizable.xcstrings` 保留；本輪改社群 service／測試、SQL、規格／部署／交接文件。Pagelet 原有 `AGENTS.md` 修改保留，本輪只新增 migration／測試並更新正本 auth-contract、工作單；未執行 git 提交、推送或分支操作。
+- **待確認／唯一下一步**：正式資料庫／API 權限部署已完成，CLI migration ledger 仍不存在。唯一下一步是讓本次新版帆夢 App 可操作，再以第二個真實登入帳號在另一安裝實測模板／論壇互通、跨作者限制、取消公開與公告權限；目前無法聲稱整體串接成功。此次 App process 已啟動但電腦操作工具無法取得視窗，需先解決可操作建置／視窗；不提取使用者 Keychain token 來替代登入。新聊天最小閱讀：本段、`work-items/current.md` 頂部、`community-deployment-v12.1.md`、兩份同名 SQL、共用實作紀錄最新段。
+
+---
+
+# V12.1 帆夢社群獨立權限規劃檢查點（2026-10-05）
+
+- **已決定**：使用者同意共用登入，帆夢論壇／公開模板／公告管理員由帆夢獨立管理；拾頁網站管理員不自動擁有帆夢公告權。原因是兩產品的內容與管理責任不同。舊 `public` 社群表與 `public.is_admin()` 方案已被新邊界取代。
+- **暫時假設**：目標 schema 命名 `sailune_community`，維持同一 Supabase 專案與 Auth。migration 由同一正式部署序列管理；帆夢負責社群契約，管理員初始指派由受控維運程序完成。具體部署入口須在實作前核對。
+- **待確認／批准**：遠端是否存在舊表、有無資料及 migration 紀錄；修訂 I 的 schema、前向資料遷移、App 接線與驗收計畫尚待使用者明確批准。沒有查遠端或套用 SQL，不宣稱截圖故障已修好。
+- **工作樹邊界**：Sailune 原有 V12.1 未提交程式／文件與 `Localizable.xcstrings` 均保留；Pagelet 原有 PWA／閱讀器修改與舊 community migration 均未改。本輪只新增帆夢的工作單、規格、狀態、交接及共用實作紀錄文字。
+- **驗證**：唯讀核對帆夢 `SailuneCommunityService` 與拾頁 `20261003010000_community.sql` 的表、RPC、RLS；`git diff --check` exit 0。工作區無 Supabase CLI／psql 或連線設定，遠端表與 migration 未查。沒有執行建置、XCTest、資料庫或雙帳號串接。
+- **唯一下一步**：取得修訂 I 批准後，先唯讀查目標 Supabase 專案的舊表與 migration 狀態，再選不丟資料的部署路徑。新聊天最小閱讀：本段、`docs/work-items/current.md` 頂部、`docs/spec-community-v12.1.md` 頂部與共用實作紀錄最新 V12.1 段。
+
+---
+
+# V12.1 共享模板／論壇整合檢查點（2026-10-03）
+
+- 最新故障：使用者截圖顯示登入後無法載入公開模板。App 原通用文案表明 PostgREST 錯誤；migration 未套用是高可信推論，未取得本次錯誤碼。已補 `PGRST205` 專屬提示及測試 3/3；唯讀網路查詢受 DNS 阻擋，Safari SQL Editor 在使用者切換分頁時停止操作，無 SQL 執行。唯一下一步先唯讀確認 `public.community_templates`、`public.community_forum_posts` 是否存在；再決定部署與真實驗收。保留 Sailune `Localizable.xcstrings`、Pagelet `docs/work-items/current.md`／`Claude outputs/` 的既有修改。
+- 狀態 active；R／U／I approved。已決定：模板手動公開、論壇新文共享、公告僅管理員、Guest 保留本機創作。暫時假設：舊本機論壇文不自動遷移；已否決自動公開既有模板與舊文。
+- 工作樹：Sailune `feat/shiye-publication` 既有多份 V12.1 修改，Pagelet `feat/shiye-publication` 同時有另一工作之首頁設計修改；本輪只改兩端 V12.1 相關檔案與帆夢共用記錄，不回復他人變更。
+- 已接線：拾頁 migration／RLS／權限測試、帆夢 service、模板與論壇 UI、Guest 側欄和匯出登入閘門；舊本機 JSON／備份不遷移。前一次帆夢完整 XCTest 271 passed／1 skipped；拾頁全站 77 passed、最終 V12.1 專項 4/4、lint／typecheck 通過；重新公開小修後帆夢 Debug build 與完整 XCTest 272 項（271 passed／1 skipped／0 failed）通過。
+- 阻礙與未驗：migration 未套用任何正式服務，沒有兩帳號與管理員真實串接、沒有完整已登入 GUI；隔離 Guest GUI 只見論壇登入提示及本機建立入口。提交、本機 DB 替身、Debug build 不等於跨安裝成功。
+- 唯一下一步：最後測試與文檔核對已完成；在可操作的 Supabase 環境套用 `20261003010000_community.sql`，以兩帳號及管理員實測，再決定能否關閉 V12.1 工作單。新聊天最小閱讀：本檔頂部、`docs/work-items/current.md` 頂部、`docs/spec-community-v12.1.md`、`docs/pagelet-auth-contract.md` §7、Pagelet V12.1 migration／測試。
+
+---
+
 # V12 角色詳情連接時直接建立對應資料（2026-10-02）
 
 - 狀態 active；R／U／I approved。V12 五類角色詳情就地建立／連接已接線，自動驗證通過；隔離 GUI 與故障注入待完成。

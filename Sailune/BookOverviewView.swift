@@ -342,6 +342,7 @@ struct BookInfoPanel: View {
 // MARK: - 右側：卷/節目錄樹
 struct VolumeSectionTreeView: View {
     @Environment(WorkspaceCoordinator.self) private var workspaceCoordinator
+    @Environment(SailuneAccountAuthService.self) private var accountAuthService
     let book: Book
     var onSelectSection: ((Section) -> Void)? = nil
     private let dragCoordinateSpace = "book-overview-outline-drag"
@@ -360,6 +361,7 @@ struct VolumeSectionTreeView: View {
     @State private var outlineDropTarget: OutlineDropTarget?
 
     @State private var exportRequest: SailuneExportRequest?
+    @State private var showingExportLoginPrompt = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -368,12 +370,22 @@ struct VolumeSectionTreeView: View {
                 Spacer()
                 Menu {
                     Button {
+                        guard workspaceCoordinator.canUseSignedInFeatures(auth: accountAuthService) else {
+                            showingExportLoginPrompt = true
+                            return
+                        }
                         let content = ExportManager.exportBookToTXT(book: book, marker: sectionUnit)
                         exportRequest = ExportManager.textExportRequest(defaultName: book.title, content: content)
                     } label: {
                         Label(SailuneActionCopy.exportText, systemImage: SailuneSymbol.exportText.systemName)
                     }
-                    Button { exportRequest = EpubExporter.exportRequest(book: book) } label: {
+                    Button {
+                        guard workspaceCoordinator.canUseSignedInFeatures(auth: accountAuthService) else {
+                            showingExportLoginPrompt = true
+                            return
+                        }
+                        exportRequest = EpubExporter.exportRequest(book: book)
+                    } label: {
                         Label(SailuneActionCopy.exportEpub, systemImage: SailuneSymbol.exportEpub.systemName)
                     }
                 } label: {
@@ -391,6 +403,11 @@ struct VolumeSectionTreeView: View {
             if book.volumes.isEmpty { emptyStateView } else { listView }
         }
         .background(Color.appBackground)
+        .alert("登入後可使用匯出", isPresented: $showingExportLoginPrompt) {
+            Button(SailuneActionCopy.acknowledge, role: .cancel) { }
+        } message: {
+            Text("請先透過首頁帳號入口登入，再匯出書籍。")
+        }
         .alert("確認刪除",
                isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } }),
                presenting: deleteTarget) { target in

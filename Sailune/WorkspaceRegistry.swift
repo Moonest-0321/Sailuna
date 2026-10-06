@@ -39,7 +39,7 @@ final class WorkspaceRegistry {
         } else { document = WorkspaceRegistryDocument() }
     }
 
-    static func accountID(userID: UUID, environment: String) -> String {
+    nonisolated static func accountID(userID: UUID, environment: String) -> String {
         let digest = SHA256.hash(data: Data(environment.utf8)).map { String(format: "%02x", $0) }.joined()
         return "\(digest)-\(userID.uuidString)"
     }

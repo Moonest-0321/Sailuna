@@ -109,7 +109,16 @@ V4.4.8 在主 container 與 StoryPlanning store 都成功開啟後，會以現�
 
 舊共用 SQLite 用 online snapshot 複製至 Guest 暫存目錄，附屬檔案完整複製，完成後置換 Guest 目錄，開啟六 store 並建立遷移備份後才記錄完成；原始來源保留。新備份 manifest 的可選 workspaceID 限制直接還原到相同工作區；舊無來源備份只允許 Guest。工作區偏好 plist 隨備份保存，Session 不備份。切換時處理的 pending restore／rollback／安全備份都限於該工作區。
 
+2026-10-06 登入保存前向修正與 SwiftData schema 無關：鑰匙圈 service 仍為 `supabase.gotrue.swift`，新 key 為 `sailune.account-session.<環境 SHA256>-<user UUID>`。既有 `sb-<project>-auth-token` 及可核對 JWT issuer 的舊 `supabase.session` 按其實際 Session UUID 移入；目的 key 已有可核對 Session 時保留目的版本，保存成功才清舊 key，清理失敗保留來源及目的供明確重試。無法解碼或核對的原件不刪，重新 OTP 可建立正確的帳號 Session。每帳號 SDK client 不再自行認領全域 legacy key；token 仍不進工作區登錄、偏好或任何備份。舊版已覆蓋的其他帳號 Session 需補登入，不能從本機 Email 重建。
+
 
 ## Guest 移入與复原
 
 專用移入不使用一般跨空間 restore。Transfer Recovery/<交易 UUID> 保存 Guest.sailunebackup、Destination.sailunebackup 與原始目錄；source archive 的 manifest 仍為 Guest。transfer.json 在 preparing／prepared／installing／committed／completed 邊界落盤；啟動開 container 前復原：commit 前復位目的地，commit 後驗證目的地再重置 Guest。未完成紀錄／復原檔保留，錯誤可重試；操作不吞復位錯誤。歷史 recovery／pending restore 不搬成目的地工作內容。恢復區保留，不在 Guest 重置時刪除。
+
+
+## V12.1 共享模板與論壇
+
+共享模板與論壇文章保存在拾頁 Supabase 的新表，不加入帆夢 SwiftData schema 或 `.sailunebackup`。本機 `book-templates/` 與 `Forum Posts.json` 仍依既有規則備份／還原；還原不會上傳、覆寫或刪除遠端內容。取消公開只隱藏遠端模板，本機快照保留；套用公開模板會建立獨立本機草稿。正式 migration 與跨帳號操作尚未驗收。
+
+2026-10-06 修訂：遠端資料由共用 Supabase 專案中的帆夢專用 `sailune_community` schema 保存。舊 `public.community_*` 若有資料，版本化 migration 先完整複製到新 schema、核對筆數並封住舊表的 authenticated 寫入；舊表暫留唯讀，待新版跨安裝驗收後另作退役。這不改本機 SwiftData、JSON、備份或匯出；正式遷移尚未執行。

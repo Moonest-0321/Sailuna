@@ -116,8 +116,10 @@ struct WorkspaceSelectionView: View {
             if coordinator.selectedID == id { Text("使用中").foregroundStyle(.secondary) }
             else {
                 Button("切換") {
-                    coordinator.switchTo(id)
-                    if coordinator.selectedID == id { onDismiss() }
+                    Task {
+                        await coordinator.switchTo(id, auth: auth)
+                        if coordinator.selectedID == id { onDismiss() }
+                    }
                 }.disabled(account?.isDeleting == true)
             }
             if let account {

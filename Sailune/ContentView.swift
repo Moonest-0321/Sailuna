@@ -38,6 +38,17 @@ struct ContentView: View {
         SectionUnitPreference.resolve(sectionUnitRawValue)
     }
 
+    private var canUseSignedInFeatures: Bool {
+        workspaceCoordinator.canUseSignedInFeatures(auth: accountAuthService)
+    }
+
+    private func presentLogin() {
+        showingAccountPopover = false
+        if workspaceCoordinator.currentAccount != nil { showingEmailLoginSheet = true }
+        else if workspaceCoordinator.accounts.count == 2 { showingWorkspaceSelection = true }
+        else { showingEmailLoginSheet = true }
+    }
+
     private var sectionUnitBinding: Binding<BookTextSectionMarker> {
         Binding(
             get: { selectedSectionUnit },
@@ -48,15 +59,12 @@ struct ContentView: View {
     private var accountPopover: some View {
         AccountPopoverView(
             signedInEmail: workspaceCoordinator.currentAccount?.email,
+            canSignIn: !canUseSignedInFeatures,
             errorMessage: accountAuthService.errorMessage,
             onOpenAccount: {
                 handleSidebarSelection(.account)
             },
-            onEmailLogin: {
-                showingAccountPopover = false
-                if workspaceCoordinator.accounts.count == 2 { showingWorkspaceSelection = true }
-                else { showingEmailLoginSheet = true }
-            },
+            onEmailLogin: presentLogin,
             onSignOut: {
                 Task { await workspaceCoordinator.signOut(auth: accountAuthService) }
             },
@@ -92,7 +100,8 @@ struct ContentView: View {
     }
 
     private var showsStartTopBar: Bool {
-        [.home, .find].contains(selectedSidebarItem)
+        [.home, .find].contains(selectedSidebarItem) &&
+            (!selectedSidebarItem.requiresAccount || canUseSignedInFeatures)
     }
 
     var filteredBooks: [Book] {
@@ -127,7 +136,7 @@ struct ContentView: View {
                     StartSidebarView(
                         selection: $selectedSidebarItem,
                         profile: profiles.first,
-                        isSignedIn: workspaceCoordinator.currentAccount != nil,
+                        isSignedIn: canUseSignedInFeatures,
                         onSelect: handleSidebarSelection,
                         onToggleAccountPopover: {
                             showingAccountPopover.toggle()
@@ -263,7 +272,7 @@ struct ContentView: View {
                 }
             }
             .task {
-                await accountAuthService.restoreSession()
+                await accountAuthService.restoreSession(for: workspaceCoordinator.currentAccount)
             }
             .onChange(of: profiles.first?.penName) { _, name in
                 workspaceCoordinator.updateCurrentPenName(name ?? "")
@@ -355,38 +364,50 @@ struct ContentView: View {
 
     @ViewBuilder
     private func libraryContent(metrics: [UUID: BookStructure.Metrics]) -> some View {
-        switch selectedSidebarItem {
-        case .home, .find:
-            libraryBookContent(metrics: metrics)
-        case .settings:
-            StartSettingsView(sectionUnit: sectionUnitBinding)
-        case .publish:
-            StartPublishingView(
-                books: books,
-                canPublish: workspaceCoordinator.canPublish(auth: accountAuthService),
-                statusForBook: { publicationStore.status(for: $0) },
-                onAdvance: advancePublication,
-                onPublish: publishPublication,
-                onSendUpdate: sendPublicationUpdate,
-                tagsForBook: { publicationStore.tags(for: $0) },
-                onResume: resumePublication,
-                onDelist: { delistingBookID = $0 },
-                onRestoreDraft: restoreDraftPublication,
-                writingStats: writingStatsStore
-            )
-        case .achievements:
-            StartAchievementsView()
-        case .templates:
-            BookTemplatesView(books: books) { bookID in
-                selectedSidebarItem = .home
-                searchText = ""
-                navigationPath = NavigationPath()
-                navigationPath.append(BookRoute(id: bookID, opensEditor: false))
+        if selectedSidebarItem.requiresAccount && !canUseSignedInFeatures {
+            ContentUnavailableView {
+                Label("登入後可使用", systemImage: StartSidebarItem.account.icon)
+            } description: {
+                Text("請登入帳號後使用「\(selectedSidebarItem.rawValue)」。本機書籍與創作仍可在首頁使用。")
+            } actions: {
+                Button("登入", action: presentLogin)
+                    .buttonStyle(.borderedProminent)
             }
-        case .forum:
-            ForumView()
-        case .account:
-            AccountPageView(selectedPlan: $selectedPlan, signedInEmail: workspaceCoordinator.currentAccount?.email)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else {
+            switch selectedSidebarItem {
+            case .home, .find:
+                libraryBookContent(metrics: metrics)
+            case .settings:
+                StartSettingsView(sectionUnit: sectionUnitBinding)
+            case .publish:
+                StartPublishingView(
+                    books: books,
+                    canPublish: workspaceCoordinator.canPublish(auth: accountAuthService),
+                    statusForBook: { publicationStore.status(for: $0) },
+                    onAdvance: advancePublication,
+                    onPublish: publishPublication,
+                    onSendUpdate: sendPublicationUpdate,
+                    tagsForBook: { publicationStore.tags(for: $0) },
+                    onResume: resumePublication,
+                    onDelist: { delistingBookID = $0 },
+                    onRestoreDraft: restoreDraftPublication,
+                    writingStats: writingStatsStore
+                )
+            case .achievements:
+                StartAchievementsView()
+            case .templates:
+                BookTemplatesView(books: books) { bookID in
+                    selectedSidebarItem = .home
+                    searchText = ""
+                    navigationPath = NavigationPath()
+                    navigationPath.append(BookRoute(id: bookID, opensEditor: false))
+                }
+            case .forum:
+                SharedForumView()
+            case .account:
+                AccountPageView(selectedPlan: $selectedPlan, signedInEmail: workspaceCoordinator.currentAccount?.email)
+            }
         }
     }
 
@@ -568,6 +589,13 @@ private enum StartSidebarItem: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    var requiresAccount: Bool {
+        switch self {
+        case .home, .settings: false
+        case .find, .publish, .templates, .forum, .achievements, .account: true
+        }
+    }
+
     var icon: String {
         switch self {
         case .home: return "house"
@@ -723,6 +751,7 @@ private enum AccountPlan: String, CaseIterable, Identifiable {
 
 private struct AccountPopoverView: View {
     let signedInEmail: String?
+    let canSignIn: Bool
     let errorMessage: String?
     let onOpenAccount: () -> Void
     let onEmailLogin: () -> Void
@@ -736,7 +765,7 @@ private struct AccountPopoverView: View {
             accountAction("帳號", systemImage: StartSidebarItem.account.icon, action: onOpenAccount)
             Divider()
             accountAction("登入", systemImage: "envelope", action: onEmailLogin)
-                .disabled(signedInEmail != nil || isWorking)
+                .disabled(!canSignIn || isWorking)
             accountAction("切換帳號", systemImage: "person.2", action: onSwitchAccount)
                 .disabled(isWorking)
             accountAction("登出", systemImage: "rectangle.portrait.and.arrow.right", action: onSignOut)
@@ -960,6 +989,8 @@ private struct StartTopBarView: View {
                 .clipped()
                 .opacity(isSearchPresented ? 1 : 0)
                 .offset(x: isSearchPresented ? 0 : -18)
+                .disabled(!isSearchPresented)
+                .accessibilityHidden(!isSearchPresented)
 
                 HStack(spacing: 10) {
                     Button(action: onCreateBook) {

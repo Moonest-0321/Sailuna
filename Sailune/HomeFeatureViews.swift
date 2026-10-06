@@ -223,7 +223,10 @@ private struct PublicationTagPickerPopup: View {
 struct BookTemplatesView: View {
     let books: [Book]
     let onCreatedBook: (UUID) -> Void
+    @Environment(WorkspaceCoordinator.self) private var workspace
+    @Environment(SailuneAccountAuthService.self) private var auth
     @Environment(\.modelContext) private var modelContext
+    @Query private var profiles: [AuthorProfile]
     @Environment(StoryPlanningStore.self) private var planningStore
     @Environment(V5SettingsStore.self) private var settingsStore
     @Environment(ItemCopyStore.self) private var copyStore
@@ -235,7 +238,21 @@ struct BookTemplatesView: View {
     @State private var selectedSourceBookID: UUID?
     @State private var templateName = ""
     @State private var templatePendingDeletion: BookTemplateDocument?
+    @State private var templatePendingUpload: BookTemplateDocument?
+    @State private var templatePendingUnpublish: BookTemplateDocument?
+    @State private var publishedIDs: Set<UUID> = []
+    @State private var publicationStatusLoaded = false
+    @State private var publicTemplates: [SharedTemplateSummary] = []
+    @State private var isRemoteWorking = false
+    @State private var remoteLoadID = UUID()
+    @State private var remoteError: String?
     @State private var operationError: String?
+
+    private var community: SailuneCommunityService { .init(workspace: workspace, auth: auth) }
+    private var displayName: String {
+        let name = profiles.first?.penName.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return name.isEmpty ? "帆夢使用者" : name
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -259,12 +276,23 @@ struct BookTemplatesView: View {
                                         .foregroundStyle(.secondary)
                                     Spacer(minLength: 0)
                                     HStack {
+                                        if publishedIDs.contains(template.id) {
+                                            Button("取消公開") { templatePendingUnpublish = template }
+                                                .buttonStyle(.bordered)
+                                                .disabled(isRemoteWorking)
+                                        } else {
+                                            Button("上傳並公開") { templatePendingUpload = template }
+                                                .buttonStyle(.bordered)
+                                                .disabled(isRemoteWorking || !publicationStatusLoaded)
+                                        }
                                         Button(role: .destructive) {
                                             templatePendingDeletion = template
                                         } label: {
                                             Label(SailuneActionCopy.delete, systemImage: SailuneSymbol.delete.systemName)
                                         }
                                         .buttonStyle(.bordered)
+                                        .disabled(isRemoteWorking || !publicationStatusLoaded || publishedIDs.contains(template.id))
+                                        .help(publishedIDs.contains(template.id) ? "請先取消公開" : "刪除本機模板")
                                         .accessibilityLabel("刪除模板「\(template.name)」")
 
                                         Spacer()
@@ -299,11 +327,45 @@ struct BookTemplatesView: View {
                 VStack(spacing: 0) {
                     SailuneSearchField(placeholder: "搜尋模板", text: $templateQuery)
                         .padding(.horizontal, 8)
-                    Color.clear.frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if isRemoteWorking {
+                        ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else if publicTemplates.isEmpty {
+                        ContentUnavailableView("找不到公開模板", systemImage: SailuneSymbol.template.systemName)
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    } else {
+                        ScrollView {
+                            LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 16)], spacing: 16) {
+                                ForEach(publicTemplates) { template in
+                                    VStack(alignment: .leading, spacing: 10) {
+                                        Text(template.name).font(.headline)
+                                        Text("\(template.displayName)・格式 V\(template.formatVersion)")
+                                            .font(.caption).foregroundStyle(.secondary)
+                                        Text(template.summary).font(.callout).foregroundStyle(.secondary)
+                                        Spacer()
+                                        Button("使用模板建立草稿") {
+                                            Task { await applyPublicTemplate(template) }
+                                        }
+                                        .buttonStyle(.borderedProminent)
+                                    }
+                                    .frame(maxWidth: .infinity, minHeight: 142, alignment: .leading)
+                                    .padding(16)
+                                    .background(SailuneTheme.windowSurface, in: RoundedRectangle(cornerRadius: 12))
+                                }
+                            }
+                            .padding(20)
+                        }
+                    }
                 }
             }
         }
         .onAppear(perform: loadTemplates)
+        .task(id: "\(selectedTab)|\(templateQuery)|\(workspace.generation)") {
+            if selectedTab == 1 {
+                do { try await Task.sleep(for: .milliseconds(250)) }
+                catch { return }
+            }
+            await loadRemoteTemplates()
+        }
         .overlay(alignment: .bottomTrailing) {
             if selectedTab == 0 {
                 Button { showingSourcePicker = true } label: {
@@ -339,6 +401,38 @@ struct BookTemplatesView: View {
             }
         } message: { template in
             Text("確定刪除「\(template.name.isEmpty ? "未命名模板" : template.name)」？刪除後無法復原。")
+        }
+        .confirmationDialog("上傳並公開模板？", isPresented: Binding(
+            get: { templatePendingUpload != nil }, set: { if !$0 { templatePendingUpload = nil } }
+        ), presenting: templatePendingUpload) { template in
+            Button("上傳並公開") {
+                templatePendingUpload = nil
+                Task { await publish(template) }
+            }
+            Button(SailuneActionCopy.cancel, role: .cancel) { templatePendingUpload = nil }
+        } message: { template in
+            Text("「\(template.name)」將公開 \(template.characters.count) 位角色、\(template.settings.maps.count) 張地圖、\(template.timelines.count) 條時間軸及設定資料，可能包含 PDF 地圖。正文不會上傳。")
+        }
+        .confirmationDialog("取消公開模板？", isPresented: Binding(
+            get: { templatePendingUnpublish != nil }, set: { if !$0 { templatePendingUnpublish = nil } }
+        ), presenting: templatePendingUnpublish) { template in
+            Button("取消公開") {
+                templatePendingUnpublish = nil
+                Task { await unpublish(template) }
+            }
+            Button(SailuneActionCopy.cancel, role: .cancel) { templatePendingUnpublish = nil }
+        } message: { template in
+            Text("「\(template.name)」將從公開搜尋中移除，本機模板仍會保留。")
+        }
+        .overlay(alignment: .top) {
+            if let remoteError {
+                HStack {
+                    Text(remoteError).foregroundStyle(.red)
+                    Button("重試") { Task { await loadRemoteTemplates() } }
+                }
+                .padding(12)
+                .background(SailuneTheme.windowSurface, in: RoundedRectangle(cornerRadius: 8))
+            }
         }
         .alert("模板操作失敗", isPresented: Binding(
             get: { operationError != nil },
@@ -449,6 +543,69 @@ struct BookTemplatesView: View {
         } catch {
             operationError = error.localizedDescription
         }
+    }
+
+    private func loadRemoteTemplates() async {
+        guard workspace.canUseSignedInFeatures(auth: auth) else { return }
+        let requestID = UUID()
+        let requestedTab = selectedTab
+        let requestedQuery = templateQuery
+        remoteLoadID = requestID
+        if requestedTab == 0 {
+            publicationStatusLoaded = false
+            publishedIDs = []
+        }
+        isRemoteWorking = true
+        do {
+            if requestedTab == 0 {
+                let ids = try await community.publishedTemplateIDs()
+                guard remoteLoadID == requestID, selectedTab == requestedTab else { return }
+                publishedIDs = ids
+                publicationStatusLoaded = true
+            } else {
+                let templates = try await community.listTemplates(query: requestedQuery)
+                guard remoteLoadID == requestID, selectedTab == requestedTab,
+                      templateQuery == requestedQuery else { return }
+                publicTemplates = templates
+            }
+            remoteError = nil
+        } catch {
+            guard remoteLoadID == requestID else { return }
+            remoteError = "無法載入公開模板：\(CommunityFailure.message(for: error))"
+        }
+        if remoteLoadID == requestID { isRemoteWorking = false }
+    }
+
+    private func publish(_ template: BookTemplateDocument) async {
+        remoteLoadID = UUID()
+        isRemoteWorking = true
+        defer { isRemoteWorking = false }
+        do {
+            try await community.publishTemplate(template, displayName: displayName)
+            publishedIDs.insert(template.id)
+            remoteError = nil
+        } catch { remoteError = "無法公開模板：\(CommunityFailure.message(for: error))" }
+    }
+
+    private func unpublish(_ template: BookTemplateDocument) async {
+        remoteLoadID = UUID()
+        isRemoteWorking = true
+        defer { isRemoteWorking = false }
+        do {
+            try await community.hideTemplate(id: template.id)
+            publishedIDs.remove(template.id)
+            remoteError = nil
+        } catch { remoteError = "無法取消公開：\(CommunityFailure.message(for: error))" }
+    }
+
+    private func applyPublicTemplate(_ summary: SharedTemplateSummary) async {
+        remoteLoadID = UUID()
+        isRemoteWorking = true
+        defer { isRemoteWorking = false }
+        do {
+            let template = try await community.downloadTemplate(id: summary.id)
+            apply(template)
+        } catch { remoteError = "無法使用公開模板：\(CommunityFailure.message(for: error))" }
     }
 
     @ViewBuilder

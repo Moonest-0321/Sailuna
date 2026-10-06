@@ -90,10 +90,16 @@ ContentView（書櫃）
 
 `LocalForumPostsStore` 負責論壇 JSON sidecar 的解碼、版本檢查、分類投影、排序與原子寫入；`ForumView` 負責分類列表與表單呈現，詳情 View 將修改／刪除意圖交給 Store。`SailuneApp` 在啟動時建立 Store 並注入環境。`SailuneBackupService` 驗證、封裝及還原 `forum-posts.json`，並將目前檔案加入 rollback。此功能不呼叫網路、不建立登入或 SwiftData schema。
 
+V12.1 進度（2026-10-03）：`ContentView` 已對訪客鎖住論壇等非創作頁，身分由 `WorkspaceCoordinator.canUseSignedInFeatures` 比對工作區與 Session；這不使上述本機 Store 變成共享論壇。帆夢 `SailuneCommunityService` 已以同一 Supabase Session 直接讀寫拾頁新增的受 RLS 保護資料表；`SharedForumView` 與模板頁已接 UI。拾頁 migration 僅在本機程式／測試，尚未正式套用或完成雙帳號驗收，見 `spec-community-v12.1.md`。
+
+V12.1 架構修訂（2026-10-06）：App 的 `SailuneCommunityService` 已用同一 SDK Auth Session 取得 `client.schema("sailune_community")`，論壇／模板與公告檢查只走帆夢 schema；拾頁發布 RPC 仍在 `public`。帆夢 SQL 原稿及共用專案部署副本建立專用管理員名單、RLS、舊表資料複製與舊表封寫。正式 Supabase 尚未套用／開放 exposed schema；詳見 `community-deployment-v12.1.md`。
+
 
 ## V11.5 工作區生命週期
 
 WorkspaceRegistry 保存最多兩個帳號與 Guest／目前空間及清理狀態；WorkspaceFactory 沿用原六 store 建立與修復次序；WorkspaceCoordinator 集中切換前保存、多視窗根環境替換、任務阻擋與帳號清理。非同步 AI／模板服務建立時捕捉資料位置；既有 static 位置呼叫點經 WorkspaceLocationAccess 取得目前工作區，切換時清封面快取。詳見 spec-workspaces-v11.5.md。
+
+2026-10-06 登入切換修正：`SailuneAccountSessionStore` 在同一鑰匙圈 service 以環境／user UUID 分 key，前向移入舊 SDK 的單 Session。`SailuneScopedAuthStorage` 限制各 SDK client 只能存取自己的 key，失效 client 的回呼不能覆蓋重新登入憑證；原 `SailuneAuthStorage` 的失敗封鎖／前景重試繼續共用。`SailuneAccountAuthService` 保留每帳號 client，OTP 先使用記憶體暫存，成功後才保存該 UUID；`WorkspaceCoordinator.switchTo(_:auth:)` 集中本機切換與登入恢復，Guest 無 active client。遠端 action 仍檢查帳號 UUID／環境及 selection generation，過期回呼不能清除新身分。XCTest host 的預設 Auth 設定停用，專項透過 initializer 注入隔離 storage／HTTP，避免測試操作正式 Session。
 
 
 ## Guest 整體移入

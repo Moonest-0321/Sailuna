@@ -60,6 +60,7 @@ enum EditorWorkspaceMode: String, CaseIterable, Identifiable {
 // MARK: - 三欄式編輯工作區 (PRD 3.3)
 struct EditorWorkspaceView: View {
     @Environment(WorkspaceCoordinator.self) private var workspaceCoordinator
+    @Environment(SailuneAccountAuthService.self) private var accountAuthService
     @State private var workspaceParticipantID = UUID()
     private enum Layout {
         static let minimumWorkspaceWidth: CGFloat = 960
@@ -99,6 +100,7 @@ struct EditorWorkspaceView: View {
     @State private var hasLoadedPlanningWorkspace = false
     @State private var writingColumnVisibility: NavigationSplitViewVisibility = .automatic
     @State private var exportRequest: SailuneExportRequest?
+    @State private var showingExportLoginPrompt = false
 
     private var bookIsReadOnly: Bool { publicationStore.status(for: book.id) == .completed }
 
@@ -281,6 +283,11 @@ struct EditorWorkspaceView: View {
             aiChatModel.reset()
         }
         .sailuneFileExporter(request: $exportRequest)
+        .alert("登入後可使用匯出", isPresented: $showingExportLoginPrompt) {
+            Button(SailuneActionCopy.acknowledge, role: .cancel) { }
+        } message: {
+            Text("請先透過首頁帳號入口登入，再匯出書籍。")
+        }
     }
 
     @ToolbarContentBuilder
@@ -290,6 +297,10 @@ struct EditorWorkspaceView: View {
                 Button { showingCommandPalette = true } label: { Label("指令面板", systemImage: "command") }
                     .keyboardShortcut("k", modifiers: .command)
                 Button {
+                    guard workspaceCoordinator.canUseSignedInFeatures(auth: accountAuthService) else {
+                        showingExportLoginPrompt = true
+                        return
+                    }
                     if let section = selectedSection {
                         let content = ExportManager.exportSectionToTXT(section: section, marker: sectionUnit)
                         exportRequest = ExportManager.textExportRequest(defaultName: sectionUnit.displayTitle(section.title), content: content)
@@ -298,7 +309,13 @@ struct EditorWorkspaceView: View {
                         exportRequest = ExportManager.textExportRequest(defaultName: book.title, content: content)
                     }
                 } label: { Label(SailuneActionCopy.exportText, systemImage: SailuneSymbol.exportText.systemName) }
-                Button { exportRequest = EpubExporter.exportRequest(book: book) } label: { Label(SailuneActionCopy.exportEpub, systemImage: SailuneSymbol.exportEpub.systemName) }
+                Button {
+                    guard workspaceCoordinator.canUseSignedInFeatures(auth: accountAuthService) else {
+                        showingExportLoginPrompt = true
+                        return
+                    }
+                    exportRequest = EpubExporter.exportRequest(book: book)
+                } label: { Label(SailuneActionCopy.exportEpub, systemImage: SailuneSymbol.exportEpub.systemName) }
             } label: { Label("更多", systemImage: SailuneSymbol.more.systemName) }
             ControlGroup {
                 Button { switchWorkspace(to: .writing) } label: {

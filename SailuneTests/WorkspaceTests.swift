@@ -168,7 +168,7 @@ final class WorkspaceTests: XCTestCase {
         coordinator.openAccount(userID: UUID(), environment: "fixture", email: "b@example.com")
         let bID = coordinator.selectedID
         coordinator.switchTo(aID)
-        let auth = SailuneAccountAuthService()
+        let auth = SailuneAccountAuthService(supabaseURL: nil, publishableKey: "", storage: AccountSessionFixture().storage())
         await coordinator.deleteAccount(aID, auth: auth)
         XCTAssertNil(coordinator.errorMessage)
         XCTAssertEqual(coordinator.selectedID, "guest")

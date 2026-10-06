@@ -136,6 +136,21 @@ final class WorkspaceCoordinator {
         } catch { errorMessage = error.localizedDescription }
     }
 
+    /// 帳號切換同時恢復其獨立 Session；本機載入失敗時仍保留原帳號與登入。
+    func switchTo(_ id: String, auth: SailuneAccountAuthService) async {
+        guard !isWorking, !hasPendingTransfer, !auth.isWorking, id != selectedID else { return }
+        isWorking = true
+        defer { isWorking = false }
+        do {
+            if accounts.contains(where: { $0.id == id && $0.isDeleting }) { throw WorkspaceError.deletionPending }
+            try prepareToLeave()
+            let loaded = try WorkspaceBundle(locations: locations(for: id))
+            try activate(loaded, id: id)
+            await auth.restoreSession(for: currentAccount)
+            errorMessage = nil
+        } catch { errorMessage = error.localizedDescription }
+    }
+
     func openAuthenticatedAccount(auth: SailuneAccountAuthService) {
         guard let userID = auth.signedInUserID, let environment = auth.environmentID,
               let email = auth.signedInEmail else {
@@ -170,14 +185,22 @@ final class WorkspaceCoordinator {
         } catch { errorMessage = "無法保存帳號名稱：\(error.localizedDescription)" }
     }
 
-    func canPublish(auth: SailuneAccountAuthService) -> Bool {
+    func canUseSignedInFeatures(auth: SailuneAccountAuthService) -> Bool {
         Self.identityMatches(account: currentAccount, userID: auth.signedInUserID, environment: auth.environmentID)
     }
 
-    func requirePublicationAccount(auth: SailuneAccountAuthService) throws -> WorkspaceAccount {
+    func canPublish(auth: SailuneAccountAuthService) -> Bool {
+        canUseSignedInFeatures(auth: auth)
+    }
+
+    func requireSignedInAccount(auth: SailuneAccountAuthService) throws -> WorkspaceAccount {
         guard let account = currentAccount else { throw WorkspaceError.publicationRequiresAccount }
-        guard canPublish(auth: auth) else { throw WorkspaceError.identityMismatch }
+        guard canUseSignedInFeatures(auth: auth) else { throw WorkspaceError.identityMismatch }
         return account
+    }
+
+    func requirePublicationAccount(auth: SailuneAccountAuthService) throws -> WorkspaceAccount {
+        try requireSignedInAccount(auth: auth)
     }
 
     static func identityMatches(account: WorkspaceAccount?, userID: UUID?, environment: String?) -> Bool {
@@ -215,10 +238,7 @@ final class WorkspaceCoordinator {
             guard !auth.needsKeychainRetry else { throw WorkspaceError.saveFailed }
             try registry.markDeleting(id)
             accounts = registry.document.accounts
-            if auth.signedInUserID == account.userID && auth.environmentID == account.environment {
-                await auth.signOut(localOnly: true)
-                guard auth.signedInEmail == nil, auth.errorMessage == nil else { throw WorkspaceError.saveFailed }
-            }
+            try await auth.removeAccountSession(account)
             for _ in 0..<100 where departingBundle != nil {
                 try await Task.sleep(for: .milliseconds(20))
             }

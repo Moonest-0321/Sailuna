@@ -84,6 +84,8 @@ EPUB 匯出會使用畫面目前顯示的封面：優先直接讀取書籍 UUID 
 
 刪帳號不等於刪除網站會員／作品。WorkspaceRegistry 清理紀錄在刪除前持久化，部分失敗仍占名額且不可開啟；其他工作區與外部備份保留。主／settings／planning schema 不變，舊資料只複製至 Guest，發布前核對工作區與 Session 身分。驗證結果以 implementation-log.md 為準；尚不宣稱 GUI／真實雙帳號串接完成。
 
+2026-10-06 Session 切換修正：登入憑證按環境／UUID 分鑰匙圈 key，切換本機資料與 Session 由 Coordinator 同一 action 銜接，論壇／發布仍驗 UUID 與 generation。移除非使用中帳號也須清該帳號 Session，不能清目前另一帳號；Guest 不借用保存中的 Session。遷移先保存真正作者的新 key、再清舊 key，不覆蓋新版續期 token；無法核對原件保留。正文引用、歷史定位、領域刪除及作品／備份格式沒有改動。
+
 
 ## Guest 移入檢查
 
@@ -92,3 +94,10 @@ EPUB 匯出會使用畫面目前顯示的封面：優先直接讀取書籍 UUID 
 ### 暫時移入例外關閉與發布身分
 
 使用者授權關閉 Debug 非草稿移入例外，恢復來源拒絕；沒有回復已移入資料、改動 UUID／狀態／標籤或移除備份。Guest 不得借用其他帳號 Session 發布；預覽／服務 action 查目前工作區帳號與 Session，Auth credentials 必填 expectedUserID。拒絕時發布 sidecar 與來源內容保持不變。
+
+
+## V12.1 共享資料邊界（2026-10-03）
+
+帆夢本機論壇文章與模板 JSON、既有備份／還原保持原契約；新共用資料以登入者 Session 與拾頁表的 RLS 控制。取消公開模板不刪本機快照，論壇隱藏文章不改本機舊文，遠端資料不納入本機備份。App 與資料庫替身測試已通過，但 migration 未正式套用，跨安裝一致性、取消公開後舊 ID 不可讀及實際權限仍待雙帳號驗收。
+
+2026-10-06 修訂：共用資料目標已改為帆夢 `sailune_community`，與拾頁網站站長權限分離。舊 `public` 社群資料若存在，前向 migration 複製並保留舊表唯讀，UUID／作者／隱藏狀態／時間戳不改；刪除或隱藏遠端內容不動本機 JSON／正文／備份。正式資料庫與兩帳號直接 RLS 尚待驗收，見 `community-deployment-v12.1.md`。
