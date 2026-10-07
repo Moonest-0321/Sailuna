@@ -1,3 +1,56 @@
+# V13 多筆名發布帆夢端實作交接（2026-10-07）
+
+- 2026-10-07 I approved 後使用者校正：本對話只處理帆夢端；拾頁舊資料政策、migration 與 API 由拾頁端負責。本輪曾草擬拾頁工作單、API v2 與 migration，收到校正後以精確反向編輯及內容比對撤回，拾頁 `git --no-optional-locks status --short` 再次為乾淨；帆夢的同名 SQL 草稿亦已刪除。自動審核拒絕整檔覆寫 HEAD（可能清掉既有修改），後改用逐段核對的安全撤回成功。
+- 拾頁交接決策：舊帳號以最早公開內容署名鎖定；無帳號舊作者作品先隱藏；刪帳後保留公開作者頁／作品與不透明作者身分；公開論壇文及模板保留為無主。這些僅記錄，未執行正式資料操作。
+- 帆夢已改：模板 JSON v1 增可缺省來源筆名快照，新模板從來源書保存，舊檔若仍有 `author` 則轉存快照；已完全清掉來源筆名的舊模板不猜測，公開時提示重新建立。套用模板改以套用者主要筆名建新書；發布 client 對拾頁 `identity_locked` 給不可重試訊息，Auth 預檢亦辨識 `publication_identity_locked`。規格、備份相容與一致性稽核已同步。
+- 驗證：`xcodebuild ... test -only-testing:SailuneTests/CommunityContractTests -only-testing:SailuneTests/PublicationClientTests` Debug build 與 9/9 專項通過；受影響 Swift／測試檔 parse、`git diff --check` 通過。首次新 DerivedData 因網路 DNS 失敗，sandbox 內既有快取因 CoreSimulator 權限失敗，核准環境用既有套件快取後成功。未做完整 XCTest、隔離 GUI、正式 Pagelet 第二段部署或真實雙帳號串接。`BookPublicationStore` 本機 sidecar 不能證明遠端已發布，不得據此鎖或解鎖 UI。
+- 工作樹邊界：原有 V12.1 模板分類程式、SQL、Localizable、部署文件及未追蹤多筆名交接均保留；本輪 V13 改模板／社群／發布／Auth Swift、兩份專項測試及 V13 規格／工作／交接文件。拾頁撤回草稿後工作樹乾淨，沒有提交、推送或正式資料寫入。
+- 唯一下一步：拾頁交付主要筆名與固定公開值的權威查詢、API v2 及社群公開身分保護契約後，帆夢依已批准 U 接帳號／書籍唯讀與發布 metadata，驗舊檔、隔離 GUI、雙帳號真實串接。新聊天最小閱讀：本節、`docs/work-items/current.md` 頂部 V13、`docs/implementation-log.md` 頂部、`docs/multi-pen-name-handoff.md`，再按接線處讀 Auth／Publication／BookTemplate／Community 程式。
+
+- 2026-10-07 U approved：使用者回覆「U」，確認工作單的帳號、書籍、發布、論壇與模板流程。已提出 I 計畫，I pending，沒有功能程式或正式資料修改。拾頁第一段多筆名作者身分、每書固定值、作者頁及後台已在本機實作（`20261007010000_multi_pen_name.sql`，auth-contract v0.5）；正式 migration／部署與真實驗收未確認，不能沿用下方「拾頁尚無任何新契約」的舊語意。帳號主要筆名鎖定、API v2、社群 UUID 隱私是待做第二段。
+- 三項待確認政策仍是既有已發布帳號主要筆名基線、無帳號舊作者、刪帳號後公開資料。唯一下一步：使用者確認或修訂工作單頂部 I 並回答政策；獲准後先核對正式 schema／舊資料與部署順序，再開始第二段功能。
+
+- 已決定：使用者依序回覆「R」、「U」，確認兩端交接已明列的核心需求及工作單頂部的帆夢 UI 流程：同帳號可用多筆名、同帳號同筆名作者頁聚合、首次成功發布任一項後主要筆名永久鎖定、每書首次成功發布後公開書名／筆名固定。I 未批准。
+- 已批准 U：帳號頁和書籍概覽沿用現有欄位位置顯示固定值；具體流程列在工作單頂部。
+- 待確認：已有發布紀錄但主要筆名來源不可靠的帳號、無帳號舊作者與作品、刪帳號後公開作者頁與作品政策。拾頁第二段 API v2／主要筆名鎖定契約未凍結；本輪未改功能程式與正式資料。
+- 工作樹：保留既有 V12.1 模板分類程式／SQL／文件修改及未追蹤多筆名交接；本輪只新增規劃紀錄。唯一下一步以上方最新 V13 段落為準。
+
+# V12.1 模板世界觀分類實作交接（2026-10-07）
+
+- 已決定：R／U／I 均 approved。分類固定為現實、架空歷史、奇幻、科幻、神話、末日、其他，可多選；舊模板未分類；與作品發布標籤分開。已否決直接沿用奇幻／愛情／冒險。畫面依使用者看過的互動 mockup 接線。
+- 暫時假設：正式社群 schema 仍是 2026-10-05 手動 SQL 部署狀態，CLI ledger 仍不存在；本輪未重新查正式專案，不能假定新欄位已上線。
+- 已改：`BookTemplate.swift` 本機 metadata／去重排序及具名改類 action；`HomeFeatureViews.swift` 建立／改類／卡片／搜尋篩選／公開確認；`SailuneCommunityService.swift` 遠端 metadata 與查詢；帆夢與拾頁各一份同 SHA SQL；帆夢 XCTest 與拾頁 PGlite 回歸；`spec-community-v12.1.md` 更新行為。模板 payload／SwiftData schema 不變。
+- 驗證：帆夢 Debug build 及 `CommunityContractTests` 5/5 通過；拾頁 PGlite 新舊 schema 專項 7/7、TypeScript typecheck 通過。隔離 App 已啟動，首頁空書櫃可見，但模板頁需登入，獨立 bundle 無 Session，分類 GUI 尚未驗；正式 migration 未套、真實兩帳號分類互通、失敗補償注入、完整 XCTest 尚未驗，不能當作功能已正式上線。
+- 工作樹邊界：Sailune 起始已有四份本工作文件未提交及未追蹤 `docs/multi-pen-name-handoff.md`，後者不碰。Pagelet 起始有書庫／多筆名等他人未提交內容，本輪只新增 `20261007000000_template_worldview_categories.sql` 與 `template-worldview.database.test.ts`；未提交、推送或部署。
+- 唯一下一步：先隔離 GUI 驗新模板與分類互動，並唯讀核對正式 Supabase schema／資料和手動 migration 序列；再以可審核 SQL 決定部署，部署後跑兩帳號跨安裝分類搜尋。新聊天最小閱讀：本節、工作單頂部 V12.1 分類段、`spec-community-v12.1.md` 共享模板段、三份相關 Swift 與兩份同名 SQL。
+- 2026-10-07 續記：使用者「好」後已補部署文件與 NULL 分類測試。正式 PostgREST 零列唯讀預檢因既有 service role 表權限回 403／42501，不能推論欄位存在與否；無正式寫入。先前自動審核拒絕讀取 Safari 非目標私人分頁，已請使用者手動切回共用 Supabase SQL Editor。唯一第一步改為收到「已開」後在目標 SQL Editor 執行部署文件所列唯讀查詢；結果相容才套單份 SQL，接著重查授權與兩帳號 GUI。
+- 使用者已回覆「已開」，CUA 看見正確 SQL Editor 分頁；Safari accessibility tree 沒有編輯器網頁內容，完整截圖又因含其他私人書籤／分頁遭自動審核拒絕（不得繞行）。已請使用者手動跑只讀三查詢並貼結果。唯一下一步：收到結果後核對表／分類欄位／筆數；若符合，讓使用者在該 SQL Editor 執行已驗證的單份 migration，再請回傳結果做正式後查。尚未部署或修改正式資料。
+- 使用者結果截圖證實正式模板 2 筆、hidden 1 筆；ledger 直接查詢 42P01，兩個無關舊步驟因 ```sql 與 UUID 佔位文字輸入而失敗，沒有寫入。分類欄位查詢第一次因編輯器殘留 `INSERT。` 前綴報 42601，已請使用者先 ⌘A 清空，再只執行 `information_schema.columns` 單行查詢。唯一下一步是取得該查詢結果；正式 migration 仍未執行。
+- 使用者回覆 `category_columns = 0`。帆夢／拾頁兩份 SQL SHA 一致，已請使用者從本機原稿複製完整內容到 SQL Editor 執行，確認首行註解及末行 `commit;`；目前等成功或錯誤結果，未把請求視為已部署。唯一下一步：取得 SQL Editor 執行結果後，依部署文件跑筆數／權限／CHECK／trigger 唯讀查詢；再安排新版 App 兩帳號實測。
+- 使用者回覆 SQL Editor 執行分類 migration `Success. No rows returned`。唯一下一步：核對正式表原 2 筆及 hidden 1 筆、分類預設 2 筆，再查新授權與 CHECK／trigger；若一致才開始新版 App 真實帳號分類互通驗收。未把 SQL 成功回報等同完成產品驗收。
+- 本機新版 App 已於 `/private/tmp/SailuneTemplateCategoriesSigned/Build/Products/Debug/Sailune.app` 完成簽章 Debug build，未替換原 App、未碰正式帳號。仍等使用者回傳正式筆數後查；再做授權／保護規則核對。
+
+# 多筆名與發布後固定名稱交接（2026-10-07）
+
+- 已決定：一帳號可用多筆名發不同書，同帳號同筆名書聚合一個公開作者頁、不同帳號同名分開；主要筆名預填新書且供論壇使用，書可另改，模板用來源書筆名；帳號首次成功發布書／論壇文／公開模板任一項後主要筆名永久鎖定，刪除／下架不解鎖；各書首次成功發布後公開書名及筆名永久固定。
+- 兩端詳細交接：`Sailune/docs/multi-pen-name-handoff.md` 與 `Pagelet/docs/multi-pen-name-handoff.md`；Pagelet 舊作者交接已標歷史草稿。工作樹原有未提交內容均保留，本輪只加交接及索引／紀錄，無功能程式、migration 或遠端變更。
+- 2026-10-07 依使用者提醒補格式相容：`.shiye` v1 的 `book.title`／`author` 已是每書欄位，ZIP 形狀可維持；首次發布所需主要筆名缺於現行 API v1，建議獨立升 API 協定。SwiftData、模板 JSON v1、發布 sidecar 與備份 archiveVersion 1 的舊檔讀取及升版條件已列入兩端交接；未改實際格式。
+- 待處理：既有已發布帳號鎖定遷移、無帳號舊作者／刪帳號政策；所有模板套用的新書預填套用者主要筆名，舊顯示名維持快照，已發布書書名／筆名欄位唯讀。完整 R／U／I 待批准；跨裝置同步不在此次工作。唯一下一步：兩端依新交接凍結 R，以拾頁發布契約先行，再提帆夢 U／I。原模板分類及 V12.2 各自待辦維持。
+
+# V12.1 模板分類需求檢查點（2026-10-07）
+
+- 2026-10-07 U approved：使用者看過可互動 mockup 後回覆「可以」。已核對本機模板 JSON、正式社群表／現行權限、服務及既有測試，於 work/current 頂部提出 I 計畫：固定分類契約、本機舊 JSON 相容、遠端前向 migration、跨本機／遠端改類 action、兩頁 UI、權限與真實驗收。I pending，未改功能程式或 migration，未套用正式 SQL。工作樹另外出現未追蹤 `docs/multi-pen-name-handoff.md`，屬他人／使用者修改，本輪不觸碰。唯一下一步：使用者確認或修訂 I；批准後才開始程式與 schema 修改。
+- 使用者指出文字線框不足以評估 U；已補可互動 mockup `.../sailune-template-categories.html`，展示我的模板卡片／分類編輯、搜尋模板名稱與分類篩選、建立模板分類視窗。來源為已檢視的正式 App 兩頁畫面，示例資料與 App／遠端無連線。HTML fragment 及內部 JS 語法已檢查；renderer 本機 `--serve` 因 Operation not permitted 無法開預覽伺服器，尚未人工確認宿主實際渲染。U 仍 pending，唯一下一步讓使用者看畫面並回覆修正／確認。
+- 2026-10-07 最新：使用者以「可」確認世界觀固定清單（現實、架空歷史、奇幻、科幻、神話、末日、其他）、多選與舊模板未分類，R approved。已在正式 App 唯讀看「我的模板」空頁與「搜尋模板」有公開卡片頁，提出建立／改類／兩頁篩選／公開確認文字線框與狀態；U pending、I pending，沒有改功能程式或遠端資料。唯一下一步：使用者確認或修正 work/current 頂部 U 提案，再提出實作／相容／測試計畫。舊 V12.2 未驗收狀態保留。
+- 已決定：使用者要求在模板加入分類功能，指定產品標籤 V12.1；分類同時用於本機「我的模板」與遠端「搜尋模板」，按世界觀方向且由系統固定。直接沿用發布標籤「奇幻、愛情、冒險」已因語意不符被排除。現階段只做需求盤點，不修改功能、UI、schema 或正式資料；既有 V12.2 互通驗收狀態保留。
+- 暫時假設：分類是模板 metadata，而非模板內物品／世界條目的分類；整份 R 尚未批准。
+- 待確認：提議的「現實、架空歷史、奇幻、科幻、神話、末日、其他」固定清單與多選是否符合產品意圖；舊模板顯示「未分類」與後續改類政策。
+- 工作樹：起始 `feat/shiye-publication`，乾淨、與遠端同步；本輪只新增工作單、交接、狀態與實作紀錄的需求文字。沒有改功能程式、測試或遠端資料。
+- 驗證：唯讀核對本機 `BookTemplateDocument`、公開 `community_templates` migration、service 查詢及兩頁 UI；目前無模板級分類。未跑 build／XCTest／GUI，不能宣稱功能完成。
+- 唯一下一步：收使用者對分類範圍與來源的答覆，完成 R 草案並確認；之後實際檢視兩頁狀態，提出 U 與 I。新聊天最小閱讀：本段、work/current 頂部、spec-community-v12.1.md 共享模板段、BookTemplate.swift、HomeFeatureViews.swift、SailuneCommunityService.swift。
+
+---
+
 # V12.2 模板互通檢查點（2026-10-06）
 
 - 最新實機：具體公開獲使用者同意後，正式 App 同一安裝的兩帳號完成 A 公開→B 搜尋與套用為本機 0 字草稿→A 取消公開→B 搜尋不到且草稿仍在。A 的原測試書與本機模板保留，正式模板現已 hidden；沒有刪測試資料、沒有功能程式修改。App 留在 B 的空公開搜尋頁。此前自動審核拒絕已以使用者具體授權解除，沒有以工具繞過。

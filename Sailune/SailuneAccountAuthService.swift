@@ -284,6 +284,7 @@ final class SailuneAccountAuthService {
             guard generation == selectionGeneration else { throw WorkspaceError.identityMismatch }
             if error.message.contains("publication_author_unbound") { throw PublicationFailure.authorUnbound }
             if error.message.contains("publication_not_owner") { throw PublicationFailure.notOwner }
+            if error.message.contains("publication_identity_locked") { throw PublicationFailure.identityLocked }
             if error.message.contains("publication_invalid_pen_name") { throw PublicationFailure.invalidPackage("請填寫有效的筆名後重試。") }
             if error.code == "42501" || error.code == "PGRST301" {
                 signedInEmail = nil; signedInUserID = nil; throw PublicationFailure.login

@@ -3,6 +3,40 @@ import Observation
 import SwiftData
 import UniformTypeIdentifiers
 
+/// 模板世界觀分類與作品發布標籤分屬不同契約，raw value 用於 JSON 與資料庫。
+enum TemplateWorldviewCategory: String, Codable, CaseIterable, Identifiable {
+    case reality
+    case alternateHistory = "alternate_history"
+    case fantasy
+    case scienceFiction = "science_fiction"
+    case mythology
+    case postApocalyptic = "post_apocalyptic"
+    case other
+
+    var id: String { rawValue }
+    var title: String {
+        switch self {
+        case .reality: "現實"
+        case .alternateHistory: "架空歷史"
+        case .fantasy: "奇幻"
+        case .scienceFiction: "科幻"
+        case .mythology: "神話"
+        case .postApocalyptic: "末日"
+        case .other: "其他"
+        }
+    }
+
+    static func ordered(_ categories: [Self]) -> [Self] {
+        let selected = Set(categories)
+        return allCases.filter { selected.contains($0) }
+    }
+
+    static func label(for categories: [Self]) -> String {
+        let names = ordered(categories).map(\.title)
+        return names.isEmpty ? "未分類" : names.joined(separator: "・")
+    }
+}
+
 struct BookTemplateDocument: Codable, Identifiable {
     static let currentVersion = 1
 
@@ -148,8 +182,12 @@ struct BookTemplateDocument: Codable, Identifiable {
     var name: String
     var sourceBookID: UUID
     var author: String
+    // v1 舊模板缺欄位時為 nil；公開署名只取建立當時來源書的快照，不從現值猜測。
+    var sourcePenName: String?
     var synopsis: String
     var createdAt: Date
+    // v1 舊模板 JSON 缺此 metadata 時解碼為 nil，即「未分類」。
+    var worldviewCategories: [TemplateWorldviewCategory]?
     var volumes: [VolumeRecord]
     var timelines: [TimelineRecord]
     var eras: [EraRecord]
@@ -247,7 +285,11 @@ final class BookTemplateStore {
         }
         var current: [BookTemplateDocument] = []
         for (url, template) in zip(urls, decoded) {
-            let scoped = template.withoutWritingStructure()
+            var scoped = template.withoutWritingStructure()
+            if scoped.sourcePenName == nil, !template.author.isEmpty {
+                // 舊檔尚保留來源作者時，先轉成 metadata 再清除寫作結構。
+                scoped.sourcePenName = template.author
+            }
             if template.containsWritingStructure {
                 try JSONEncoder().encode(scoped).write(to: url, options: .atomic)
             }
@@ -261,7 +303,9 @@ final class BookTemplateStore {
             throw BookTemplateError.unsupportedVersion(template.formatVersion)
         }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        let data = try JSONEncoder().encode(template)
+        var normalized = template
+        normalized.worldviewCategories = TemplateWorldviewCategory.ordered(template.worldviewCategories ?? [])
+        let data = try JSONEncoder().encode(normalized)
         try data.write(to: fileURL(template.id), options: .atomic)
         try reload()
     }
@@ -279,6 +323,7 @@ enum BookTemplateError: LocalizedError {
     case missingTemplate
     case invalidSnapshot(String)
     case cleanupFailure(primary: String, cleanup: [String])
+    case categoryRollbackFailure(primary: String, rollback: String)
 
     var errorDescription: String? {
         switch self {
@@ -286,6 +331,35 @@ enum BookTemplateError: LocalizedError {
         case .missingTemplate: "找不到這份模板。"
         case .invalidSnapshot(let detail): "模板資料無效：\(detail)"
         case .cleanupFailure(let primary, let cleanup): "建立草稿失敗：\(primary)\n另外有資料清理失敗：\(cleanup.joined(separator: "; "))"
+        case .categoryRollbackFailure(let primary, let rollback): "本機分類儲存失敗：\(primary)；遠端分類回復也失敗：\(rollback)。請重新載入並核對。"
+        }
+    }
+}
+
+@MainActor
+enum BookTemplateCategoryCoordinator {
+    /// 已公開模板先更新遠端；若本機檔案寫入失敗，嘗試把遠端分類回復。
+    static func update(
+        _ template: BookTemplateDocument,
+        categories: [TemplateWorldviewCategory],
+        isPublished: Bool,
+        store: BookTemplateStore,
+        community: SailuneCommunityService
+    ) async throws {
+        let previous = TemplateWorldviewCategory.ordered(template.worldviewCategories ?? [])
+        let selected = TemplateWorldviewCategory.ordered(categories)
+        if isPublished { try await community.updateTemplateCategories(id: template.id, categories: selected) }
+        do {
+            var revised = template
+            revised.worldviewCategories = selected
+            try store.save(revised)
+        } catch {
+            let saveError = error
+            if isPublished {
+                do { try await community.updateTemplateCategories(id: template.id, categories: previous) }
+                catch { throw BookTemplateError.categoryRollbackFailure(primary: saveError.localizedDescription, rollback: error.localizedDescription) }
+            }
+            throw saveError
         }
     }
 }
@@ -598,8 +672,10 @@ enum BookTemplateCoordinator {
             name: name,
             sourceBookID: book.id,
             author: book.author,
+            sourcePenName: book.author,
             synopsis: book.synopsis,
             createdAt: Date(),
+            worldviewCategories: [],
             volumes: volumes,
             timelines: timelineRecords,
             eras: eraRecords,
@@ -665,7 +741,7 @@ enum BookTemplateCoordinator {
     ) throws -> Book {
         let template = originalTemplate.withoutWritingStructure()
         try validate(template)
-        let book = Book(title: title, author: template.author, synopsis: template.synopsis)
+        let book = Book(title: title, author: author, synopsis: template.synopsis)
         let createdBookID = book.id
         let volumeIDs = Dictionary(uniqueKeysWithValues: template.volumes.map { ($0.id, UUID()) })
         var sectionIDs: [UUID: UUID] = [:]

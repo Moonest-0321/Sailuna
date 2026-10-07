@@ -99,4 +99,22 @@ final class PublicationClientTests: XCTestCase {
         do { _ = try await makeClient().publish(attempt, credentials: credentials, onProgress: { _ in }, onCommit: {}); XCTFail("不應用其他帳號重試") }
         catch PublicationFailure.notOwner {} catch { XCTFail("錯誤類型不符") }
     }
+
+    func testPublishedNameConflictIsNotReportedAsNetworkRetry() async throws {
+        let attempt = PublicationAttempt(bookID: UUID(), tags: [], data: Data([1]))
+        attempt.uploadFinished = true
+        PublicationProtocol.handler = { request in
+            XCTAssertEqual(request.url?.path, "/api/publications/v1")
+            return (409, [:], Data(#"{"error":{"code":"identity_locked","message":"fixed","retryable":false}}"#.utf8))
+        }
+        defer { PublicationProtocol.handler = nil }
+        do {
+            _ = try await makeClient().publish(attempt, credentials: credentials,
+                onProgress: { _ in }, onCommit: {})
+            XCTFail("已固定書名與筆名應被拒絕")
+        } catch PublicationFailure.identityLocked {
+            XCTAssertFalse(attempt.uploadFinished)
+            XCTAssertFalse(attempt.hasStartedCommit)
+        } catch { XCTFail("錯誤類型不符：\(error)") }
+    }
 }

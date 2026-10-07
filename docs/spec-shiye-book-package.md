@@ -3,6 +3,8 @@
 > 狀態：v1 已實作（2026-09-28，R／U／I approved）；正式 API 與 migration 待部署。帆夢在內部建立封包直接傳送，不提供 `.shiye` 另存入口。
 > 依據：目前 `Book`／`Volume`／`Section` 模型、`BookPublicationStore`（狀態／標籤）、`EpubExporter` 的幕標題判斷。
 
+> V13 帆夢端：封包仍是 v1，`book.title`／`book.author` 仍各取本書欄位，不加入帳號主要筆名。拾頁第一段契約已定義同書首次成功發布後公開書名／筆名固定；帆夢現在把 `identity_locked` 回應辨識為不可重試的名稱衝突，保留本機稿件。帳號主要筆名鎖定與發布 API v2 尚須拾頁第二段契約，不可把此 v1 錯誤處理視為完成。
+
 ## 1. 設計原則
 
 - **網站不必懂 SwiftData 或 AttributedString**：正文轉成純文字區塊陣列，網站只負責排版。

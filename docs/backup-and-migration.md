@@ -119,6 +119,8 @@ V4.4.8 在主 container 與 StoryPlanning store 都成功開啟後，會以現�
 
 ## V12.1 共享模板與論壇
 
+V13 本機模板 JSON v1 加可缺省的 `sourcePenName` metadata，保存建立時來源書筆名，不改 `.sailunebackup` archiveVersion 或 SwiftData schema。舊模板缺此欄仍可讀／套用；若舊檔尚有來源 `author`，載入時可轉存快照；已無來源值時不推測，公開操作提示重新從來源書建立。備份原本包含完整模板 JSON，還原後保留這項 metadata；帳號主要筆名鎖定仍須服務端核對，不能靠備份／sidecar 解除。
+
 共享模板與論壇文章保存在拾頁 Supabase 的新表，不加入帆夢 SwiftData schema 或 `.sailunebackup`。本機 `book-templates/` 與 `Forum Posts.json` 仍依既有規則備份／還原；還原不會上傳、覆寫或刪除遠端內容。取消公開只隱藏遠端模板，本機快照保留；套用公開模板會建立獨立本機草稿。正式 migration 與跨帳號操作尚未驗收。
 
 2026-10-06 修訂：遠端資料由共用 Supabase 專案中的帆夢專用 `sailune_community` schema 保存。舊 `public.community_*` 若有資料，版本化 migration 先完整複製到新 schema、核對筆數並封住舊表的 authenticated 寫入；舊表暫留唯讀，待新版跨安裝驗收後另作退役。這不改本機 SwiftData、JSON、備份或匯出；正式遷移尚未執行。

@@ -1,5 +1,48 @@
 # V12.1 帆夢社群服務部署與驗收
 
+## 2026-10-07 模板世界觀分類前向擴充
+
+本次只套用 `supabase/migrations/20261007000000_template_worldview_categories.sql`，SQL 原稿在帆夢、同 SHA-256 副本在拾頁唯一共用部署序列。正式專案先前透過 SQL Editor 手動部署社群 schema，沒有 CLI migration ledger；不得以 `db push` 順帶套用其他未驗收 migration。
+下方 2026-10-06 的權限收斂 SQL 是首次建立社群 schema 的歷史步驟；分類擴充後若原樣重跑，會收回新欄位的 INSERT／UPDATE 授權。本次只執行新 migration 及本節驗證。
+**本次不執行下方舊版的管理員 `INSERT`、直接查詢不存在的 `supabase_migrations.schema_migrations`、或任何帶 `<...>` 佔位值的 SQL。複製到 SQL Editor 時只貼 SQL 內容，不貼 Markdown 的 ``` 標記。**
+
+套用前於同一 SQL Editor 唯讀核對：
+
+```sql
+select to_regclass('sailune_community.community_templates') as template_table,
+       to_regclass('supabase_migrations.schema_migrations') as migration_ledger;
+select column_name, data_type, column_default, is_nullable
+from information_schema.columns
+where table_schema = 'sailune_community' and table_name = 'community_templates'
+  and column_name in ('id', 'owner_id', 'hidden', 'payload', 'worldview_categories')
+order by ordinal_position;
+select count(*) as total_templates, count(*) filter (where hidden) as hidden_templates
+from sailune_community.community_templates;
+```
+
+若表不存在、既有 `worldview_categories` 欄位形狀與本 migration 不符，或欄位已存在但值不符合固定清單，先停下核對，不覆蓋既有資料。若結果符合，於 SQL Editor 單獨執行完整檔案，記錄為手動部署，不寫入不存在的 CLI ledger。完成後唯讀查欄位／預設值、CHECK／trigger／索引、舊列與新列筆數相同、`anon` 沒有 SELECT／UPDATE、`authenticated` 只有原有 SELECT 與指定 INSERT／UPDATE 欄位；再以兩個真實帳號驗作者改類、他人無權改類、公開卡片與名稱加分類篩選。不可把 PGlite 驗證當正式環境驗收。
+
+部署後的最小唯讀核對（每次只貼 SQL，不貼 Markdown 標記）：
+
+```sql
+select count(*) as total_templates,
+       count(*) filter (where hidden) as hidden_templates,
+       count(*) filter (where cardinality(worldview_categories) = 0) as unclassified_templates
+from sailune_community.community_templates;
+
+select has_table_privilege('anon', 'sailune_community.community_templates', 'SELECT') as anon_select,
+       has_column_privilege('authenticated', 'sailune_community.community_templates', 'worldview_categories', 'INSERT') as member_insert_category,
+       has_column_privilege('authenticated', 'sailune_community.community_templates', 'worldview_categories', 'UPDATE') as member_update_category,
+       has_table_privilege('authenticated', 'sailune_community.community_templates', 'DELETE') as member_delete;
+
+select conname from pg_constraint
+where conrelid = 'sailune_community.community_templates'::regclass
+  and conname = 'community_templates_worldview_categories_check';
+select tgname from pg_trigger
+where tgrelid = 'sailune_community.community_templates'::regclass
+  and tgname = 'community_templates_protect_worldview_categories';
+```
+
 > 2026-10-06。帆夢與拾頁共用 Supabase 專案與 Auth；社群資料由 `sailune_community` 管理。SQL 原稿：`../supabase/migrations/20261005000000_sailune_community.sql`；共用專案 migration 序列的部署副本：拾頁 `supabase/migrations/20261005000000_sailune_community.sql`。正式專案已透過 SQL Editor 手動套用；沒有 CLI migration ledger。兩份 SQL SHA-256 已核對相同。
 
 ## 1. 唯讀核對正式環境

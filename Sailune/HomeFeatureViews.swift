@@ -220,6 +220,26 @@ private struct PublicationTagPickerPopup: View {
     }
 }
 
+private struct TemplateWorldviewSelection: View {
+    @Binding var selection: Set<TemplateWorldviewCategory>
+
+    var body: some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 100), spacing: 8)], alignment: .leading, spacing: 8) {
+            ForEach(TemplateWorldviewCategory.allCases) { category in
+                Toggle(category.title, isOn: Binding(
+                    get: { selection.contains(category) },
+                    set: { selected in
+                        if selected { selection.insert(category) }
+                        else { selection.remove(category) }
+                    }
+                ))
+                .toggleStyle(.checkbox)
+                .accessibilityLabel("世界觀分類：\(category.title)")
+            }
+        }
+    }
+}
+
 struct BookTemplatesView: View {
     let books: [Book]
     let onCreatedBook: (UUID) -> Void
@@ -237,6 +257,10 @@ struct BookTemplatesView: View {
     @State private var showingSourcePicker = false
     @State private var selectedSourceBookID: UUID?
     @State private var templateName = ""
+    @State private var draftCategories: Set<TemplateWorldviewCategory> = []
+    @State private var categoryFilter: Set<TemplateWorldviewCategory> = []
+    @State private var includeUnclassified = false
+    @State private var templatePendingCategoryEdit: BookTemplateDocument?
     @State private var templatePendingDeletion: BookTemplateDocument?
     @State private var templatePendingUpload: BookTemplateDocument?
     @State private var templatePendingUnpublish: BookTemplateDocument?
@@ -249,11 +273,6 @@ struct BookTemplatesView: View {
     @State private var operationError: String?
 
     private var community: SailuneCommunityService { .init(workspace: workspace, auth: auth) }
-    private var displayName: String {
-        let name = profiles.first?.penName.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        return name.isEmpty ? "帆夢使用者" : name
-    }
-
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
@@ -268,52 +287,7 @@ struct BookTemplatesView: View {
                     ScrollView {
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 16)], spacing: 16) {
                             ForEach(templates) { template in
-                                VStack(alignment: .leading, spacing: 12) {
-                                    Text(template.name.isEmpty ? "未命名模板" : template.name)
-                                        .font(.headline)
-                                    Text("設定集・地圖・時間軸 · \(template.timelines.count) 條時間軸 · \(template.settings.maps.count) 張地圖")
-                                        .font(.caption)
-                                        .foregroundStyle(.secondary)
-                                    Spacer(minLength: 0)
-                                    HStack {
-                                        if publishedIDs.contains(template.id) {
-                                            Button("取消公開") { templatePendingUnpublish = template }
-                                                .buttonStyle(.bordered)
-                                                .disabled(isRemoteWorking)
-                                        } else {
-                                            Button("上傳並公開") { templatePendingUpload = template }
-                                                .buttonStyle(.bordered)
-                                                .disabled(isRemoteWorking || !publicationStatusLoaded)
-                                        }
-                                        Button(role: .destructive) {
-                                            templatePendingDeletion = template
-                                        } label: {
-                                            Label(SailuneActionCopy.delete, systemImage: SailuneSymbol.delete.systemName)
-                                        }
-                                        .buttonStyle(.bordered)
-                                        .disabled(isRemoteWorking || !publicationStatusLoaded || publishedIDs.contains(template.id))
-                                        .help(publishedIDs.contains(template.id) ? "請先取消公開" : "刪除本機模板")
-                                        .accessibilityLabel("刪除模板「\(template.name)」")
-
-                                        Spacer()
-
-                                        Button {
-                                            apply(template)
-                                        } label: {
-                                            Image(systemName: "plus")
-                                                .font(.body.weight(.semibold))
-                                                .frame(width: 34, height: 34)
-                                                .background(Color.primary.opacity(0.08), in: Circle())
-                                        }
-                                        .buttonStyle(.plain)
-                                        .help("使用此模板建立草稿")
-                                        .accessibilityLabel("使用「\(template.name)」建立草稿")
-                                    }
-                                }
-                                .padding(16)
-                                .frame(minHeight: 132, alignment: .leading)
-                                .background(SailuneTheme.windowSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+                                localTemplateCard(template)
                             }
                         }
                         .padding(.horizontal, 20)
@@ -327,6 +301,9 @@ struct BookTemplatesView: View {
                 VStack(spacing: 0) {
                     SailuneSearchField(placeholder: "搜尋模板", text: $templateQuery)
                         .padding(.horizontal, 8)
+                    if !publicTemplates.isEmpty || !categoryFilter.isEmpty || includeUnclassified {
+                        templateCategoryFilters
+                    }
                     if isRemoteWorking {
                         ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else if publicTemplates.isEmpty {
@@ -336,20 +313,7 @@ struct BookTemplatesView: View {
                         ScrollView {
                             LazyVGrid(columns: [GridItem(.adaptive(minimum: 240), spacing: 16)], spacing: 16) {
                                 ForEach(publicTemplates) { template in
-                                    VStack(alignment: .leading, spacing: 10) {
-                                        Text(template.name).font(.headline)
-                                        Text("\(template.displayName)・格式 V\(template.formatVersion)")
-                                            .font(.caption).foregroundStyle(.secondary)
-                                        Text(template.summary).font(.callout).foregroundStyle(.secondary)
-                                        Spacer()
-                                        Button("使用模板建立草稿") {
-                                            Task { await applyPublicTemplate(template) }
-                                        }
-                                        .buttonStyle(.borderedProminent)
-                                    }
-                                    .frame(maxWidth: .infinity, minHeight: 142, alignment: .leading)
-                                    .padding(16)
-                                    .background(SailuneTheme.windowSurface, in: RoundedRectangle(cornerRadius: 12))
+                                    publicTemplateCard(template)
                                 }
                             }
                             .padding(20)
@@ -359,7 +323,7 @@ struct BookTemplatesView: View {
             }
         }
         .onAppear(perform: loadTemplates)
-        .task(id: "\(selectedTab)|\(templateQuery)|\(workspace.generation)") {
+        .task(id: "\(selectedTab)|\(templateQuery)|\(TemplateWorldviewCategory.ordered(Array(categoryFilter)).map(\.rawValue).joined(separator: ","))|\(includeUnclassified)|\(workspace.generation)") {
             if selectedTab == 1 {
                 do { try await Task.sleep(for: .milliseconds(250)) }
                 catch { return }
@@ -368,7 +332,10 @@ struct BookTemplatesView: View {
         }
         .overlay(alignment: .bottomTrailing) {
             if selectedTab == 0 {
-                Button { showingSourcePicker = true } label: {
+                Button {
+                    draftCategories = []
+                    showingSourcePicker = true
+                } label: {
                     Image(systemName: "plus")
                         .font(.title2.weight(.medium))
                         .frame(width: 46, height: 46)
@@ -380,10 +347,6 @@ struct BookTemplatesView: View {
                 .accessibilityLabel("從書籍建立模板")
                 .padding(24)
             }
-        }
-        .sheet(isPresented: $showingSourcePicker) {
-            sourcePicker
-                .frame(minWidth: 360, minHeight: 280)
         }
         .confirmationDialog(
             "刪除模板？",
@@ -411,7 +374,7 @@ struct BookTemplatesView: View {
             }
             Button(SailuneActionCopy.cancel, role: .cancel) { templatePendingUpload = nil }
         } message: { template in
-            Text("「\(template.name)」將公開 \(template.characters.count) 位角色、\(template.settings.maps.count) 張地圖、\(template.timelines.count) 條時間軸及設定資料，可能包含 PDF 地圖。正文不會上傳。")
+            Text("「\(template.name)」將以「\(TemplateWorldviewCategory.label(for: template.worldviewCategories ?? []))」分類公開 \(template.characters.count) 位角色、\(template.settings.maps.count) 張地圖、\(template.timelines.count) 條時間軸及設定資料，可能包含 PDF 地圖。正文不會上傳。")
         }
         .confirmationDialog("取消公開模板？", isPresented: Binding(
             get: { templatePendingUnpublish != nil }, set: { if !$0 { templatePendingUnpublish = nil } }
@@ -442,6 +405,151 @@ struct BookTemplatesView: View {
         } message: {
             Text(operationError ?? "未知錯誤")
         }
+        .overlay { templateModal }
+    }
+
+    @ViewBuilder
+    private var templateModal: some View {
+        if showingSourcePicker || templatePendingCategoryEdit != nil {
+            GeometryReader { geometry in
+                ZStack {
+                    Color.black.opacity(0.25)
+                        .ignoresSafeArea()
+                        .contentShape(Rectangle())
+                        .onTapGesture {
+                            showingSourcePicker = false
+                            templatePendingCategoryEdit = nil
+                        }
+                    Group {
+                        if showingSourcePicker {
+                            sourcePicker
+                        } else if let template = templatePendingCategoryEdit {
+                            categoryEditor(template)
+                        }
+                    }
+                    .frame(width: min(max(geometry.size.width * 0.7, 300), min(560, geometry.size.width - 24)),
+                           height: min(max(geometry.size.height * 0.75, 240), min(520, geometry.size.height - 24)))
+                    .background(SailuneTheme.windowSurface, in: RoundedRectangle(cornerRadius: 12))
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+    }
+
+    private func categoryEditor(_ template: BookTemplateDocument) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("編輯「\(template.name)」的世界觀分類").font(.headline)
+            TemplateWorldviewSelection(selection: $draftCategories)
+            Spacer()
+            HStack {
+                Spacer()
+                Button(SailuneActionCopy.cancel) { templatePendingCategoryEdit = nil }
+                    .buttonStyle(.bordered)
+                Button("儲存分類") { Task { await saveCategories(template) } }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(isRemoteWorking)
+            }
+        }
+        .padding(20)
+    }
+
+    private func localTemplateCard(_ template: BookTemplateDocument) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(template.name.isEmpty ? "未命名模板" : template.name)
+                    .font(.headline).lineLimit(1)
+                Spacer(minLength: 8)
+                Button("編輯分類") {
+                    draftCategories = Set(template.worldviewCategories ?? [])
+                    templatePendingCategoryEdit = template
+                }
+                .buttonStyle(.bordered)
+                .disabled(isRemoteWorking || !publicationStatusLoaded)
+            }
+            Text(TemplateWorldviewCategory.label(for: template.worldviewCategories ?? []))
+                .font(.caption).foregroundStyle(.secondary)
+            Text("設定集・地圖・時間軸 · \(template.timelines.count) 條時間軸 · \(template.settings.maps.count) 張地圖")
+                .font(.caption).foregroundStyle(.secondary)
+            Spacer(minLength: 0)
+            HStack {
+                if publishedIDs.contains(template.id) {
+                    Button("取消公開") { templatePendingUnpublish = template }
+                        .buttonStyle(.bordered)
+                        .disabled(isRemoteWorking)
+                } else {
+                    Button("上傳並公開") { templatePendingUpload = template }
+                        .buttonStyle(.bordered)
+                        .disabled(isRemoteWorking || !publicationStatusLoaded)
+                }
+                Button(role: .destructive) { templatePendingDeletion = template } label: {
+                    Label(SailuneActionCopy.delete, systemImage: SailuneSymbol.delete.systemName)
+                }
+                .buttonStyle(.bordered)
+                .disabled(isRemoteWorking || !publicationStatusLoaded || publishedIDs.contains(template.id))
+                .help(publishedIDs.contains(template.id) ? "請先取消公開" : "刪除本機模板")
+                .accessibilityLabel("刪除模板「\(template.name)」")
+                Spacer()
+                Button { apply(template) } label: {
+                    Image(systemName: "plus")
+                        .font(.body.weight(.semibold))
+                        .frame(width: 34, height: 34)
+                        .background(Color.primary.opacity(0.08), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .help("使用此模板建立草稿")
+                .accessibilityLabel("使用「\(template.name)」建立草稿")
+            }
+        }
+        .padding(16)
+        .frame(minHeight: 132, alignment: .leading)
+        .background(SailuneTheme.windowSurface, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(Color.primary.opacity(0.08), lineWidth: 1))
+    }
+
+    private var templateCategoryFilters: some View {
+        ScrollView(.horizontal) {
+            HStack(spacing: 8) {
+                filterButton("全部世界觀", selected: categoryFilter.isEmpty && !includeUnclassified) {
+                    categoryFilter = []
+                    includeUnclassified = false
+                }
+                ForEach(TemplateWorldviewCategory.allCases) { category in
+                    filterButton(category.title, selected: categoryFilter.contains(category)) {
+                        if categoryFilter.contains(category) { categoryFilter.remove(category) }
+                        else { categoryFilter.insert(category) }
+                    }
+                }
+                filterButton("未分類", selected: includeUnclassified) { includeUnclassified.toggle() }
+            }
+            .padding(.horizontal, 20)
+        }
+        .accessibilityLabel("世界觀分類篩選")
+    }
+
+    @ViewBuilder
+    private func filterButton(_ title: String, selected: Bool, action: @escaping () -> Void) -> some View {
+        if selected {
+            Button(title, action: action).buttonStyle(.borderedProminent)
+        } else {
+            Button(title, action: action).buttonStyle(.bordered)
+        }
+    }
+
+    private func publicTemplateCard(_ template: SharedTemplateSummary) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(template.name).font(.headline)
+            Text(TemplateWorldviewCategory.label(for: template.worldviewCategories))
+                .font(.caption).foregroundStyle(.secondary)
+            Text("\(template.displayName)・格式 V\(template.formatVersion)")
+                .font(.caption).foregroundStyle(.secondary)
+            Text(template.summary).font(.callout).foregroundStyle(.secondary)
+            Spacer()
+            Button("使用模板建立草稿") { Task { await applyPublicTemplate(template) } }
+                .buttonStyle(.borderedProminent)
+        }
+        .frame(maxWidth: .infinity, minHeight: 142, alignment: .leading)
+        .padding(16)
+        .background(SailuneTheme.windowSurface, in: RoundedRectangle(cornerRadius: 12))
     }
 
     private var sourcePicker: some View {
@@ -450,6 +558,8 @@ struct BookTemplatesView: View {
                 .font(.headline)
             TextField("模板名稱", text: $templateName)
                 .textFieldStyle(.roundedBorder)
+            Text("世界觀分類").font(.subheadline)
+            TemplateWorldviewSelection(selection: $draftCategories)
             if books.isEmpty {
                 ContentUnavailableView("尚無書籍", systemImage: "books.vertical")
             } else {
@@ -501,12 +611,14 @@ struct BookTemplatesView: View {
         do {
             let enteredName = templateName.trimmingCharacters(in: .whitespacesAndNewlines)
             let name = enteredName.isEmpty ? (book.title.isEmpty ? "未命名模板" : book.title) : enteredName
-            let template = try BookTemplateCoordinator.snapshot(book: book, planning: planningStore, settingsStore: settingsStore, name: name, context: modelContext, copyStore: copyStore, abilityStore: abilityStore)
+            var template = try BookTemplateCoordinator.snapshot(book: book, planning: planningStore, settingsStore: settingsStore, name: name, context: modelContext, copyStore: copyStore, abilityStore: abilityStore)
+            template.worldviewCategories = TemplateWorldviewCategory.ordered(Array(draftCategories))
             if templateStore == nil { templateStore = try BookTemplateStore(directory: SailuneDataLocations.current.bookTemplatesDirectory) }
             try templateStore?.save(template)
             showingSourcePicker = false
             selectedSourceBookID = nil
             templateName = ""
+            draftCategories = []
         } catch {
             operationError = error.localizedDescription
         }
@@ -532,7 +644,7 @@ struct BookTemplatesView: View {
             let book = try BookTemplateCoordinator.apply(
                 template,
                 title: template.name,
-                author: template.author,
+                author: profiles.first?.penName.trimmingCharacters(in: .whitespacesAndNewlines) ?? "",
                 context: modelContext,
                 planning: planningStore,
                 settingsStore: settingsStore,
@@ -550,6 +662,8 @@ struct BookTemplatesView: View {
         let requestID = UUID()
         let requestedTab = selectedTab
         let requestedQuery = templateQuery
+        let requestedCategories = TemplateWorldviewCategory.ordered(Array(categoryFilter))
+        let requestedUnclassified = includeUnclassified
         remoteLoadID = requestID
         if requestedTab == 0 {
             publicationStatusLoaded = false
@@ -563,9 +677,11 @@ struct BookTemplatesView: View {
                 publishedIDs = ids
                 publicationStatusLoaded = true
             } else {
-                let templates = try await community.listTemplates(query: requestedQuery)
+                let templates = try await community.listTemplates(query: requestedQuery, categories: requestedCategories, includeUnclassified: requestedUnclassified)
                 guard remoteLoadID == requestID, selectedTab == requestedTab,
-                      templateQuery == requestedQuery else { return }
+                      templateQuery == requestedQuery,
+                      TemplateWorldviewCategory.ordered(Array(categoryFilter)) == requestedCategories,
+                      includeUnclassified == requestedUnclassified else { return }
                 publicTemplates = templates
             }
             remoteError = nil
@@ -581,10 +697,24 @@ struct BookTemplatesView: View {
         isRemoteWorking = true
         defer { isRemoteWorking = false }
         do {
-            try await community.publishTemplate(template, displayName: displayName)
+            try await community.publishTemplate(template)
             publishedIDs.insert(template.id)
             remoteError = nil
         } catch { remoteError = "無法公開模板：\(CommunityFailure.message(for: error))" }
+    }
+
+    private func saveCategories(_ template: BookTemplateDocument) async {
+        guard let templateStore else { operationError = "模板尚未載入，請稍後再試。"; return }
+        isRemoteWorking = true
+        defer { isRemoteWorking = false }
+        do {
+            try await BookTemplateCategoryCoordinator.update(template, categories: Array(draftCategories),
+                isPublished: publishedIDs.contains(template.id), store: templateStore, community: community)
+            templatePendingCategoryEdit = nil
+            remoteError = nil
+        } catch {
+            operationError = error is BookTemplateError ? error.localizedDescription : CommunityFailure.message(for: error)
+        }
     }
 
     private func unpublish(_ template: BookTemplateDocument) async {

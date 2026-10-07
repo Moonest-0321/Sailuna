@@ -27,6 +27,7 @@ struct SharedTemplateSummary: Decodable, Identifiable {
     let name: String
     let summary: String
     let formatVersion: Int
+    let worldviewCategories: [TemplateWorldviewCategory]
     let createdAt: String
 
     enum CodingKeys: String, CodingKey {
@@ -34,6 +35,7 @@ struct SharedTemplateSummary: Decodable, Identifiable {
         case ownerId = "owner_id"
         case displayName = "display_name"
         case formatVersion = "format_version"
+        case worldviewCategories = "worldview_categories"
         case createdAt = "created_at"
     }
 }
@@ -60,6 +62,7 @@ private struct NewSharedTemplate: Encodable {
     let name: String
     let summary: String
     let formatVersion: Int
+    let worldviewCategories: [String]
     let payload: AnyJSON
 
     enum CodingKeys: String, CodingKey {
@@ -67,17 +70,20 @@ private struct NewSharedTemplate: Encodable {
         case ownerId = "owner_id"
         case displayName = "display_name"
         case formatVersion = "format_version"
+        case worldviewCategories = "worldview_categories"
     }
 }
 
 enum CommunityFailure: LocalizedError {
     case changedAccount
     case invalidTemplate
+    case missingSourcePenName
 
     var errorDescription: String? {
         switch self {
         case .changedAccount: "帳號或資料空間已切換，請重新開啟此頁。"
         case .invalidTemplate: "公開模板格式無效或不受此版本支援。"
+        case .missingSourcePenName: "這份舊模板沒有保存來源書筆名；請從來源書重新建立模板後再公開。"
         }
     }
 
@@ -86,6 +92,9 @@ enum CommunityFailure: LocalizedError {
         if let response = error as? PostgrestError {
             if response.code == "PGRST205" || response.code == "PGRST106" {
                 return "共享功能尚未啟用，請聯絡管理員。"
+            }
+            if response.code == "42703" || response.code == "PGRST204" {
+                return "共享服務尚未更新模板分類，請聯絡管理員。"
             }
             if response.message.contains("community_rate_limit") { return "操作太頻繁，請稍後再試。" }
             if response.code == "42501" || response.code == "PGRST301" { return "登入已失效或沒有權限，請重新登入。" }
@@ -185,13 +194,21 @@ final class SailuneCommunityService {
         try verify(accountID: accountID, generation: generation)
     }
 
-    func listTemplates(query: String) async throws -> [SharedTemplateSummary] {
+    func listTemplates(query: String, categories: [TemplateWorldviewCategory], includeUnclassified: Bool) async throws -> [SharedTemplateSummary] {
         let (client, accountID, generation) = try await authorizedClient()
         var request = client.from("community_templates")
-            .select("id,owner_id,display_name,name,summary,format_version,created_at")
+            .select("id,owner_id,display_name,name,summary,format_version,worldview_categories,created_at")
             .eq("hidden", value: false)
         let search = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if !search.isEmpty { request = request.ilike("name", pattern: "%\(search)%") }
+        let selected = TemplateWorldviewCategory.ordered(categories).map(\.rawValue)
+        if !selected.isEmpty && includeUnclassified {
+            request = request.or("worldview_categories.ov.{\(selected.joined(separator: ","))},worldview_categories.eq.{}")
+        } else if !selected.isEmpty {
+            request = request.overlaps("worldview_categories", value: selected)
+        } else if includeUnclassified {
+            request = request.eq("worldview_categories", value: "{}")
+        }
         let templates: [SharedTemplateSummary] = try await request
             .order("created_at", ascending: false).limit(100).execute().value
         try verify(accountID: accountID, generation: generation)
@@ -201,36 +218,45 @@ final class SailuneCommunityService {
     func publishedTemplateIDs() async throws -> Set<UUID> {
         let (client, accountID, generation) = try await authorizedClient()
         let templates: [SharedTemplateSummary] = try await client.from("community_templates")
-            .select("id,owner_id,display_name,name,summary,format_version,created_at")
+            .select("id,owner_id,display_name,name,summary,format_version,worldview_categories,created_at")
             .eq("owner_id", value: accountID).eq("hidden", value: false)
             .limit(1000).execute().value
         try verify(accountID: accountID, generation: generation)
         return Set(templates.map(\.id))
     }
 
-    func publishTemplate(_ template: BookTemplateDocument, displayName: String) async throws {
+    func publishTemplate(_ template: BookTemplateDocument) async throws {
+        guard let sourcePenName = template.sourcePenName?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !sourcePenName.isEmpty else {
+            throw CommunityFailure.missingSourcePenName
+        }
         let (client, accountID, generation) = try await authorizedClient()
-        let sanitized = template.withoutWritingStructure()
+        var sanitized = template.withoutWritingStructure()
+        let categories = TemplateWorldviewCategory.ordered(sanitized.worldviewCategories ?? []).map(\.rawValue)
+        sanitized.worldviewCategories = nil // 分類是公開 metadata，不併入不可變的書籍設定 payload。
         guard sanitized.formatVersion == BookTemplateDocument.currentVersion else { throw CommunityFailure.invalidTemplate }
         let raw = try JSONEncoder().encode(sanitized)
         guard raw.count <= 4_500_000 else { throw CommunityFailure.invalidTemplate }
         let payload = try JSONDecoder().decode(AnyJSON.self, from: raw)
         let submission = NewSharedTemplate(id: sanitized.id, ownerId: accountID,
-            displayName: displayName, name: sanitized.name, summary: "設定集・地圖・時間軸",
-            formatVersion: sanitized.formatVersion, payload: payload)
+            displayName: sourcePenName, name: sanitized.name, summary: "設定集・地圖・時間軸",
+            formatVersion: sanitized.formatVersion, worldviewCategories: categories, payload: payload)
         do {
             try await client.from("community_templates").insert(submission).execute()
         } catch {
             let insertionError = error
             do {
                 let existing: [String: AnyJSON] = try await client.from("community_templates")
-                    .select("owner_id,payload,hidden").eq("id", value: sanitized.id).single().execute().value
+                    .select("owner_id,payload,hidden,worldview_categories").eq("id", value: sanitized.id).single().execute().value
                 guard existing["owner_id"] == .string(accountID.uuidString.lowercased()),
                       existing["payload"] == payload else { throw insertionError }
+                if existing["worldview_categories"] != .array(categories.map(AnyJSON.string)) {
+                    try await updateTemplateCategories(id: sanitized.id, categories: template.worldviewCategories ?? [])
+                }
                 if existing["hidden"] == .bool(true) {
                     let reopened: [SharedTemplateSummary] = try await client.from("community_templates")
                         .update(["hidden": false]).eq("id", value: sanitized.id)
-                        .select("id,owner_id,display_name,name,summary,format_version,created_at").execute().value
+                        .select("id,owner_id,display_name,name,summary,format_version,worldview_categories,created_at").execute().value
                     guard reopened.count == 1 else { throw insertionError }
                 }
             } catch { throw insertionError }
@@ -242,7 +268,7 @@ final class SailuneCommunityService {
         let (client, accountID, generation) = try await authorizedClient()
         let updated: [SharedTemplateSummary] = try await client.from("community_templates")
             .update(["hidden": true]).eq("id", value: id)
-            .select("id,owner_id,display_name,name,summary,format_version,created_at").execute().value
+            .select("id,owner_id,display_name,name,summary,format_version,worldview_categories,created_at").execute().value
         guard !updated.isEmpty else { throw WorkspaceError.identityMismatch }
         try verify(accountID: accountID, generation: generation)
     }
@@ -258,5 +284,15 @@ final class SailuneCommunityService {
         guard template.formatVersion == BookTemplateDocument.currentVersion,
               !template.containsWritingStructure else { throw CommunityFailure.invalidTemplate }
         return template
+    }
+
+    func updateTemplateCategories(id: UUID, categories: [TemplateWorldviewCategory]) async throws {
+        let (client, accountID, generation) = try await authorizedClient()
+        let raw = TemplateWorldviewCategory.ordered(categories).map(\.rawValue)
+        let updated: [SharedTemplateSummary] = try await client.from("community_templates")
+            .update(["worldview_categories": raw]).eq("id", value: id).eq("owner_id", value: accountID)
+            .select("id,owner_id,display_name,name,summary,format_version,worldview_categories,created_at").execute().value
+        guard updated.count == 1 else { throw WorkspaceError.identityMismatch }
+        try verify(accountID: accountID, generation: generation)
     }
 }

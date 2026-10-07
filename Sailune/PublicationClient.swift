@@ -15,13 +15,14 @@ nonisolated struct PublicationResult: Decodable, Sendable {
     let hiddenVolumes: Int
 }
 nonisolated enum PublicationFailure: LocalizedError {
-    case configuration, login, authorUnbound, notOwner, invalidPackage(String), connection, upload, localSave
+    case configuration, login, authorUnbound, notOwner, identityLocked, invalidPackage(String), connection, upload, localSave
     var errorDescription: String? {
         switch self {
         case .configuration: "發布服務尚未設定。"
         case .login: "登入已失效，請重新登入後重試。"
         case .authorUnbound: "無法確認此帳號的作者資料，請稍後重試。"
         case .notOwner: "此帳號沒有這本作品的發布權限。"
+        case .identityLocked: "這本作品已發布，公開書名與筆名不可更改。請核對網站上的固定值後再傳送。"
         case .invalidPackage(let message): message
         case .connection: "無法確認發布結果，請使用相同傳送重試。"
         case .upload: "無法完成上傳，請重試。"
@@ -165,6 +166,7 @@ struct PublicationClient {
             switch envelope.error.code {
             case "author_unbound": return .authorUnbound
             case "not_owner": return .notOwner
+            case "identity_locked": return .identityLocked
             case "invalid_package": return .invalidPackage(envelope.error.message)
             default: break
             }
